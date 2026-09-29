@@ -1,0 +1,235 @@
+'use client';
+
+import React from 'react';
+import { useQuantPulse } from '@/context/QuantPulseContext';
+import { buildNextActionPayload } from '@/lib/engine/optionPricing';
+
+export function ZoneD_NextAction() {
+  const {
+    watchlist,
+    selectedTicker,
+    config,
+    executeBuy,
+    forceCrossover,
+    idempotencyLocks,
+    setIsJsonModalOpen,
+  } = useQuantPulse();
+
+  const stock =
+    watchlist.find((s) => s.ticker === selectedTicker) || watchlist[0];
+  if (!stock) return null;
+
+  const payload = buildNextActionPayload(stock, config);
+  const isEligible = payload.isEligibleForBuy;
+  const isAlreadyTraded = idempotencyLocks.includes(stock.ticker);
+  const showCashFallback = config.instrumentMode === 'OPTION' && !stock.isFnO;
+  const activeLeg =
+    payload.toggleConfiguration.effectiveInstrumentMode === 'OPTION' &&
+    payload.optionBuyDetails
+      ? payload.optionBuyDetails
+      : payload.stockBuyDetails;
+
+  return (
+    <section className="bg-panel rounded-xl border border-slate-800 flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+        <div>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            Zone D: Next Action Details
+          </h2>
+          <p className="text-[11px] text-slate-400">Driven by Toggle 1 (Stock/Option) &amp; Toggle 2</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsJsonModalOpen(true)}
+          className="text-[11px] font-mono px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
+        >
+          &#123; &#125; JSON
+        </button>
+      </div>
+
+      {/* Dynamic Action Container */}
+      <div className="p-3.5 flex-1 flex flex-col justify-between space-y-3 overflow-y-auto">
+        <div className="space-y-3">
+          {/* Stock Header & Status */}
+          <div
+            className={`p-3 rounded-xl bg-obsidian border flex items-center justify-between ${
+              isEligible ? 'border-emerald-500/40' : 'border-slate-800'
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold text-white">{stock.ticker}</span>
+                <span
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                    isEligible
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700'
+                  }`}
+                >
+                  {isEligible ? 'ELIGIBLE FOR BUY' : 'NOT ELIGIBLE YET'}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                Today Vol: <span className="text-white font-semibold">{stock.todayVolM.toFixed(2)}M</span>
+                {' '}/ 20D Avg:{' '}
+                <span className="text-cyan-300 font-semibold">{stock.avgVol20DM.toFixed(2)}M</span>
+                {' '}({payload.volumeTracking.crossoverProgressPct}%)
+              </div>
+            </div>
+          </div>
+
+          {/* Crossover Audit Banner */}
+          {isEligible ? (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-emerald-300 flex items-center gap-1">
+                  ⏱️ 20D Vol Crossover Time:
+                </span>
+                <span className="font-mono font-bold text-amber-300 bg-obsidian/80 px-2 py-0.5 rounded border border-amber-500/30">
+                  {stock.crossoverTime} IST
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono">
+                <span>
+                  Price @ Crossover: <strong>₹{stock.crossoverSpotPrice?.toFixed(2)}</strong>
+                </span>
+                <span>
+                  Current LTP: <strong className="text-emerald-300">₹{stock.spotLtp.toFixed(2)}</strong>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+              <div className="text-xs font-bold text-amber-300 flex items-center justify-between">
+                <span>⏳ Waiting for 20D Vol Crossover</span>
+                <span className="font-mono">{payload.volumeTracking.crossoverProgressPct}%</span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                Needs <strong className="font-mono text-white">+{payload.volumeTracking.remainingDeficitM.toFixed(2)}M</strong>{' '}
+                more volume today to beat the 20-day average (<strong className="font-mono">{stock.avgVol20DM.toFixed(2)}M</strong>) and unlock buying.
+              </p>
+              <button
+                type="button"
+                onClick={() => forceCrossover(stock.ticker)}
+                className="w-full py-1.5 rounded-lg text-xs font-bold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition"
+              >
+                ⚡ Simulate Volume Crossover Now
+              </button>
+            </div>
+          )}
+
+          {/* Cash Fallback Notice */}
+          {showCashFallback && (
+            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200">
+              ⚠️ <strong>Cash-Only Stock:</strong> {stock.ticker} has no F&amp;O Option Chain. Automatically showing{' '}
+              <strong>Stock Equity</strong> details.
+            </div>
+          )}
+
+          {/* Next Action Details (Stock vs Option) */}
+          <div className="p-3.5 rounded-xl bg-obsidian/90 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div>
+                <div className="text-[10px] uppercase text-slate-400 font-semibold">Next Action (Toggle 1)</div>
+                <div
+                  className={`text-xs font-bold ${
+                    activeLeg.instrumentType.includes('OPTION') ? 'text-purple-300' : 'text-cyan-300'
+                  }`}
+                >
+                  {activeLeg.instrumentType}
+                </div>
+              </div>
+              <span className="text-xs font-mono font-bold text-white bg-slate-900 px-2.5 py-1 rounded border border-slate-700">
+                {activeLeg.symbol}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                <div className="text-[10px] text-slate-400">Entry Price</div>
+                <div className="font-bold text-white">₹{activeLeg.entryPrice.toFixed(2)}</div>
+              </div>
+              <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                <div className="text-[10px] text-slate-400">Order Quantity</div>
+                <div className="font-bold text-cyan-300">
+                  {'lots' in activeLeg && activeLeg.lots
+                    ? `${activeLeg.lots} Lot (${activeLeg.quantity} Qty)`
+                    : `${activeLeg.quantity} Shares`}
+                </div>
+              </div>
+              <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                <div className="text-[10px] text-rose-300">Stop-Loss (1R)</div>
+                <div className="font-bold text-rose-400">₹{activeLeg.stopLossPrice.toFixed(2)}</div>
+              </div>
+              <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                <div className="text-[10px] text-emerald-300">Target (1:2)</div>
+                <div className="font-bold text-emerald-400">₹{activeLeg.targetPrice.toFixed(2)}</div>
+              </div>
+            </div>
+
+            {'lots' in activeLeg && activeLeg.lots && (
+              <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] font-mono">
+                <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                  <div className="text-[9px] text-purple-300 uppercase">ATM Strike</div>
+                  <div className="font-bold text-white">{activeLeg.strikePrice} CE</div>
+                </div>
+                <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                  <div className="text-[9px] text-purple-300 uppercase">Delta</div>
+                  <div className="font-bold text-white">{activeLeg.delta}</div>
+                </div>
+                <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                  <div className="text-[9px] text-purple-300 uppercase">IV %</div>
+                  <div className="font-bold text-white">{activeLeg.ivPct}%</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Execution Footer (Manual vs Auto) */}
+        <div className="pt-2 border-t border-slate-800 space-y-2">
+          {config.executionMode === 'MANUAL' ? (
+            isEligible ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => executeBuy(stock.ticker, 'MANUAL')}
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg transition flex items-center justify-center gap-2"
+                >
+                  <span>🚀 Execute Buy: {activeLeg.symbol}</span>
+                </button>
+                <div className="text-[10px] text-center text-slate-400 mt-1">
+                  Toggle 2 is <strong>MANUAL</strong> — Click to place order for this eligible stock.
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider bg-slate-800/80 text-slate-500 border border-slate-700 cursor-not-allowed"
+              >
+                🔒 Locked Until 20D Volume Crossover
+              </button>
+            )
+          ) : (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
+              <div className="flex items-center justify-between text-xs font-bold text-emerald-300">
+                <span>🤖 AUTO EXECUTION MODE ACTIVE</span>
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20">
+                  {isAlreadyTraded ? 'ORDER DISPATCHED' : 'ARMED'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                {isAlreadyTraded
+                  ? `${stock.ticker} was automatically bought upon crossing its 20-Day Volume Average at ${stock.crossoverTime}.`
+                  : `The instant ${stock.ticker} crosses ${stock.avgVol20DM.toFixed(2)}M volume, the system will auto-buy ${activeLeg.symbol}.`}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

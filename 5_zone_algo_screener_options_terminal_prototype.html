@@ -1,0 +1,1895 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuantPulse — 20-Day Volume Crossover & Options Execution Terminal</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- JSZip CDN for packaging and downloading the multi-file local project folder -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            obsidian: '#060A11',
+            panel: '#0D1422',
+            panelHover: '#152036',
+            borderSubtle: '#1E293B',
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      background-color: #060A11;
+      color: #F8FAFC;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+    .font-mono-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #060A11;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1E293B;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+    @keyframes crossoverPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+        border-color: rgba(16, 185, 129, 0.75);
+      }
+      50% {
+        box-shadow: 0 0 18px 2px rgba(16, 185, 129, 0.28);
+        border-color: rgba(52, 211, 153, 1);
+      }
+    }
+    .crossover-flash {
+      animation: crossoverPulse 2s infinite;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col bg-obsidian text-slate-100 selection:bg-emerald-500/30 selection:text-emerald-200">
+
+  <!-- ===================================================================== -->
+  <!-- ZONE A: GLOBAL COMMAND & MASTER TOGGLES HEADER                        -->
+  <!-- ===================================================================== -->
+  <header class="sticky top-0 z-30 bg-panel/95 backdrop-blur border-b border-slate-800 px-3 py-2.5 shadow-xl">
+    <div class="max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-2.5">
+      
+      <!-- Brand & Live Market Clock -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center shadow-inner">
+          <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold tracking-tight text-sm md:text-base text-white">QUANTPULSE</span>
+            <span class="text-[10px] font-mono-num uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+              20D Volume Crossover Engine
+            </span>
+          </div>
+          <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+            <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Market Clock:</span>
+            <span id="liveMarketClock" class="font-mono-num font-bold text-cyan-300">10:42:10 IST</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- MASTER TOGGLE 1 (STOCK vs OPTION) & MASTER TOGGLE 2 (MANUAL vs AUTO) -->
+      <div class="flex flex-wrap items-center gap-2.5 bg-obsidian/90 p-1.5 rounded-xl border border-slate-800">
+        
+        <!-- TOGGLE 1: BUY STOCK vs BUY OPTION -->
+        <div class="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800/80">
+          <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+            Action:
+          </div>
+          <button
+            id="toggleInstrumentBtn"
+            onclick="toggleInstrumentMode()"
+            class="relative inline-flex items-center h-7 rounded-lg p-0.5 transition-colors duration-200 focus:outline-none border border-slate-700 bg-slate-800"
+            title="Switch Next Action between Buying Underlying Stock vs Buying ATM Call Option"
+          >
+            <span id="instBadgeStock" class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all bg-cyan-400 text-slate-950 shadow">
+              BUY STOCK (EQ)
+            </span>
+            <span id="instBadgeOption" class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all text-slate-400">
+              BUY OPTION (ATM CE)
+            </span>
+          </button>
+        </div>
+
+        <!-- TOGGLE 2: MANUAL vs AUTO EXECUTION -->
+        <div class="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800/80">
+          <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+            Trade Mode:
+          </div>
+          <button
+            id="toggleExecutionBtn"
+            onclick="toggleExecutionMode()"
+            class="relative inline-flex items-center h-7 rounded-lg p-0.5 transition-colors duration-200 focus:outline-none border border-slate-700 bg-slate-800"
+            title="Switch between Manual Click-to-Buy and Automatic Buy on Volume Crossover"
+          >
+            <span id="execBadgeManual" class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all bg-amber-400 text-slate-950 shadow">
+              MANUAL
+            </span>
+            <span id="execBadgeAuto" class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all text-slate-400">
+              AUTO TRADE
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Simulator Controls, Telemetry & Download ZIP Button -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <!-- Capital Per Trade Input -->
+        <div class="bg-obsidian px-2.5 py-1 rounded-lg border border-slate-800 flex items-center gap-1.5">
+          <span class="text-[10px] uppercase text-slate-400 font-semibold">Cap/Trade ₹</span>
+          <input
+            id="capitalInput"
+            type="number"
+            value="100000"
+            step="10000"
+            min="10000"
+            onchange="updateCapitalAllocation(this.value)"
+            class="w-24 bg-slate-900 text-xs font-mono-num text-emerald-300 px-2 py-0.5 rounded border border-slate-700 focus:outline-none"
+          />
+        </div>
+
+        <!-- Live MTM P&L -->
+        <div class="bg-obsidian px-3 py-1 rounded-lg border border-slate-800">
+          <div class="text-[10px] uppercase text-slate-400">Daily MTM P&amp;L</div>
+          <div id="globalMtmPnl" class="text-xs font-mono-num font-bold text-emerald-400">₹0.00</div>
+        </div>
+
+        <!-- Live Tick Controls -->
+        <div class="flex items-center gap-1.5">
+          <button
+            onclick="simulateVolumeTick()"
+            class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1"
+            title="Advance 1 Volume & Price Tick across all watchlist stocks"
+          >
+            <span>+ Boost Vol Tick</span>
+          </button>
+          <button
+            id="autoTickBtn"
+            onclick="toggleAutoTickStream()"
+            class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1"
+          >
+            <span id="autoTickLabel">▶ Start Live Vol Stream</span>
+          </button>
+          <button
+            onclick="resetCrossoverSimulation()"
+            class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+            title="Reset uncrossed stocks back to 92%-97% of 20D Volume to re-test crossover latching"
+          >
+            ↺ Reset Sim
+          </button>
+        </div>
+
+        <!-- Panic Kill-Switch -->
+        <button
+          onclick="triggerPanicKillSwitch()"
+          class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-sm transition"
+          title="Turn OFF Auto Mode and square off all open positions"
+        >
+          🛑 KILL SWITCH
+        </button>
+
+        <!-- Download Folder (.ZIP) -->
+        <div class="flex items-center gap-1.5 border-l border-slate-800 pl-2.5">
+          <button
+            onclick="downloadProjectZipFolder()"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 shadow-md transition flex items-center gap-1.5"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+            </svg>
+            <span>Download Prototype Folder (.ZIP)</span>
+          </button>
+          <button
+            onclick="openFolderContentsModal()"
+            class="px-2 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
+            title="Preview files bundled in the ZIP download"
+          >
+            📂 Files
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN 5-ZONE WORKSPACE: ZONE B (LEFT), ZONE C (CENTER), ZONE D (RIGHT) -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 max-w-[1920px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-3 p-3">
+
+    <!-- =================================================================== -->
+    <!-- ZONE B: WATCHLIST INGESTION & LIVE CROSSOVER TIMELINE LOG (3 COLS)  -->
+    <!-- =================================================================== -->
+    <section class="lg:col-span-3 bg-panel rounded-xl border border-slate-800 flex flex-col overflow-hidden">
+      <div class="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+        <div>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+            Zone B: Watchlist &amp; Crossover Log
+          </h2>
+          <p class="text-[11px] text-slate-400">Add stocks &amp; track exact 20D crossover times</p>
+        </div>
+        <span id="watchlistCountBadge" class="text-[11px] font-mono-num px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+          6 Stocks
+        </span>
+      </div>
+
+      <!-- Add Custom Stock Form -->
+      <form onsubmit="handleAddCustomStock(event)" class="p-3 border-b border-slate-800 bg-obsidian/50 space-y-2">
+        <div class="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+          <span>Add Stock to Volume Tracker</span>
+          <span class="text-[10px] text-slate-400">Auto-checks Today vs 20D Vol</span>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[10px] text-slate-400 uppercase mb-0.5">Stock Symbol</label>
+            <input
+              id="newTickerInput"
+              type="text"
+              placeholder="e.g. SBIN"
+              required
+              class="w-full bg-slate-900 text-xs font-mono-num uppercase text-white px-2.5 py-1.5 rounded border border-slate-700 focus:outline-none focus:border-cyan-400"
+            />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-400 uppercase mb-0.5">F&amp;O Segment</label>
+            <select
+              id="newSegmentInput"
+              class="w-full bg-slate-900 text-xs text-white px-2 py-1.5 rounded border border-slate-700 focus:outline-none focus:border-cyan-400"
+            >
+              <option value="FNO">F&amp;O (Stock + Option)</option>
+              <option value="CASH">Cash Only (Stock Only)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block text-[10px] text-slate-400 uppercase mb-0.5">Spot LTP (₹)</label>
+            <input
+              id="newSpotInput"
+              type="number"
+              step="0.05"
+              value="820"
+              required
+              class="w-full bg-slate-900 text-xs font-mono-num text-white px-2 py-1 rounded border border-slate-700"
+            />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-400 uppercase mb-0.5">20D Avg Vol(M)</label>
+            <input
+              id="newAvgVolInput"
+              type="number"
+              step="0.05"
+              value="12.0"
+              required
+              class="w-full bg-slate-900 text-xs font-mono-num text-white px-2 py-1 rounded border border-slate-700"
+            />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-400 uppercase mb-0.5">Today Vol (M)</label>
+            <input
+              id="newCurVolInput"
+              type="number"
+              step="0.05"
+              value="11.6"
+              required
+              class="w-full bg-slate-900 text-xs font-mono-num text-white px-2 py-1 rounded border border-slate-700"
+            />
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          class="w-full py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition"
+        >
+          + Add Stock to 20D Volume Monitor
+        </button>
+      </form>
+
+      <!-- Live Volume Crossover Timestamp Event Log -->
+      <div class="px-3 py-2 bg-slate-900/70 border-b border-slate-800 flex items-center justify-between">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+          <span>⏱️ Exact Crossover Timestamp Feed</span>
+        </span>
+        <span class="text-[10px] text-slate-400 font-mono-num">Immutable Latch</span>
+      </div>
+
+      <div id="crossoverEventLogContainer" class="p-2.5 flex-1 overflow-y-auto space-y-2 max-h-[340px]">
+        <!-- Populated dynamically with exact HH:MM:SS crossover events -->
+      </div>
+
+      <!-- Logic Summary Box -->
+      <div class="p-3 bg-obsidian/90 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
+        <div class="font-semibold text-slate-200">Core Eligibility Rule:</div>
+        <div>• Track <span class="text-cyan-300 font-mono-num">Today_Vol</span> vs <span class="text-white font-mono-num">20D_Avg_Vol</span></div>
+        <div>• The instant <span class="text-emerald-400 font-mono-num">Today_Vol ≥ 20D_Avg_Vol</span>, latch exact <span class="text-amber-300 font-mono-num">HH:MM:SS</span> crossover time &amp; unlock <span class="text-emerald-300 font-semibold">ELIGIBLE FOR BUY</span>.</div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- ZONE C: 20-DAY VOLUME CROSSOVER SCREENER TABLE (CENTER 6 COLS)      -->
+    <!-- =================================================================== -->
+    <section class="lg:col-span-6 bg-panel rounded-xl border border-slate-800 flex flex-col overflow-hidden">
+      <div class="p-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-900/50">
+        <div>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            Zone C: Live Stock Volume vs. 20-Day Average Crossover Tracker
+          </h2>
+          <p class="text-[11px] text-slate-400">
+            Stocks crossing their 20-Day Average Volume latch the exact crossover time and become <strong class="text-emerald-300">ELIGIBLE FOR BUY</strong>
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="eligibleCountBadge" class="text-xs font-mono-num px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+            2 Eligible for Buy
+          </span>
+        </div>
+      </div>
+
+      <!-- Screener Table -->
+      <div class="overflow-x-auto flex-1">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-400 bg-obsidian/60">
+              <th class="py-2.5 px-3">Stock &amp; Segment</th>
+              <th class="py-2.5 px-3">Today Vol vs 20D Avg</th>
+              <th class="py-2.5 px-3">Crossover Progress</th>
+              <th class="py-2.5 px-3">Exact Crossover Time</th>
+              <th class="py-2.5 px-3">Spot LTP &amp; Cross Price</th>
+              <th class="py-2.5 px-3">Eligibility Status</th>
+              <th class="py-2.5 px-3 text-right">Simulate Cross</th>
+            </tr>
+          </thead>
+          <tbody id="screenerTableBody" class="divide-y divide-slate-800/70 text-xs">
+            <!-- Populated dynamically via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Interactive Guidance Footer -->
+      <div class="px-3.5 py-2.5 bg-obsidian/80 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+        <div>
+          ⚡ <strong class="text-slate-200">Test the Logic:</strong> Click <span class="text-cyan-300 font-mono-num">"⚡ Cross 20D Now"</span> on <strong class="text-white">TCS (96.5%)</strong> or <strong class="text-white">ZOMATO (97.2%)</strong>—or start the <strong class="text-emerald-300">Live Vol Stream</strong>—to see the exact <span class="font-mono-num text-amber-300">HH:MM:SS</span> crossover time latch!
+        </div>
+        <div id="lastScanTimeLabel" class="font-mono-num text-slate-400">Tick Status: Ready</div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- ZONE D: DYNAMIC NEXT-ACTION CARD (BUY STOCK vs OPTION) (3 COLS)     -->
+    <!-- =================================================================== -->
+    <section class="lg:col-span-3 bg-panel rounded-xl border border-slate-800 flex flex-col overflow-hidden">
+      <div class="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+        <div>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            Zone D: Next Action Details
+          </h2>
+          <p class="text-[11px] text-slate-400">Driven by Toggle 1 (Stock/Option) &amp; Toggle 2</p>
+        </div>
+        <button
+          onclick="toggleJsonPayloadView()"
+          class="text-[11px] font-mono-num px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
+        >
+          { } JSON
+        </button>
+      </div>
+
+      <!-- Dynamic Trade Details Card Container -->
+      <div id="dynamicActionCardContainer" class="p-3.5 flex-1 flex flex-col justify-between space-y-3 overflow-y-auto">
+        <!-- Populated dynamically via JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- ZONE E: EXECUTED TRADES & TRAILING STOP-LOSS (TSL) MONITOR            -->
+  <!-- ===================================================================== -->
+  <section class="max-w-[1920px] w-full mx-auto px-3 pb-4">
+    <div class="bg-panel rounded-xl border border-slate-800 overflow-hidden shadow-lg">
+      <div class="px-4 py-2.5 border-b border-slate-800 bg-slate-900/60 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">
+            Zone E: Executed Trades (Manual &amp; Auto) + Reference Crossover Timestamp
+          </h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="openPosCounter" class="text-[11px] font-mono-num px-2.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700">
+            Open Positions: 0 / 5 Max
+          </span>
+          <span id="idempotencyLockCounter" class="text-[11px] font-mono-num px-2.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700">
+            Auto-Trade Locks: 0 Tickers
+          </span>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-400 bg-obsidian/60">
+              <th class="py-2 px-3">Order Time &amp; Mode</th>
+              <th class="py-2 px-3">20D Vol Cross Time</th>
+              <th class="py-2 px-3">Instrument Bought</th>
+              <th class="py-2 px-3">Qty / Lots</th>
+              <th class="py-2 px-3">Entry Price</th>
+              <th class="py-2 px-3">Current LTP</th>
+              <th class="py-2 px-3">Active Trailing SL</th>
+              <th class="py-2 px-3">Target (1:2)</th>
+              <th class="py-2 px-3">TSL State</th>
+              <th class="py-2 px-3">Live P&amp;L</th>
+              <th class="py-2 px-3 text-right">Trailing SL Actions</th>
+            </tr>
+          </thead>
+          <tbody id="activePositionsTableBody" class="divide-y divide-slate-800/70 text-xs">
+            <!-- Populated dynamically via JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: DOWNLOADABLE PROJECT FOLDER STRUCTURE & PYTHON CODE PREVIEW    -->
+  <!-- ===================================================================== -->
+  <div id="folderModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900">
+        <div class="flex items-center gap-2.5">
+          <span class="text-lg">📦</span>
+          <div>
+            <h3 class="text-sm font-bold text-white">Downloadable Local Project Folder (`volume-crossover-trader-prototype.zip`)</h3>
+            <p class="text-xs text-slate-400">Includes standalone HTML/JS frontend + Python 20D Volume Crossover Timestamp Engine</p>
+          </div>
+        </div>
+        <button onclick="closeFolderContentsModal()" class="text-slate-400 hover:text-white text-sm px-2.5 py-1 rounded bg-slate-800">✕ Close</button>
+      </div>
+
+      <div class="p-5 overflow-y-auto space-y-4 text-xs text-slate-300">
+        <div class="bg-obsidian p-3.5 rounded-xl border border-slate-800 font-mono-num text-xs leading-relaxed text-emerald-300">
+          volume-crossover-trader-prototype/<br/>
+          ├── index.html &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-slate-400"># Full 5-Zone Interactive Terminal UI</span><br/>
+          ├── css/<br/>
+          │   └── styles.css &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-slate-400"># Dark theme &amp; crossover pulse animations</span><br/>
+          ├── js/<br/>
+          │   └── app.js &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-slate-400"># 20D Volume Crossover Latch, Toggle 1 (Stock/Option) &amp; Toggle 2 (Manual/Auto)</span><br/>
+          ├── backend/<br/>
+          │   └── volume_crossover_engine.py &nbsp;&nbsp;&nbsp;<span class="text-slate-400"># Python backend with immutable HH:MM:SS crossover timestamp latching</span><br/>
+          └── README.md &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-slate-400"># Local setup &amp; architecture guide</span>
+        </div>
+
+        <div class="space-y-2">
+          <div class="font-semibold text-white">Preview of `backend/volume_crossover_engine.py`:</div>
+          <pre id="pythonCodePreviewBox" class="bg-obsidian p-3.5 rounded-xl border border-slate-800 font-mono-num text-[11px] text-cyan-200 overflow-x-auto max-h-64"></pre>
+        </div>
+      </div>
+
+      <div class="px-5 py-3 border-t border-slate-800 bg-slate-900 flex flex-wrap items-center justify-between gap-2">
+        <button
+          onclick="downloadStandaloneHtmlFile()"
+          class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+        >
+          ⬇ Download Single-File HTML (`index.html`)
+        </button>
+        <button
+          onclick="downloadProjectZipFolder()"
+          class="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 shadow-md transition"
+        >
+          ⬇ Download Complete Project Folder (.ZIP)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Stack -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+
+  <script>
+    /*************************************************************************
+     * 1. GLOBAL APPLICATION STATE & SIMULATED MARKET CLOCK
+     *************************************************************************/
+    const appState = {
+      instrumentMode: 'STOCK',      // Toggle 1: 'STOCK' | 'OPTION'
+      executionMode: 'MANUAL',      // Toggle 2: 'MANUAL' | 'AUTO'
+      capitalPerTrade: 100000,      // ₹1,00,000 default allocation per trade
+      maxOpenPositions: 5,
+      selectedTickerSymbol: 'RELIANCE',
+      showJsonPayload: false,
+      autoTickTimer: null,
+      clockSecondsElapsed: 38530,   // Starts at 10:42:10 IST (10*3600 + 42*60 + 10)
+      idempotencyLocks: new Set(),  // Prevents duplicate Auto-Buys on the same stock
+      activePositions: [],          // Executed orders in Zone E
+      crossoverEvents: [],          // Chronological log of 20D volume crossovers
+      watchlist: []                 // Stocks monitored in Zone C
+    };
+
+    const INITIAL_WATCHLIST_DATA = [
+      {
+        ticker: 'RELIANCE',
+        name: 'Reliance Industries',
+        isFnO: true,
+        lotSize: 250,
+        strikeStep: 50,
+        spotLtp: 2968.50,
+        todayVolM: 5.82,
+        avgVol20DM: 5.20,
+        hasCrossed20D: true,
+        crossoverTime: '09:48:12',
+        crossoverSpotPrice: 2954.00,
+        ivPct: 18.4,
+        justCrossedHighlight: false
+      },
+      {
+        ticker: 'TATAMOTORS',
+        name: 'Tata Motors Ltd',
+        isFnO: true,
+        lotSize: 550,
+        strikeStep: 20,
+        spotLtp: 984.40,
+        todayVolM: 9.45,
+        avgVol20DM: 8.90,
+        hasCrossed20D: true,
+        crossoverTime: '10:19:05',
+        crossoverSpotPrice: 976.50,
+        ivPct: 23.8,
+        justCrossedHighlight: false
+      },
+      {
+        ticker: 'TCS',
+        name: 'Tata Consultancy Services',
+        isFnO: true,
+        lotSize: 175,
+        strikeStep: 50,
+        spotLtp: 4126.00,
+        todayVolM: 1.45,            // 96.7% of 1.50M -> Very close to crossing!
+        avgVol20DM: 1.50,
+        hasCrossed20D: false,
+        crossoverTime: null,
+        crossoverSpotPrice: null,
+        ivPct: 16.2,
+        justCrossedHighlight: false
+      },
+      {
+        ticker: 'ZOMATO',
+        name: 'Zomato Ltd (Cash Only)',
+        isFnO: false,               // Cash-only stock to demonstrate Option Toggle guardrail
+        lotSize: 1,
+        strikeStep: 5,
+        spotLtp: 264.80,
+        todayVolM: 18.47,           // 97.2% of 19.00M -> About to cross!
+        avgVol20DM: 19.00,
+        hasCrossed20D: false,
+        crossoverTime: null,
+        crossoverSpotPrice: null,
+        ivPct: 0,
+        justCrossedHighlight: false
+      },
+      {
+        ticker: 'ICICIBANK',
+        name: 'ICICI Bank Ltd',
+        isFnO: true,
+        lotSize: 700,
+        strikeStep: 20,
+        spotLtp: 1258.00,
+        todayVolM: 6.44,            // 92.0% of 7.00M
+        avgVol20DM: 7.00,
+        hasCrossed20D: false,
+        crossoverTime: null,
+        crossoverSpotPrice: null,
+        ivPct: 15.6,
+        justCrossedHighlight: false
+      },
+      {
+        ticker: 'HDFCBANK',
+        name: 'HDFC Bank Ltd',
+        isFnO: true,
+        lotSize: 550,
+        strikeStep: 20,
+        spotLtp: 1644.20,
+        todayVolM: 4.70,            // 78.3% of 6.00M
+        avgVol20DM: 6.00,
+        hasCrossed20D: false,
+        crossoverTime: null,
+        crossoverSpotPrice: null,
+        ivPct: 14.9,
+        justCrossedHighlight: false
+      }
+    ];
+
+    const INITIAL_CROSSOVER_LOGS = [
+      {
+        ticker: 'TATAMOTORS',
+        time: '10:19:05',
+        avgVol20DM: 8.90,
+        crossPrice: 976.50,
+        isFnO: true
+      },
+      {
+        ticker: 'RELIANCE',
+        time: '09:48:12',
+        avgVol20DM: 5.20,
+        crossPrice: 2954.00,
+        isFnO: true
+      }
+    ];
+
+    /*************************************************************************
+     * 2. MARKET CLOCK & EXACT 20-DAY VOLUME CROSSOVER LATCH ENGINE
+     *************************************************************************/
+    function formatClockIST(totalSeconds) {
+      const secsInDay = totalSeconds % 86400;
+      const hrs = String(Math.floor(secsInDay / 3600)).padStart(2, '0');
+      const mins = String(Math.floor((secsInDay % 3600) / 60)).padStart(2, '0');
+      const secs = String(secsInDay % 60).padStart(2, '0');
+      return `${hrs}:${mins}:${secs}`;
+    }
+
+    function getCurrentMarketTimeStr() {
+      return formatClockIST(appState.clockSecondsElapsed);
+    }
+
+    function startMarketClockTicker() {
+      setInterval(() => {
+        appState.clockSecondsElapsed += 1;
+        const clockEl = document.getElementById('liveMarketClock');
+        if (clockEl) {
+          clockEl.textContent = `${getCurrentMarketTimeStr()} IST`;
+        }
+      }, 1000);
+    }
+
+    /**
+     * Core Logic: Checks if `todayVolM` has crossed `avgVol20DM`.
+     * If it crosses for the first time (`!stock.hasCrossed20D && stock.todayVolM >= stock.avgVol20DM`),
+     * latches the immutable `crossoverTime` (HH:MM:SS) and `crossoverSpotPrice`.
+     */
+    function checkAndLatchVolumeCrossover(stock) {
+      if (!stock.hasCrossed20D && stock.todayVolM >= stock.avgVol20DM) {
+        const exactTime = getCurrentMarketTimeStr();
+        stock.hasCrossed20D = true;
+        stock.crossoverTime = exactTime;
+        stock.crossoverSpotPrice = stock.spotLtp;
+        stock.justCrossedHighlight = true;
+
+        // Add to top of Crossover Event Log
+        appState.crossoverEvents.unshift({
+          ticker: stock.ticker,
+          time: exactTime,
+          avgVol20DM: stock.avgVol20DM,
+          crossPrice: stock.spotLtp,
+          isFnO: stock.isFnO
+        });
+
+        showToast(
+          `⏱️ [${exactTime}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${stock.spotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
+          'emerald'
+        );
+
+        // Remove flash highlight after 4 seconds
+        setTimeout(() => {
+          stock.justCrossedHighlight = false;
+          renderScreenerTable();
+        }, 4000);
+
+        return true; // Newly crossed on this tick
+      }
+      return false;
+    }
+
+    function getVolumeScreenerMetrics(stock) {
+      const progressPct = +((stock.todayVolM / stock.avgVol20DM) * 100).toFixed(1);
+      const rvolRatio = +(stock.todayVolM / stock.avgVol20DM).toFixed(2);
+      const deficitM = Math.max(0, +(stock.avgVol20DM - stock.todayVolM).toFixed(3));
+      const isEligibleForBuy = stock.hasCrossed20D || stock.todayVolM >= stock.avgVol20DM;
+
+      return {
+        progressPct,
+        rvolRatio,
+        deficitM,
+        isEligibleForBuy,
+        statusCode: isEligibleForBuy ? 'ELIGIBLE_FOR_BUY' : 'TRACKING_VOLUME',
+        statusBadge: isEligibleForBuy ? 'ELIGIBLE FOR BUY' : 'TRACKING VOL (< 20D)'
+      };
+    }
+
+    /*************************************************************************
+     * 3. STAGE 2: DYNAMIC STOCK VS ATM OPTION (CE) PAYLOAD BUILDER
+     *************************************************************************/
+    function buildNextActionPayload(stock) {
+      const metrics = getVolumeScreenerMetrics(stock);
+      const cap = appState.capitalPerTrade;
+
+      // 1. BUY STOCK (EQUITY) PAYLOAD
+      const eqQty = Math.max(1, Math.floor(cap / stock.spotLtp));
+      const eqRiskPts = +(stock.spotLtp * 0.01).toFixed(2); // 1% initial SL
+      const eqStopLoss = +(stock.spotLtp - eqRiskPts).toFixed(2);
+      const eqTarget = +(stock.spotLtp + eqRiskPts * 2).toFixed(2);
+
+      // 2. BUY OPTION (ATM CALL OPTION CE) PAYLOAD
+      const atmStrike = Math.round(stock.spotLtp / stock.strikeStep) * stock.strikeStep;
+      const contractSymbol = `${stock.ticker} ${atmStrike} CE`;
+      const premiumLtp = +(stock.spotLtp * 0.0165).toFixed(2); // ~1.65% ATM Call premium
+      const singleLotCost = premiumLtp * stock.lotSize;
+      const lots = Math.max(1, Math.floor(cap / Math.max(singleLotCost, 1)));
+      const totalOptionQty = lots * stock.lotSize;
+      const optRiskPts = +(premiumLtp * 0.20).toFixed(2); // 20% Premium SL
+      const optStopLoss = +(premiumLtp - optRiskPts).toFixed(2);
+      const optTarget = +(premiumLtp + optRiskPts * 2).toFixed(2);
+
+      // Optionability Guardrail: If Cash-Only stock & Option Toggle is ON, fallback to Stock
+      const effectiveInstrumentMode =
+        appState.instrumentMode === 'OPTION' && !stock.isFnO
+          ? 'STOCK_FALLBACK'
+          : appState.instrumentMode;
+
+      return {
+        ticker: stock.ticker,
+        eligibilityStatus: metrics.statusCode,
+        isEligibleForBuy: metrics.isEligibleForBuy,
+        volumeTracking: {
+          todayVolumeM: stock.todayVolM,
+          avgVolume20DM: stock.avgVol20DM,
+          crossoverProgressPct: metrics.progressPct,
+          rvolRatio: metrics.rvolRatio,
+          remainingDeficitM: metrics.deficitM,
+          exactCrossoverTime: stock.crossoverTime || 'WAITING_FOR_CROSSOVER',
+          crossoverSpotPrice: stock.crossoverSpotPrice || null,
+          currentSpotLtp: stock.spotLtp
+        },
+        toggleConfiguration: {
+          toggle1_Instrument: appState.instrumentMode,
+          effectiveInstrumentMode,
+          toggle2_Execution: appState.executionMode
+        },
+        stockBuyDetails: {
+          instrumentType: 'STOCK (EQUITY)',
+          symbol: `${stock.ticker}-EQ`,
+          action: 'BUY',
+          entryPrice: stock.spotLtp,
+          quantity: eqQty,
+          riskPerShare: eqRiskPts,
+          stopLossPrice: eqStopLoss,
+          targetPrice: eqTarget,
+          capitalRequired: +(eqQty * stock.spotLtp).toFixed(0)
+        },
+        optionBuyDetails: stock.isFnO
+          ? {
+              instrumentType: 'OPTION (ATM CALL)',
+              symbol: contractSymbol,
+              optionType: 'CE',
+              strikePrice: atmStrike,
+              expiry: '28-SEP-2026 (Current Expiry)',
+              action: 'BUY',
+              entryPrice: premiumLtp,
+              lotSize: stock.lotSize,
+              lots,
+              quantity: totalOptionQty,
+              delta: 0.52,
+              ivPct: stock.ivPct,
+              riskPerUnit: optRiskPts,
+              stopLossPrice: optStopLoss,
+              targetPrice: optTarget,
+              capitalRequired: +(totalOptionQty * premiumLtp).toFixed(0)
+            }
+          : null
+      };
+    }
+
+    /*************************************************************************
+     * 4. MASTER TOGGLE HANDLERS & AUTOMATIC EXECUTION ENGINE
+     *************************************************************************/
+    function toggleInstrumentMode() {
+      appState.instrumentMode = appState.instrumentMode === 'STOCK' ? 'OPTION' : 'STOCK';
+      renderTopToggleBadges();
+      renderDynamicActionCard();
+      showToast(
+        `Toggle 1 switched to ${
+          appState.instrumentMode === 'OPTION'
+            ? 'BUY OPTION (Nearest ATM Call CE)'
+            : 'BUY STOCK (Cash Equity)'
+        }`,
+        'info'
+      );
+    }
+
+    function toggleExecutionMode() {
+      appState.executionMode = appState.executionMode === 'MANUAL' ? 'AUTO' : 'MANUAL';
+      renderTopToggleBadges();
+      renderDynamicActionCard();
+
+      if (appState.executionMode === 'AUTO') {
+        showToast(
+          '🤖 AUTO TRADE ON — Any stock crossing 20D Avg Volume will auto-execute!',
+          'emerald'
+        );
+        runAutoExecutionScan();
+      } else {
+        showToast('Switched to MANUAL MODE — Review & click Buy in Zone D.', 'amber');
+      }
+    }
+
+    function updateCapitalAllocation(val) {
+      const parsed = parseFloat(val);
+      if (!isNaN(parsed) && parsed >= 10000) {
+        appState.capitalPerTrade = parsed;
+        renderDynamicActionCard();
+      }
+    }
+
+    function runAutoExecutionScan() {
+      if (appState.executionMode !== 'AUTO') return;
+
+      appState.watchlist.forEach((stock) => {
+        if (stock.hasCrossed20D) {
+          // 1. Check Idempotency Lock so we never double-buy the same stock
+          if (appState.idempotencyLocks.has(stock.ticker)) return;
+          // 2. Check Max Open Positions Limit
+          const openLegs = appState.activePositions.filter((p) => p.stateIndex < 4).length;
+          if (openLegs >= appState.maxOpenPositions) return;
+
+          executeBuyOrder(stock.ticker, 'AUTO');
+        }
+      });
+    }
+
+    function executeBuyOrder(tickerSymbol, triggeredByMode = 'MANUAL') {
+      const stock = appState.watchlist.find((s) => s.ticker === tickerSymbol);
+      if (!stock) return;
+
+      // Guardrail: Stock MUST have crossed 20-Day Average Volume first
+      if (!stock.hasCrossed20D) {
+        showToast(
+          `Cannot Buy ${stock.ticker} yet — Today's volume (${stock.todayVolM}M) has not crossed 20D Avg (${stock.avgVol20DM}M).`,
+          'rose'
+        );
+        return;
+      }
+
+      const openLegs = appState.activePositions.filter((p) => p.stateIndex < 4).length;
+      if (openLegs >= appState.maxOpenPositions) {
+        showToast(`Max Open Positions (${appState.maxOpenPositions}) reached!`, 'rose');
+        return;
+      }
+
+      const payload = buildNextActionPayload(stock);
+      const useOption =
+        payload.toggleConfiguration.effectiveInstrumentMode === 'OPTION' &&
+        payload.optionBuyDetails;
+      const activeLeg = useOption ? payload.optionBuyDetails : payload.stockBuyDetails;
+
+      // Lock ticker in Idempotency Set
+      appState.idempotencyLocks.add(stock.ticker);
+
+      const orderTime = getCurrentMarketTimeStr();
+      const newPosition = {
+        id: 'ORD-' + Math.floor(100000 + Math.random() * 900000),
+        orderTime,
+        crossoverTime: stock.crossoverTime || orderTime,
+        ticker: stock.ticker,
+        executionMode: triggeredByMode,
+        instrumentType: activeLeg.instrumentType,
+        symbol: activeLeg.symbol,
+        quantity: activeLeg.quantity,
+        lots: activeLeg.lots || null,
+        entryPrice: activeLeg.entryPrice,
+        currentLtp: activeLeg.entryPrice,
+        riskPerUnit: activeLeg.riskPerUnit || activeLeg.riskPerShare,
+        activeTrailingSl: activeLeg.stopLossPrice,
+        targetPrice: activeLeg.targetPrice,
+        stateIndex: 1,
+        stateLabel: 'State 1: Initial SL (1R)'
+      };
+
+      appState.activePositions.unshift(newPosition);
+      renderAllZones();
+
+      showToast(
+        `✅ ${triggeredByMode} BUY EXECUTED: ${activeLeg.symbol} (${activeLeg.quantity} Qty) @ ₹${activeLeg.entryPrice.toFixed(
+          2
+        )} [Crossed 20D @ ${newPosition.crossoverTime}]`,
+        'emerald'
+      );
+    }
+
+    /*************************************************************************
+     * 5. LIVE VOLUME TICK SIMULATOR & INSTANT CROSSOVER TRIGGER
+     *************************************************************************/
+    function simulateVolumeTick() {
+      // Advance clock by 4 seconds per simulated volume tick
+      appState.clockSecondsElapsed += 4;
+      document.getElementById('liveMarketClock').textContent = `${getCurrentMarketTimeStr()} IST`;
+
+      appState.watchlist.forEach((stock) => {
+        // Increment Today's Volume by 1.2% to 2.8% of its 20D average per tick
+        const volStep = +(stock.avgVol20DM * (0.012 + Math.random() * 0.018)).toFixed(3);
+        stock.todayVolM = +(stock.todayVolM + volStep).toFixed(3);
+
+        // Slight realistic price movement (+0.15% bias when volume is surging)
+        const priceDeltaPct = (Math.random() - 0.42) * 0.006;
+        stock.spotLtp = Math.max(10, +(stock.spotLtp * (1 + priceDeltaPct)).toFixed(2));
+
+        // Check if this tick caused Today's Volume to cross the 20-Day Average Volume!
+        checkAndLatchVolumeCrossover(stock);
+      });
+
+      // Update live positions LTP & check trailing SL milestones
+      appState.activePositions.forEach((pos) => {
+        if (pos.stateIndex === 4) return;
+        const delta = (Math.random() - 0.40) * pos.riskPerUnit * 0.35;
+        pos.currentLtp = Math.max(1, +(pos.currentLtp + delta).toFixed(2));
+
+        const gain = pos.currentLtp - pos.entryPrice;
+        if (gain >= pos.riskPerUnit * 2 && pos.stateIndex < 3) {
+          pos.activeTrailingSl = +(pos.entryPrice + pos.riskPerUnit).toFixed(2);
+          pos.stateIndex = 3;
+          pos.stateLabel = 'State 3: +2R Profit Trail';
+        } else if (gain >= pos.riskPerUnit && pos.stateIndex < 2) {
+          pos.activeTrailingSl = pos.entryPrice;
+          pos.stateIndex = 2;
+          pos.stateLabel = 'State 2: +1R Breakeven Lock';
+        }
+      });
+
+      document.getElementById('lastScanTimeLabel').textContent =
+        `Last Tick: ${getCurrentMarketTimeStr()} IST`;
+
+      renderAllZones();
+
+      // If Toggle 2 is in AUTO mode, immediately execute any newly crossed stocks
+      if (appState.executionMode === 'AUTO') {
+        runAutoExecutionScan();
+      }
+    }
+
+    function forceVolumeCrossoverNow(tickerSymbol) {
+      const stock = appState.watchlist.find((s) => s.ticker === tickerSymbol);
+      if (!stock) return;
+
+      appState.selectedTickerSymbol = stock.ticker;
+
+      if (!stock.hasCrossed20D) {
+        // Push Today's Volume just past the 20-Day Average Volume (+3.5% surge)
+        stock.todayVolM = +(stock.avgVol20DM * 1.035).toFixed(2);
+        stock.spotLtp = +(stock.spotLtp * 1.008).toFixed(2);
+        checkAndLatchVolumeCrossover(stock);
+      } else {
+        // Already crossed, boost volume further
+        stock.todayVolM = +(stock.todayVolM + stock.avgVol20DM * 0.05).toFixed(2);
+        showToast(`${stock.ticker} already crossed at ${stock.crossoverTime} IST.`, 'info');
+      }
+
+      renderAllZones();
+      if (appState.executionMode === 'AUTO') {
+        runAutoExecutionScan();
+      }
+    }
+
+    function toggleAutoTickStream() {
+      const labelEl = document.getElementById('autoTickLabel');
+      if (appState.autoTickTimer) {
+        clearInterval(appState.autoTickTimer);
+        appState.autoTickTimer = null;
+        labelEl.textContent = '▶ Start Live Vol Stream';
+        showToast('Live Volume Stream paused.', 'amber');
+      } else {
+        appState.autoTickTimer = setInterval(simulateVolumeTick, 1500);
+        labelEl.textContent = '⏸ Pause Vol Stream';
+        showToast(
+          'Live Volume Stream running — Watch TCS & ZOMATO cross their 20D Avg Volume!',
+          'emerald'
+        );
+      }
+    }
+
+    function resetCrossoverSimulation() {
+      if (appState.autoTickTimer) {
+        clearInterval(appState.autoTickTimer);
+        appState.autoTickTimer = null;
+        document.getElementById('autoTickLabel').textContent = '▶ Start Live Vol Stream';
+      }
+      appState.watchlist = JSON.parse(JSON.stringify(INITIAL_WATCHLIST_DATA));
+      appState.crossoverEvents = JSON.parse(JSON.stringify(INITIAL_CROSSOVER_LOGS));
+      appState.idempotencyLocks.clear();
+      appState.selectedTickerSymbol = 'TCS';
+      renderAllZones();
+      showToast(
+        'Simulation reset! TCS (96.7%) and ZOMATO (97.2%) are ready to cross their 20D Avg Volume.',
+        'info'
+      );
+    }
+
+    /*************************************************************************
+     * 6. ZONE E TRAILING STOP-LOSS (TSL) CONTROLS & KILL-SWITCH
+     *************************************************************************/
+    function simulatePositionMilestone(orderId, milestone) {
+      const pos = appState.activePositions.find((p) => p.id === orderId);
+      if (!pos || pos.stateIndex === 4) return;
+
+      const r = pos.riskPerUnit;
+      if (milestone === 'PLUS_1R') {
+        pos.currentLtp = +(pos.entryPrice + r).toFixed(2);
+        pos.activeTrailingSl = +(pos.entryPrice + r * 0.05).toFixed(2);
+        pos.stateIndex = 2;
+        pos.stateLabel = 'State 2: +1R Breakeven Lock';
+        showToast(`${pos.symbol} hit +1R! Trailing SL moved to Breakeven (₹${pos.activeTrailingSl})`, 'info');
+      } else if (milestone === 'PLUS_2R') {
+        pos.currentLtp = +(pos.entryPrice + r * 2).toFixed(2);
+        pos.activeTrailingSl = +(pos.entryPrice + r).toFixed(2);
+        pos.stateIndex = 3;
+        pos.stateLabel = 'State 3: +2R Profit Trail';
+        showToast(`${pos.symbol} hit +2R! Trailing SL locked +1R profit (₹${pos.activeTrailingSl})`, 'emerald');
+      } else if (milestone === 'EXIT_TSL') {
+        pos.stateIndex = 4;
+        pos.stateLabel = 'State 4: Exited / Closed';
+        showToast(`Closed ${pos.symbol} @ ₹${pos.currentLtp.toFixed(2)}`, 'amber');
+      }
+      renderAllZones();
+    }
+
+    function triggerPanicKillSwitch() {
+      appState.executionMode = 'MANUAL';
+      if (appState.autoTickTimer) {
+        clearInterval(appState.autoTickTimer);
+        appState.autoTickTimer = null;
+        document.getElementById('autoTickLabel').textContent = '▶ Start Live Vol Stream';
+      }
+      let closed = 0;
+      appState.activePositions.forEach((p) => {
+        if (p.stateIndex < 4) {
+          p.stateIndex = 4;
+          p.stateLabel = 'State 4: Kill-Switch Square Off';
+          closed++;
+        }
+      });
+      renderTopToggleBadges();
+      renderAllZones();
+      showToast(`🛑 KILL-SWITCH: Auto Trade OFF. Squared off ${closed} open trade(s).`, 'rose');
+    }
+
+    /*************************************************************************
+     * 7. RENDERING FUNCTIONS ACROSS ALL 5 ZONES
+     *************************************************************************/
+    function renderTopToggleBadges() {
+      const instStock = document.getElementById('instBadgeStock');
+      const instOption = document.getElementById('instBadgeOption');
+      if (appState.instrumentMode === 'STOCK') {
+        instStock.className =
+          'px-2.5 py-1 text-xs font-semibold rounded-md transition-all bg-cyan-400 text-slate-950 shadow';
+        instOption.className =
+          'px-2.5 py-1 text-xs font-semibold rounded-md transition-all text-slate-400';
+      } else {
+        instStock.className =
+          'px-2.5 py-1 text-xs font-semibold rounded-md transition-all text-slate-400';
+        instOption.className =
+          'px-2.5 py-1 text-xs font-semibold rounded-md transition-all bg-purple-400 text-slate-950 shadow';
+      }
+
+      const execManual = document.getElementById('execBadgeManual');
+      const execAuto = document.getElementById('execBadgeAuto');
+      if (appState.executionMode === 'MANUAL') {
+        execManual.className =
+          'px-2.5 py-1 text-xs font-semibold rounded-md transition-all bg-amber-400 text-slate-950 shadow';
+        execAuto.className =
+          'px-2.5 py-1 text-xs font-semibold rounded-md transition-all text-slate-400';
+      } else {
+        execManual.className =
+          'px-2.5 py-1 text-xs font-semibold rounded-md transition-all text-slate-400';
+        execAuto.className =
+          'px-2.5 py-1 text-xs font-semibold rounded-md transition-all bg-emerald-400 text-slate-950 shadow animate-pulse';
+      }
+    }
+
+    function renderCrossoverTimelineLog() {
+      const container = document.getElementById('crossoverEventLogContainer');
+      document.getElementById('watchlistCountBadge').textContent = `${appState.watchlist.length} Stocks`;
+
+      if (appState.crossoverEvents.length === 0) {
+        container.innerHTML = `
+          <div class="p-4 text-center text-xs text-slate-500">
+            No stocks have crossed their 20-Day Average Volume yet.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = appState.crossoverEvents
+        .map(
+          (ev) => `
+          <div
+            onclick="selectTickerForInspection('${ev.ticker}')"
+            class="p-2.5 rounded-lg bg-obsidian/90 border border-emerald-500/30 hover:border-emerald-400/60 transition cursor-pointer space-y-1"
+          >
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="font-bold text-xs text-white">${ev.ticker}</span>
+                <span class="text-[9px] font-mono-num px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                  ELIGIBLE FOR BUY
+                </span>
+              </div>
+              <span class="font-mono-num text-[11px] font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">
+                ⏱️ ${ev.time} IST
+              </span>
+            </div>
+            <div class="text-[11px] text-slate-300 font-mono-num">
+              Crossed 20D Avg (<span class="text-white">${ev.avgVol20DM.toFixed(2)}M</span>) @ Spot <span class="text-emerald-300 font-semibold">₹${ev.crossPrice.toFixed(2)}</span>
+            </div>
+          </div>
+        `
+        )
+        .join('');
+    }
+
+    function renderScreenerTable() {
+      const tbody = document.getElementById('screenerTableBody');
+      let eligibleCount = 0;
+
+      tbody.innerHTML = appState.watchlist
+        .map((stock) => {
+          const m = getVolumeScreenerMetrics(stock);
+          if (m.isEligibleForBuy) eligibleCount++;
+          const isSelectedRow = stock.ticker === appState.selectedTickerSymbol;
+          const barWidth = Math.min(100, Math.round(m.progressPct));
+
+          return `
+            <tr
+              onclick="selectTickerForInspection('${stock.ticker}')"
+              class="cursor-pointer transition ${
+                stock.justCrossedHighlight ? 'crossover-flash bg-emerald-950/30' : ''
+              } ${isSelectedRow ? 'bg-slate-800/85' : 'hover:bg-slate-900/70'}"
+            >
+              <!-- Stock & Segment -->
+              <td class="py-2.5 px-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-white">${stock.ticker}</span>
+                  <span class="text-[10px] font-mono-num px-1.5 py-0.5 rounded ${
+                    stock.isFnO
+                      ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700'
+                  }">
+                    ${stock.isFnO ? 'F&O' : 'CASH'}
+                  </span>
+                </div>
+                <div class="text-[10px] text-slate-400">${stock.name}</div>
+              </td>
+
+              <!-- Today Vol vs 20D Avg -->
+              <td class="py-2.5 px-3 font-mono-num">
+                <div class="font-bold ${m.isEligibleForBuy ? 'text-emerald-400' : 'text-slate-200'}">
+                  ${stock.todayVolM.toFixed(2)}M <span class="text-slate-500 font-normal">/</span> ${stock.avgVol20DM.toFixed(2)}M
+                </div>
+                <div class="text-[10px] ${m.isEligibleForBuy ? 'text-emerald-300/80' : 'text-slate-400'}">
+                  ${
+                    m.isEligibleForBuy
+                      ? `Surplus: +${(stock.todayVolM - stock.avgVol20DM).toFixed(2)}M (${m.rvolRatio}x)`
+                      : `Needs +${m.deficitM.toFixed(2)}M to cross`
+                  }
+                </div>
+              </td>
+
+              <!-- Crossover Progress Bar -->
+              <td class="py-2.5 px-3 font-mono-num w-40">
+                <div class="flex items-center justify-between text-[11px] mb-1">
+                  <span class="${
+                    m.isEligibleForBuy
+                      ? 'text-emerald-400 font-bold'
+                      : m.progressPct >= 90
+                      ? 'text-amber-300 font-semibold'
+                      : 'text-slate-400'
+                  }">
+                    ${m.progressPct}%
+                  </span>
+                  <span class="text-[10px] text-slate-500">Target: 100%</span>
+                </div>
+                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    class="h-full transition-all duration-300 ${
+                      m.isEligibleForBuy
+                        ? 'bg-emerald-400'
+                        : m.progressPct >= 90
+                        ? 'bg-amber-400'
+                        : 'bg-cyan-500/70'
+                    }"
+                    style="width: ${barWidth}%"
+                  ></div>
+                </div>
+              </td>
+
+              <!-- Exact Crossover Time (HH:MM:SS) -->
+              <td class="py-2.5 px-3 font-mono-num">
+                ${
+                  stock.hasCrossed20D
+                    ? `
+                  <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-[11px]">
+                    <span>⏱️ ${stock.crossoverTime}</span>
+                  </div>
+                  <div class="text-[10px] text-slate-400 mt-0.5">Latched IST</div>
+                `
+                    : `
+                  <span class="text-[11px] text-slate-500">⏳ Waiting...</span>
+                `
+                }
+              </td>
+
+              <!-- Spot LTP & Price @ Cross -->
+              <td class="py-2.5 px-3 font-mono-num">
+                <div class="font-bold text-white">₹${stock.spotLtp.toFixed(2)}</div>
+                <div class="text-[10px] text-slate-400">
+                  ${
+                    stock.crossoverSpotPrice
+                      ? `Crossed @ ₹${stock.crossoverSpotPrice.toFixed(2)}`
+                      : 'Pre-crossover'
+                  }
+                </div>
+              </td>
+
+              <!-- Eligibility Status Badge -->
+              <td class="py-2.5 px-3">
+                ${
+                  m.isEligibleForBuy
+                    ? `
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-mono-num font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    ✅ ELIGIBLE FOR BUY
+                  </span>
+                `
+                    : `
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono-num font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                    TRACKING VOL
+                  </span>
+                `
+                }
+              </td>
+
+              <!-- Quick Test Action -->
+              <td class="py-2.5 px-3 text-right">
+                ${
+                  !stock.hasCrossed20D
+                    ? `
+                  <button
+                    onclick="event.stopPropagation(); forceVolumeCrossoverNow('${stock.ticker}')"
+                    class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition"
+                    title="Force Today's Volume to cross 20-Day Average right now and latch exact HH:MM:SS timestamp"
+                  >
+                    ⚡ Cross 20D Now
+                  </button>
+                `
+                    : `
+                  <span class="text-[10px] font-mono-num text-emerald-400 font-semibold">
+                    ${appState.idempotencyLocks.has(stock.ticker) ? '🔒 Traded' : 'Ready → Zone D'}
+                  </span>
+                `
+                }
+              </td>
+            </tr>
+          `;
+        })
+        .join('');
+
+      document.getElementById('eligibleCountBadge').textContent = `${eligibleCount} Eligible for Buy`;
+    }
+
+    function renderDynamicActionCard() {
+      const container = document.getElementById('dynamicActionCardContainer');
+      const stock =
+        appState.watchlist.find((s) => s.ticker === appState.selectedTickerSymbol) ||
+        appState.watchlist[0];
+      if (!stock) return;
+
+      const payload = buildNextActionPayload(stock);
+      const isEligible = payload.isEligibleForBuy;
+      const isAlreadyTraded = appState.idempotencyLocks.has(stock.ticker);
+
+      if (appState.showJsonPayload) {
+        container.innerHTML = `
+          <div class="space-y-2">
+            <div class="text-xs font-semibold text-cyan-300 flex items-center justify-between">
+              <span>Live JSON State (${stock.ticker})</span>
+              <span class="text-[10px] text-slate-400">Includes Crossover Timestamp</span>
+            </div>
+            <pre class="bg-obsidian p-3 rounded-xl border border-slate-800 font-mono-num text-[11px] text-emerald-300 overflow-x-auto leading-relaxed">${JSON.stringify(
+              payload,
+              null,
+              2
+            )}</pre>
+          </div>
+        `;
+        return;
+      }
+
+      const showCashFallbackNotice =
+        appState.instrumentMode === 'OPTION' && !stock.isFnO;
+      const activeLeg =
+        payload.toggleConfiguration.effectiveInstrumentMode === 'OPTION' &&
+        payload.optionBuyDetails
+          ? payload.optionBuyDetails
+          : payload.stockBuyDetails;
+
+      container.innerHTML = `
+        <div class="space-y-3">
+          <!-- Stock Header & Eligibility Status -->
+          <div class="p-3 rounded-xl bg-obsidian border ${
+            isEligible ? 'border-emerald-500/40' : 'border-slate-800'
+          } flex items-center justify-between">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-base font-bold text-white">${stock.ticker}</span>
+                <span class="text-[10px] font-mono-num px-2 py-0.5 rounded font-bold ${
+                  isEligible
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }">
+                  ${isEligible ? 'ELIGIBLE FOR BUY' : 'NOT ELIGIBLE YET'}
+                </span>
+              </div>
+              <div class="text-[11px] text-slate-400 mt-0.5 font-mono-num">
+                Today Vol: <span class="text-white font-semibold">${stock.todayVolM.toFixed(2)}M</span>
+                / 20D Avg: <span class="text-cyan-300 font-semibold">${stock.avgVol20DM.toFixed(2)}M</span>
+                (${payload.volumeTracking.crossoverProgressPct}%)
+              </div>
+            </div>
+          </div>
+
+          <!-- EXACT CROSSOVER TIMESTAMP AUDIT BANNER -->
+          ${
+            isEligible
+              ? `
+            <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-bold text-emerald-300 flex items-center gap-1">
+                  ⏱️ 20D Vol Crossover Time:
+                </span>
+                <span class="font-mono-num font-bold text-amber-300 bg-obsidian/80 px-2 py-0.5 rounded border border-amber-500/30">
+                  ${stock.crossoverTime} IST
+                </span>
+              </div>
+              <div class="flex items-center justify-between text-[11px] text-slate-300 font-mono-num">
+                <span>Price @ Crossover: <strong>₹${stock.crossoverSpotPrice.toFixed(2)}</strong></span>
+                <span>Current LTP: <strong class="text-emerald-300">₹${stock.spotLtp.toFixed(2)}</strong></span>
+              </div>
+            </div>
+          `
+              : `
+            <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+              <div class="text-xs font-bold text-amber-300 flex items-center justify-between">
+                <span>⏳ Waiting for 20D Vol Crossover</span>
+                <span class="font-mono-num">${payload.volumeTracking.crossoverProgressPct}%</span>
+              </div>
+              <p class="text-[11px] text-slate-300">
+                Needs <strong class="font-mono-num text-white">+${payload.volumeTracking.remainingDeficitM.toFixed(2)}M</strong> more volume today to beat the 20-day average (<strong class="font-mono-num">${stock.avgVol20DM.toFixed(2)}M</strong>) and unlock buying.
+              </p>
+              <button
+                onclick="forceVolumeCrossoverNow('${stock.ticker}')"
+                class="w-full py-1.5 rounded-lg text-xs font-bold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition"
+              >
+                ⚡ Simulate Volume Crossover Now
+              </button>
+            </div>
+          `
+          }
+
+          ${
+            showCashFallbackNotice
+              ? `
+            <div class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200">
+              ⚠️ <strong>Cash-Only Stock:</strong> ${stock.ticker} has no F&amp;O Option Chain. Automatically showing <strong>Stock Equity</strong> details.
+            </div>
+          `
+              : ''
+          }
+
+          <!-- NEXT ACTION DETAILS (STOCK vs OPTION BASED ON TOGGLE 1) -->
+          <div class="p-3.5 rounded-xl bg-obsidian/90 border border-slate-800 space-y-2.5">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div>
+                <div class="text-[10px] uppercase text-slate-400 font-semibold">Next Action (Toggle 1)</div>
+                <div class="text-xs font-bold ${
+                  activeLeg.instrumentType.includes('OPTION') ? 'text-purple-300' : 'text-cyan-300'
+                }">
+                  ${activeLeg.instrumentType}
+                </div>
+              </div>
+              <span class="text-xs font-mono-num font-bold text-white bg-slate-900 px-2.5 py-1 rounded border border-slate-700">
+                ${activeLeg.symbol}
+              </span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono-num">
+              <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                <div class="text-[10px] text-slate-400">Entry Price</div>
+                <div class="font-bold text-white">₹${activeLeg.entryPrice.toFixed(2)}</div>
+              </div>
+              <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                <div class="text-[10px] text-slate-400">Order Quantity</div>
+                <div class="font-bold text-cyan-300">
+                  ${
+                    activeLeg.lots
+                      ? `${activeLeg.lots} Lot (${activeLeg.quantity} Qty)`
+                      : `${activeLeg.quantity} Shares`
+                  }
+                </div>
+              </div>
+              <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                <div class="text-[10px] text-rose-300">Stop-Loss (1R)</div>
+                <div class="font-bold text-rose-400">₹${activeLeg.stopLossPrice.toFixed(2)}</div>
+              </div>
+              <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                <div class="text-[10px] text-emerald-300">Target (1:2)</div>
+                <div class="font-bold text-emerald-400">₹${activeLeg.targetPrice.toFixed(2)}</div>
+              </div>
+            </div>
+
+            ${
+              activeLeg.lots
+                ? `
+              <div class="grid grid-cols-3 gap-2 pt-1 text-[11px] font-mono-num">
+                <div class="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                  <div class="text-[9px] text-purple-300 uppercase">ATM Strike</div>
+                  <div class="font-bold text-white">${activeLeg.strikePrice} CE</div>
+                </div>
+                <div class="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                  <div class="text-[9px] text-purple-300 uppercase">Delta</div>
+                  <div class="font-bold text-white">${activeLeg.delta}</div>
+                </div>
+                <div class="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                  <div class="text-[9px] text-purple-300 uppercase">IV %</div>
+                  <div class="font-bold text-white">${activeLeg.ivPct}%</div>
+                </div>
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+
+        <!-- EXECUTION FOOTER (CONTROLLED BY TOGGLE 2: MANUAL VS AUTO) -->
+        <div class="pt-2 border-t border-slate-800 space-y-2">
+          ${
+            appState.executionMode === 'MANUAL'
+              ? isEligible
+                ? `
+                <button
+                  onclick="executeBuyOrder('${stock.ticker}', 'MANUAL')"
+                  class="w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg transition flex items-center justify-center gap-2"
+                >
+                  <span>🚀 Execute Buy: ${activeLeg.symbol}</span>
+                </button>
+                <div class="text-[10px] text-center text-slate-400">
+                  Toggle 2 is <strong>MANUAL</strong> — Click to place order for this eligible stock.
+                </div>
+              `
+                : `
+                <button
+                  disabled
+                  class="w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider bg-slate-800/80 text-slate-500 border border-slate-700 cursor-not-allowed"
+                >
+                  🔒 Locked Until 20D Volume Crossover
+                </button>
+              `
+              : `
+              <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
+                <div class="flex items-center justify-between text-xs font-bold text-emerald-300">
+                  <span>🤖 AUTO EXECUTION MODE ACTIVE</span>
+                  <span class="font-mono-num text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20">
+                    ${isAlreadyTraded ? 'ORDER DISPATCHED' : 'ARMED'}
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-300">
+                  ${
+                    isAlreadyTraded
+                      ? `${stock.ticker} was automatically bought upon crossing its 20-Day Volume Average at ${stock.crossoverTime}.`
+                      : `The instant ${stock.ticker} crosses ${stock.avgVol20DM.toFixed(2)}M volume, the system will auto-buy ${activeLeg.symbol}.`
+                  }
+                </p>
+              </div>
+            `
+          }
+        </div>
+      `;
+    }
+
+    function renderActivePositionsTable() {
+      const tbody = document.getElementById('activePositionsTableBody');
+      let totalPnl = 0;
+      const openCount = appState.activePositions.filter((p) => p.stateIndex < 4).length;
+
+      document.getElementById('openPosCounter').textContent = `Open Positions: ${openCount} / ${appState.maxOpenPositions} Max`;
+      document.getElementById('idempotencyLockCounter').textContent = `Auto-Trade Locks: ${appState.idempotencyLocks.size} Tickers`;
+
+      if (appState.activePositions.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="11" class="py-6 text-center text-xs text-slate-400">
+              No active trades yet. Click <strong>"Execute Buy"</strong> on an eligible stock in Zone D or switch <strong>Toggle 2 to AUTO TRADE</strong>.
+            </td>
+          </tr>
+        `;
+        document.getElementById('globalMtmPnl').textContent = '₹0.00';
+        return;
+      }
+
+      tbody.innerHTML = appState.activePositions
+        .map((pos) => {
+          const unitPnl = pos.currentLtp - pos.entryPrice;
+          const posPnl = +(unitPnl * pos.quantity).toFixed(2);
+          totalPnl += posPnl;
+
+          return `
+            <tr class="${pos.stateIndex === 4 ? 'opacity-60 bg-obsidian/40' : 'hover:bg-slate-900/60'}">
+              <td class="py-2.5 px-3 font-mono-num">
+                <div class="text-slate-200">${pos.orderTime}</div>
+                <span class="text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                  pos.executionMode === 'AUTO'
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : 'bg-amber-500/15 text-amber-300'
+                }">${pos.executionMode}</span>
+              </td>
+              <td class="py-2.5 px-3 font-mono-num">
+                <span class="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-[11px]">
+                  ⏱️ ${pos.crossoverTime}
+                </span>
+              </td>
+              <td class="py-2.5 px-3 font-mono-num font-bold text-white">${pos.symbol}</td>
+              <td class="py-2.5 px-3 font-mono-num text-cyan-300">
+                ${pos.lots ? `${pos.lots} Lot (${pos.quantity})` : `${pos.quantity} Eq`}
+              </td>
+              <td class="py-2.5 px-3 font-mono-num text-slate-200">₹${pos.entryPrice.toFixed(2)}</td>
+              <td class="py-2.5 px-3 font-mono-num font-bold text-white">₹${pos.currentLtp.toFixed(2)}</td>
+              <td class="py-2.5 px-3 font-mono-num font-bold text-cyan-300">₹${pos.activeTrailingSl.toFixed(2)}</td>
+              <td class="py-2.5 px-3 font-mono-num text-emerald-400">₹${pos.targetPrice.toFixed(2)}</td>
+              <td class="py-2.5 px-3">
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono-num font-semibold border border-slate-700 bg-slate-800 text-slate-200">
+                  ${pos.stateLabel}
+                </span>
+              </td>
+              <td class="py-2.5 px-3 font-mono-num font-bold ${
+                posPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
+              }">
+                ${posPnl >= 0 ? '+' : ''}₹${posPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </td>
+              <td class="py-2.5 px-3 text-right space-x-1">
+                ${
+                  pos.stateIndex < 4
+                    ? `
+                  <button
+                    onclick="simulatePositionMilestone('${pos.id}', 'PLUS_1R')"
+                    class="px-2 py-1 rounded text-[10px] font-mono-num bg-slate-800 hover:bg-cyan-500/20 text-cyan-300 border border-slate-700"
+                  >+1R Lock</button>
+                  <button
+                    onclick="simulatePositionMilestone('${pos.id}', 'PLUS_2R')"
+                    class="px-2 py-1 rounded text-[10px] font-mono-num bg-slate-800 hover:bg-emerald-500/20 text-emerald-300 border border-slate-700"
+                  >+2R Trail</button>
+                  <button
+                    onclick="simulatePositionMilestone('${pos.id}', 'EXIT_TSL')"
+                    class="px-2 py-1 rounded text-[10px] font-mono-num bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30"
+                  >Exit</button>
+                `
+                    : `<span class="text-[10px] text-slate-500 font-mono-num">CLOSED</span>`
+                }
+              </td>
+            </tr>
+          `;
+        })
+        .join('');
+
+      const globalPnlEl = document.getElementById('globalMtmPnl');
+      globalPnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}₹${totalPnl.toLocaleString('en-IN', {
+        minimumFractionDigits: 2
+      })}`;
+      globalPnlEl.className = `text-xs font-mono-num font-bold ${
+        totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
+      }`;
+    }
+
+    function renderAllZones() {
+      renderCrossoverTimelineLog();
+      renderScreenerTable();
+      renderDynamicActionCard();
+      renderActivePositionsTable();
+    }
+
+    /*************************************************************************
+     * 8. USER INTERACTION & CUSTOM WATCHLIST INGESTION
+     *************************************************************************/
+    function selectTickerForInspection(tickerSymbol) {
+      appState.selectedTickerSymbol = tickerSymbol;
+      renderAllZones();
+    }
+
+    function toggleJsonPayloadView() {
+      appState.showJsonPayload = !appState.showJsonPayload;
+      renderDynamicActionCard();
+    }
+
+    function handleAddCustomStock(e) {
+      e.preventDefault();
+      const rawTicker = document.getElementById('newTickerInput').value.trim().toUpperCase();
+      if (!rawTicker) return;
+
+      const segment = document.getElementById('newSegmentInput').value;
+      const spotLtp = parseFloat(document.getElementById('newSpotInput').value) || 1000;
+      const avgVol20DM = parseFloat(document.getElementById('newAvgVolInput').value) || 10.0;
+      const todayVolM = parseFloat(document.getElementById('newCurVolInput').value) || 9.5;
+
+      const alreadyCrossed = todayVolM >= avgVol20DM;
+      const nowStr = getCurrentMarketTimeStr();
+
+      const newStock = {
+        ticker: rawTicker,
+        name: `${rawTicker} Custom Ltd`,
+        isFnO: segment === 'FNO',
+        lotSize: segment === 'FNO' ? 250 : 1,
+        strikeStep: spotLtp > 1500 ? 50 : 20,
+        spotLtp,
+        todayVolM,
+        avgVol20DM,
+        hasCrossed20D: alreadyCrossed,
+        crossoverTime: alreadyCrossed ? nowStr : null,
+        crossoverSpotPrice: alreadyCrossed ? spotLtp : null,
+        ivPct: segment === 'FNO' ? 19.2 : 0,
+        justCrossedHighlight: alreadyCrossed
+      };
+
+      if (alreadyCrossed) {
+        appState.crossoverEvents.unshift({
+          ticker: rawTicker,
+          time: nowStr,
+          avgVol20DM,
+          crossPrice: spotLtp,
+          isFnO: segment === 'FNO'
+        });
+      }
+
+      const existingIdx = appState.watchlist.findIndex((s) => s.ticker === rawTicker);
+      if (existingIdx >= 0) {
+        appState.watchlist[existingIdx] = newStock;
+      } else {
+        appState.watchlist.unshift(newStock);
+      }
+
+      appState.selectedTickerSymbol = rawTicker;
+      document.getElementById('newTickerInput').value = '';
+      renderAllZones();
+
+      showToast(
+        alreadyCrossed
+          ? `Added ${rawTicker} — Already above 20D Avg Vol! Crossover latched at ${nowStr}.`
+          : `Added ${rawTicker} — Tracking volume (${todayVolM}M / ${avgVol20DM}M).`,
+        alreadyCrossed ? 'emerald' : 'info'
+      );
+
+      if (appState.executionMode === 'AUTO') {
+        runAutoExecutionScan();
+      }
+    }
+
+    function showToast(message, variant = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      let colors = 'bg-slate-900 border-cyan-500/50 text-slate-100';
+      if (variant === 'emerald') colors = 'bg-slate-900 border-emerald-500/60 text-emerald-200';
+      if (variant === 'amber') colors = 'bg-slate-900 border-amber-500/60 text-amber-200';
+      if (variant === 'rose') colors = 'bg-slate-900 border-rose-500/60 text-rose-200';
+
+      toast.className = `pointer-events-auto px-3.5 py-2.5 rounded-xl border shadow-xl text-xs font-medium transition-all duration-300 ${colors}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3600);
+    }
+
+    /*************************************************************************
+     * 9. DOWNLOADABLE PROJECT FOLDER (.ZIP) GENERATOR
+     *************************************************************************/
+    function getPythonBackendReferenceCode() {
+      return `"""
+QuantPulse Backend Engine — 20-Day Volume Crossover Tracker & Exact Timestamp Latch
+Tracks live cumulative volume against 20-Day Average Volume and latches the exact HH:MM:SS
+crossover timestamp when today_volume >= avg_vol_20d.
+"""
+import math
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal, Optional
+
+@dataclass
+class StockVolumeState:
+    ticker: str
+    is_fno: bool
+    lot_size: int
+    strike_step: int
+    spot_ltp: float
+    today_vol: int
+    avg_vol_20d: int
+    has_crossed_20d: bool = False
+    crossover_time: Optional[str] = None
+    crossover_spot_price: Optional[float] = None
+
+class VolumeCrossoverEngine:
+    def __init__(self, capital_per_trade: float = 100000.0):
+        self.capital_per_trade = capital_per_trade
+        self.idempotency_locks = set()
+
+    def process_live_tick(self, stock: StockVolumeState, new_cumulative_vol: int, new_ltp: float) -> dict:
+        stock.today_vol = new_cumulative_vol
+        stock.spot_ltp = new_ltp
+
+        # Latch exact HH:MM:SS timestamp on first crossover of 20-Day Average Volume
+        if not stock.has_crossed_20d and stock.today_vol >= stock.avg_vol_20d:
+            stock.has_crossed_20d = True
+            stock.crossover_time = datetime.now().strftime("%H:%M:%S")
+            stock.crossover_spot_price = new_ltp
+
+        progress_pct = round((stock.today_vol / max(stock.avg_vol_20d, 1)) * 100, 1)
+        return {
+            "ticker": stock.ticker,
+            "today_vol": stock.today_vol,
+            "avg_vol_20d": stock.avg_vol_20d,
+            "progress_pct": progress_pct,
+            "eligible_for_buy": stock.has_crossed_20d,
+            "exact_crossover_time": stock.crossover_time,
+            "crossover_spot_price": stock.crossover_spot_price,
+        }
+
+    def resolve_next_action(
+        self, stock: StockVolumeState, instrument_toggle: Literal["STOCK", "OPTION"]
+    ) -> dict:
+        if not stock.has_crossed_20d:
+            return {"status": "LOCKED_WAITING_FOR_20D_VOL_CROSSOVER"}
+
+        if instrument_toggle == "OPTION" and not stock.is_fno:
+            instrument_toggle = "STOCK"
+
+        if instrument_toggle == "STOCK":
+            qty = max(1, math.floor(self.capital_per_trade / stock.spot_ltp))
+            sl = round(stock.spot_ltp * 0.99, 2)
+            target = round(stock.spot_ltp * 1.02, 2)
+            return {
+                "instrument": f"{stock.ticker}-EQ",
+                "mode": "STOCK",
+                "qty": qty,
+                "entry": stock.spot_ltp,
+                "stop_loss": sl,
+                "target": target,
+                "crossover_time": stock.crossover_time,
+            }
+
+        atm_strike = round(stock.spot_ltp / stock.strike_step) * stock.strike_step
+        premium = round(stock.spot_ltp * 0.0165, 2)
+        lots = max(1, math.floor(self.capital_per_trade / (premium * stock.lot_size)))
+        return {
+            "instrument": f"{stock.ticker} {atm_strike} CE",
+            "mode": "OPTION",
+            "lots": lots,
+            "qty": lots * stock.lot_size,
+            "entry_premium": premium,
+            "stop_loss_premium": round(premium * 0.80, 2),
+            "target_premium": round(premium * 1.40, 2),
+            "crossover_time": stock.crossover_time,
+        }
+`;
+    }
+
+    function getReadmeMarkdownContent() {
+      return `# QuantPulse — 20-Day Volume Crossover & Options Execution Terminal
+
+## Core Logic Implemented
+1. **20-Day Volume Crossover Tracker**: Continuously compares each stock's \`todayVol\` against its \`avgVol20D\`.
+2. **Exact Crossover Timestamp Latch (\`HH:MM:SS\`)**: At the exact tick where \`todayVol >= avgVol20D\` for the first time, the engine latches \`crossoverTime\` and \`crossoverSpotPrice\` and flips the stock to \`ELIGIBLE FOR BUY\`.
+3. **Toggle 1 (Buy Stock vs Buy Option)**: Dynamically switches the Next Action Card between Cash Equity shares and the nearest ATM Call Option (\`CE\`).
+4. **Toggle 2 (Manual vs Auto Trade)**: Either waits for manual confirmation or automatically dispatches the buy order the millisecond a stock crosses its 20-day average volume.
+`;
+    }
+
+    async function downloadProjectZipFolder() {
+      try {
+        if (typeof JSZip === 'undefined') {
+          downloadStandaloneHtmlFile();
+          return;
+        }
+        showToast('Packaging volume-crossover-trader-prototype.zip...', 'info');
+        const zip = new JSZip();
+        const root = zip.folder('volume-crossover-trader-prototype');
+
+        const fullHtmlSource = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+        root.file('index.html', fullHtmlSource);
+
+        const styleContent = document.querySelector('style').innerText;
+        root.folder('css').file('styles.css', styleContent);
+
+        const scripts = document.querySelectorAll('script');
+        const appJsContent = scripts[scripts.length - 1].innerText;
+        root.folder('js').file('app.js', appJsContent);
+
+        root.folder('backend').file('volume_crossover_engine.py', getPythonBackendReferenceCode());
+        root.file('README.md', getReadmeMarkdownContent());
+
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'volume-crossover-trader-prototype.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        showToast('Downloaded volume-crossover-trader-prototype.zip!', 'emerald');
+      } catch (err) {
+        console.error(err);
+        downloadStandaloneHtmlFile();
+      }
+    }
+
+    function downloadStandaloneHtmlFile() {
+      const fullHtmlSource = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+      const blob = new Blob([fullHtmlSource], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'volume-crossover-terminal.html';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast('Downloaded volume-crossover-terminal.html!', 'emerald');
+    }
+
+    function openFolderContentsModal() {
+      document.getElementById('pythonCodePreviewBox').textContent = getPythonBackendReferenceCode();
+      document.getElementById('folderModal').classList.remove('hidden');
+    }
+
+    function closeFolderContentsModal() {
+      document.getElementById('folderModal').classList.add('hidden');
+    }
+
+    window.onload = function () {
+      appState.watchlist = JSON.parse(JSON.stringify(INITIAL_WATCHLIST_DATA));
+      appState.crossoverEvents = JSON.parse(JSON.stringify(INITIAL_CROSSOVER_LOGS));
+      renderTopToggleBadges();
+      renderAllZones();
+      startMarketClockTicker();
+    };
+  </script>
+</body>
+</html>
