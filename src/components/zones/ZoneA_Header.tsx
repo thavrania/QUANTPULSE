@@ -10,6 +10,12 @@ export function ZoneA_Header() {
     totalMtmPnl,
     isLiveStreaming,
     isSupabaseActive,
+    feedMode,
+    setFeedMode,
+    lastLiveSyncTime,
+    isLiveFetching,
+    fetchLiveDhanQuotes,
+    refreshLiveQuotesNow,
     setInstrumentMode,
     setExecutionMode,
     setCapitalPerTrade,
@@ -32,7 +38,7 @@ export function ZoneA_Header() {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center shadow-inner">
             <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
           </div>
           <div>
@@ -51,6 +57,12 @@ export function ZoneA_Header() {
                   Local High-Perf Sim
                 </span>
               )}
+              {lastLiveSyncTime && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Dhan Sync: {lastLiveSyncTime}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -60,11 +72,11 @@ export function ZoneA_Header() {
           </div>
         </div>
 
-        {/* Master Toggles (Instrument & Trade Mode) */}
+        {/* Master Toggles (Instrument, Trade Mode & Feed Source) */}
         <div className="flex flex-wrap items-center gap-2.5 bg-obsidian/90 p-1.5 rounded-xl border border-slate-800">
           
           {/* Toggle 1: Stock vs Option */}
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800/80">
+          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800/80">
             <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
               Action:
             </div>
@@ -95,7 +107,7 @@ export function ZoneA_Header() {
           </div>
 
           {/* Toggle 2: Manual vs Auto Trade */}
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800/80">
+          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800/80">
             <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
               Trade Mode:
             </div>
@@ -121,6 +133,40 @@ export function ZoneA_Header() {
                 }`}
               >
                 AUTO TRADE
+              </button>
+            </div>
+          </div>
+
+          {/* Toggle 3: Live Dhan Feed vs Simulation */}
+          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800/80">
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+              Feed:
+            </div>
+            <div className="inline-flex items-center h-7 rounded-lg p-0.5 border border-slate-700 bg-slate-800">
+              <button
+                type="button"
+                onClick={() => setFeedMode('DHAN_LIVE')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                  feedMode === 'DHAN_LIVE'
+                    ? 'bg-rose-500 text-white shadow font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Direct Live Market Feed from Dhan HQ Open API v2"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${feedMode === 'DHAN_LIVE' ? 'bg-white animate-pulse' : 'bg-rose-400'}`}></span>
+                LIVE DHAN
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeedMode('SIMULATION')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                  feedMode === 'SIMULATION'
+                    ? 'bg-emerald-400 text-slate-950 shadow font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Deterministic Tick Simulator (Testing & Weekend Replay)"
+              >
+                SIMULATOR
               </button>
             </div>
           </div>
@@ -154,35 +200,53 @@ export function ZoneA_Header() {
             </div>
           </div>
 
-          {/* Simulator Stream & Actions */}
+          {/* Feed & Stream Actions */}
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={simulateSingleTick}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
-              title="Advance 1 Volume & Price Tick across all stocks"
-            >
-              + Boost Vol Tick
-            </button>
+            {feedMode === 'DHAN_LIVE' ? (
+              <button
+                type="button"
+                onClick={refreshLiveQuotesNow}
+                disabled={isLiveFetching}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1.5"
+                title="Fetch latest live market quotes for all symbols from Dhan HQ"
+              >
+                <span className={isLiveFetching ? 'animate-spin' : ''}>🔄</span>
+                <span>{isLiveFetching ? 'Syncing...' : 'Live Sync'}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={simulateSingleTick}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
+                title="Advance 1 Volume & Price Tick across all stocks"
+              >
+                + Boost Vol Tick
+              </button>
+            )}
+
             <button
               type="button"
               onClick={toggleLiveStream}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1 ${
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 ${
                 isLiveStreaming
-                  ? 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30'
+                  ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/40'
                   : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
               }`}
             >
-              <span>{isLiveStreaming ? '⏸ Pause Vol Stream' : '▶ Start Live Vol Stream'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isLiveStreaming ? 'bg-rose-400 animate-pulse' : 'bg-emerald-400'}`}></span>
+              <span>{isLiveStreaming ? '⏸ Pause Stream' : feedMode === 'DHAN_LIVE' ? '▶ Start Live Feed' : '▶ Start Vol Stream'}</span>
             </button>
-            <button
-              type="button"
-              onClick={resetSimulation}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-              title="Reset simulation states"
-            >
-              ↺ Reset
-            </button>
+
+            {feedMode === 'SIMULATION' && (
+              <button
+                type="button"
+                onClick={resetSimulation}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                title="Reset simulation states"
+              >
+                ↺ Reset
+              </button>
+            )}
           </div>
 
           {/* Panic Kill Switch */}

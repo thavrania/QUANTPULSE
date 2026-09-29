@@ -19,6 +19,12 @@ export interface Stock {
   crossoverSpotPrice: number | null;
   ivPct: number;
   justCrossedHighlight?: boolean;
+  dayHigh?: number;
+  dayLow?: number;
+  dayOpen?: number;
+  dayClose?: number;
+  changePct?: number;
+  feedSource?: 'LIVE_DHAN' | 'SIMULATED';
 }
 
 export interface CrossoverEvent {

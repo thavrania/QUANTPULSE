@@ -12,7 +12,9 @@ export function BrokerSettingsModal() {
   const [accessToken, setAccessToken] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncingBaselines, setIsSyncingBaselines] = useState(false);
+  const [isTestingQuote, setIsTestingQuote] = useState(false);
   const [testResult, setTestResult] = useState<BrokerConnectionTestResult | null>(null);
+  const [liveQuotePreview, setLiveQuotePreview] = useState<Record<string, any> | null>(null);
 
   // Load saved credentials from localStorage
   useEffect(() => {
@@ -110,6 +112,40 @@ export function BrokerSettingsModal() {
       showToast(`Baseline sync error: ${err.message}`, 'rose');
     } finally {
       setIsSyncingBaselines(false);
+    }
+  };
+
+  const handleTestLiveQuotes = async () => {
+    if (!clientId.trim() || !accessToken.trim()) {
+      showToast('Please enter both Dhan Client ID and Access Token.', 'rose');
+      return;
+    }
+
+    setIsTestingQuote(true);
+    setLiveQuotePreview(null);
+
+    try {
+      const res = await fetch('/api/broker/dhan/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tickers: ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK'],
+          clientId: clientId.trim(),
+          accessToken: accessToken.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.quotes) {
+        setLiveQuotePreview(data.quotes);
+        showToast('✅ Live Market Quotes successfully received from Dhan HQ!', 'emerald');
+      } else {
+        showToast(`Market Quote failed: ${data.message || 'Unknown error'}`, 'rose');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'rose');
+    } finally {
+      setIsTestingQuote(false);
     }
   };
 
@@ -226,27 +262,68 @@ export function BrokerSettingsModal() {
                 />
               </div>
 
-              {/* Action Buttons: Ping & Baseline Sync */}
-              <div className="grid grid-cols-2 gap-2 pt-1">
+              {/* Action Buttons: Ping, Baseline Sync, Live Quotes */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
                 <button
                   type="button"
                   onClick={handleTestConnection}
                   disabled={isTesting}
-                  className="py-2 px-3 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center justify-center gap-1.5"
+                  className="py-2 px-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center justify-center gap-1"
                 >
-                  {isTesting ? 'Pinging Dhan...' : '⚡ Test Connection'}
+                  {isTesting ? 'Pinging...' : '⚡ Test Auth'}
                 </button>
 
                 <button
                   type="button"
                   onClick={handleSync20DBaselines}
                   disabled={isSyncingBaselines}
-                  className="py-2 px-3 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition flex items-center justify-center gap-1.5"
+                  className="py-2 px-2 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition flex items-center justify-center gap-1"
                   title="Calculates real 20-day average volume for stocks from Dhan historical charts"
                 >
-                  {isSyncingBaselines ? 'Calculating...' : '📊 Sync 20D Baselines'}
+                  {isSyncingBaselines ? 'Syncing...' : '📊 20D Baselines'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleTestLiveQuotes}
+                  disabled={isTestingQuote}
+                  className="py-2 px-2 rounded-lg text-xs font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 transition flex items-center justify-center gap-1"
+                  title="Test fetching live marketfeed quote data from Dhan HQ"
+                >
+                  {isTestingQuote ? 'Fetching...' : '📈 Test Live Feed'}
                 </button>
               </div>
+
+              {/* Live Quote Preview Table */}
+              {liveQuotePreview && (
+                <div className="p-3 bg-obsidian rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-white flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Live Marketfeed Received from Dhan HQ
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {new Date().toLocaleTimeString('en-IN')} IST
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                    {Object.entries(liveQuotePreview).map(([sym, q]: [string, any]) => (
+                      <div key={sym} className="p-2 bg-slate-900/80 rounded border border-slate-800 flex justify-between items-center">
+                        <div>
+                          <span className="font-bold text-white">{sym}</span>
+                          <div className="text-[10px] text-slate-400">Vol: {q.volumeM}M</div>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-emerald-400">₹{q.ltp}</span>
+                          <div className={`text-[10px] ${q.changePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {q.changePct >= 0 ? '+' : ''}{q.changePct}%
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Ping Result Banner */}
               {testResult && (

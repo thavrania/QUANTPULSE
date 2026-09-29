@@ -47,12 +47,16 @@ interface QuantPulseContextType {
   idempotencyLocks: string[];
   totalMtmPnl: number;
   isSupabaseActive: boolean;
+  feedMode: 'DHAN_LIVE' | 'SIMULATION';
+  lastLiveSyncTime: string | null;
+  isLiveFetching: boolean;
 
   // Actions
   setSelectedTicker: (ticker: string) => void;
   setInstrumentMode: (mode: InstrumentMode) => void;
   setExecutionMode: (mode: ExecutionMode) => void;
   setCapitalPerTrade: (val: number) => void;
+  setFeedMode: (mode: 'DHAN_LIVE' | 'SIMULATION') => void;
   forceCrossover: (ticker: string) => void;
   executeBuy: (ticker: string, triggeredBy?: ExecutionMode) => void;
   panicKillSwitch: () => void;
@@ -60,6 +64,8 @@ interface QuantPulseContextType {
   addCustomStock: (stock: Omit<Stock, 'hasCrossed20D' | 'crossoverTime' | 'crossoverSpotPrice'>) => void;
   toggleLiveStream: () => void;
   simulateSingleTick: () => void;
+  fetchLiveDhanQuotes: (isManualTrigger?: boolean) => Promise<boolean>;
+  refreshLiveQuotesNow: () => Promise<void>;
   resetSimulation: () => void;
   setIsJsonModalOpen: (open: boolean) => void;
   setIsAddStockModalOpen: (open: boolean) => void;
@@ -94,8 +100,25 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [idempotencyLocks, setIdempotencyLocks] = useState<string[]>([]);
+  const [feedMode, setFeedModeState] = useState<'DHAN_LIVE' | 'SIMULATION'>('DHAN_LIVE');
+  const [lastLiveSyncTime, setLastLiveSyncTime] = useState<string | null>(null);
+  const [isLiveFetching, setIsLiveFetching] = useState<boolean>(false);
 
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedFeedMode = localStorage.getItem('qp_feed_mode') as 'DHAN_LIVE' | 'SIMULATION';
+      if (savedFeedMode) setFeedModeState(savedFeedMode);
+    }
+  }, []);
+
+  const setFeedMode = useCallback((mode: 'DHAN_LIVE' | 'SIMULATION') => {
+    setFeedModeState(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qp_feed_mode', mode);
+    }
+  }, []);
 
   const showToast = useCallback(
     (message: string, variant: 'info' | 'emerald' | 'amber' | 'rose' = 'info') => {
@@ -397,20 +420,198 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     );
   }, [clockSeconds, idempotencyLocks, positions, runAutoScan, showToast]);
 
+  const fetchLiveDhanQuotes = useCallback(
+    async (isManualTrigger = false): Promise<boolean> => {
+      try {
+        setIsLiveFetching(true);
+        const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
+        const accessToken = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_access_token') || '' : '';
+
+        const tickers = watchlist.map((s) => s.ticker);
+        const res = await fetch('/api/broker/dhan/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickers, clientId, accessToken }),
+        });
+
+        const data = await res.json();
+        if (!data.success || !data.quotes) {
+          if (!data.isConfigured) {
+            if (isManualTrigger) {
+              showToast('Dhan credentials not configured. Open "🔌 Broker: Dhan HQ" to configure keys.', 'amber');
+            }
+          } else {
+            showToast(`Dhan Feed: ${data.message}`, 'rose');
+          }
+          return false;
+        }
+
+        const quotesMap = data.quotes;
+        const nowTime = formatClockIST(clockSeconds);
+
+        setWatchlist((prevWl) => {
+          const updatedWl = prevWl.map((stock) => {
+            const q = quotesMap[stock.ticker];
+            if (!q) return stock;
+
+            const updated: Stock = {
+              ...stock,
+              spotLtp: q.ltp || stock.spotLtp,
+              todayVolM: q.volumeM !== undefined ? q.volumeM : stock.todayVolM,
+              dayHigh: q.high || stock.dayHigh,
+              dayLow: q.low || stock.dayLow,
+              dayOpen: q.open || stock.dayOpen,
+              dayClose: q.close || stock.dayClose,
+              changePct: q.changePct !== undefined ? q.changePct : stock.changePct,
+              feedSource: 'LIVE_DHAN',
+            };
+
+            const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, nowTime);
+            if (newlyCrossed && event) {
+              setCrossoverEvents((prevEv) => [event, ...prevEv]);
+              showToast(
+                `🚀 [LIVE MARKET] ${stock.ticker} Crossed 20D Volume (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)}!`,
+                'emerald'
+              );
+
+              if (isSupabaseConfigured && supabase) {
+                supabase
+                  .from('crossover_events')
+                  .insert({
+                    ticker: event.ticker,
+                    time_ist: event.time,
+                    avg_vol_20d_m: event.avgVol20DM,
+                    cross_price: event.crossPrice,
+                    is_fno: event.isFnO,
+                  })
+                  .then();
+                supabase
+                  .from('watchlist')
+                  .update({
+                    has_crossed_20d: true,
+                    crossover_time: event.time,
+                    crossover_spot_price: event.crossPrice,
+                  })
+                  .eq('ticker', event.ticker)
+                  .then();
+              }
+
+              // Telegram push
+              if (typeof window !== 'undefined') {
+                const botToken = localStorage.getItem('qp_telegram_bot_token');
+                const chatId = localStorage.getItem('qp_telegram_chat_id');
+                const notifyCross = localStorage.getItem('qp_notify_crossover') !== 'false';
+                if (botToken && chatId && notifyCross) {
+                  fetch('/api/alerts/telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      botToken,
+                      chatId,
+                      message: `🚀 *QUANTPULSE 20D CROSSOVER (LIVE FEED)!*\nSymbol: \`${stock.ticker}\`\nTime: \`${nowTime} IST\`\nToday Vol: \`${updated.todayVolM.toFixed(2)}M\` (vs 20D: \`${stock.avgVol20DM.toFixed(2)}M\`)\nSpot Price: \`₹${updated.spotLtp.toFixed(2)}\`\nStatus: 🟢 *ELIGIBLE FOR BUY*`,
+                    }),
+                  }).catch(() => {});
+                }
+              }
+            }
+
+            return updated;
+          });
+
+          // Run auto-mode scan
+          runAutoScan(updatedWl, idempotencyLocks, positions);
+          return updatedWl;
+        });
+
+        // Update active positions with live market LTP
+        setPositions((prevPos) =>
+          prevPos.map((pos) => {
+            const q = quotesMap[pos.ticker];
+            if (!q) return pos;
+
+            let updatedLtp = pos.currentLtp;
+            if (pos.instrumentType === 'STOCK') {
+              updatedLtp = q.ltp;
+            } else {
+              // Option delta move approximation: Spot movement * 0.50 ATM Delta
+              const spotChange = q.ltp - pos.entryPrice;
+              updatedLtp = Math.max(0.5, +(pos.entryPrice + spotChange * 0.5).toFixed(2));
+            }
+
+            const updatedPos = { ...pos, currentLtp: updatedLtp };
+            return autoUpdatePositionFromTick(updatedPos);
+          })
+        );
+
+        const syncTime = new Date().toLocaleTimeString('en-IN');
+        setLastLiveSyncTime(syncTime);
+        if (isManualTrigger) {
+          showToast(
+            `✅ Live market quotes refreshed for ${Object.keys(quotesMap).length} symbols (${syncTime} IST)`,
+            'emerald'
+          );
+        }
+        return true;
+      } catch (err: any) {
+        if (isManualTrigger) {
+          showToast(`Live Quote Error: ${err.message}`, 'rose');
+        }
+        return false;
+      } finally {
+        setIsLiveFetching(false);
+      }
+    },
+    [watchlist, clockSeconds, idempotencyLocks, positions, runAutoScan, showToast]
+  );
+
+  const refreshLiveQuotesNow = useCallback(async () => {
+    await fetchLiveDhanQuotes(true);
+  }, [fetchLiveDhanQuotes]);
+
   const toggleLiveStream = useCallback(() => {
-    if (isLiveStreaming) {
-      if (streamTimerRef.current) clearInterval(streamTimerRef.current);
-      streamTimerRef.current = null;
-      setIsLiveStreaming(false);
-      showToast('Live Volume Stream paused.', 'amber');
+    setIsLiveStreaming((prev) => {
+      const next = !prev;
+      if (next) {
+        showToast(
+          feedMode === 'DHAN_LIVE'
+            ? '🟢 Live Dhan Marketfeed Stream started (2s interval)'
+            : '⚡ Demo Simulation Stream running — Watching 20D crossovers!',
+          'emerald'
+        );
+      } else {
+        showToast('Live stream paused.', 'amber');
+      }
+      return next;
+    });
+  }, [feedMode, showToast]);
+
+  useEffect(() => {
+    if (!isLiveStreaming) {
+      if (streamTimerRef.current) {
+        clearInterval(streamTimerRef.current);
+        streamTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (feedMode === 'DHAN_LIVE') {
+      fetchLiveDhanQuotes();
+      streamTimerRef.current = setInterval(() => {
+        fetchLiveDhanQuotes();
+      }, 2000);
     } else {
-      setIsLiveStreaming(true);
-      showToast('Live Volume Stream running — Watching 20D crossovers!', 'emerald');
       streamTimerRef.current = setInterval(() => {
         simulateSingleTick();
       }, 1500);
     }
-  }, [isLiveStreaming, simulateSingleTick, showToast]);
+
+    return () => {
+      if (streamTimerRef.current) {
+        clearInterval(streamTimerRef.current);
+        streamTimerRef.current = null;
+      }
+    };
+  }, [isLiveStreaming, feedMode, fetchLiveDhanQuotes, simulateSingleTick]);
 
   const forceCrossover = useCallback(
     (tickerSymbol: string) => {
@@ -588,6 +789,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         toggleLiveStream,
         simulateSingleTick,
         resetSimulation,
+        feedMode,
+        setFeedMode,
+        lastLiveSyncTime,
+        isLiveFetching,
+        fetchLiveDhanQuotes,
+        refreshLiveQuotesNow,
         setIsJsonModalOpen,
         setIsAddStockModalOpen,
         setIsBrokerModalOpen,

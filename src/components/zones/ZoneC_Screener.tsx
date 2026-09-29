@@ -12,6 +12,8 @@ export function ZoneC_Screener() {
     forceCrossover,
     idempotencyLocks,
     clockTime,
+    feedMode,
+    lastLiveSyncTime,
   } = useQuantPulse();
 
   const eligibleCount = watchlist.filter((s) => s.hasCrossed20D).length;
@@ -31,7 +33,18 @@ export function ZoneC_Screener() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+          {feedMode === 'DHAN_LIVE' ? (
+            <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 font-semibold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span>
+              Live Dhan Feed {lastLiveSyncTime ? `(${lastLiveSyncTime})` : ''}
+            </span>
+          ) : (
+            <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Simulated Feed
+            </span>
+          )}
+          <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold">
             {eligibleCount} Eligible for Buy
           </span>
         </div>
@@ -48,7 +61,7 @@ export function ZoneC_Screener() {
               <th className="py-2.5 px-3">Exact Crossover Time</th>
               <th className="py-2.5 px-3">Spot LTP &amp; Cross Price</th>
               <th className="py-2.5 px-3">Eligibility Status</th>
-              <th className="py-2.5 px-3 text-right">Simulate Cross</th>
+              <th className="py-2.5 px-3 text-right">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/70 text-xs">
@@ -79,6 +92,11 @@ export function ZoneC_Screener() {
                       >
                         {stock.isFnO ? 'F&O' : 'CASH'}
                       </span>
+                      {stock.feedSource === 'LIVE_DHAN' && (
+                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
+                          LIVE
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10px] text-slate-400">{stock.name}</div>
                   </td>
@@ -142,12 +160,30 @@ export function ZoneC_Screener() {
 
                   {/* Spot LTP & Price @ Cross */}
                   <td className="py-2.5 px-3 font-mono">
-                    <div className="font-bold text-white">₹{stock.spotLtp.toFixed(2)}</div>
-                    <div className="text-[10px] text-slate-400">
-                      {stock.crossoverSpotPrice
-                        ? `Crossed @ ₹${stock.crossoverSpotPrice.toFixed(2)}`
-                        : 'Pre-crossover'}
+                    <div className="flex items-center gap-1.5 font-bold text-white">
+                      <span>₹{stock.spotLtp.toFixed(2)}</span>
+                      {stock.changePct !== undefined && (
+                        <span
+                          className={`text-[10px] ${
+                            stock.changePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {stock.changePct >= 0 ? '+' : ''}
+                          {stock.changePct.toFixed(2)}%
+                        </span>
+                      )}
                     </div>
+                    {stock.dayHigh && stock.dayLow ? (
+                      <div className="text-[10px] text-slate-400">
+                        H: ₹{stock.dayHigh.toFixed(2)} • L: ₹{stock.dayLow.toFixed(2)}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-400">
+                        {stock.crossoverSpotPrice
+                          ? `Crossed @ ₹${stock.crossoverSpotPrice.toFixed(2)}`
+                          : 'Pre-crossover'}
+                      </div>
+                    )}
                   </td>
 
                   {/* Eligibility Status Badge */}
@@ -193,11 +229,7 @@ export function ZoneC_Screener() {
       {/* Interactive Guidance Footer */}
       <div className="px-3.5 py-2.5 bg-obsidian/80 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
         <div>
-          ⚡ <strong className="text-slate-200">Test the Logic:</strong> Click{' '}
-          <span className="text-cyan-300 font-mono">&quot;⚡ Cross 20D Now&quot;</span> on{' '}
-          <strong className="text-white">TCS (96.7%)</strong> or{' '}
-          <strong className="text-white">ZOMATO (97.2%)</strong> to see the exact{' '}
-          <span className="font-mono text-amber-300">HH:MM:SS</span> crossover time latch!
+          ⚡ <strong className="text-slate-200">Live Market Streaming:</strong> When connected to Dhan HQ, prices and cumulative volumes update every 2 seconds in real-time.
         </div>
         <div className="font-mono text-slate-400">Tick Clock: {clockTime} IST</div>
       </div>
