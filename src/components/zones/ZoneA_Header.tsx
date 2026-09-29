@@ -28,6 +28,7 @@ export function ZoneA_Header() {
     setIsBrokerModalOpen,
     setIsAlertsModalOpen,
     setIsAuthModalOpen,
+    setIsCloudLogsModalOpen,
   } = useQuantPulse();
 
   return (
@@ -284,6 +285,15 @@ export function ZoneA_Header() {
               title="Supabase User Profile & Authentication"
             >
               <span>👤 Account</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCloudLogsModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition flex items-center gap-1.5"
+              title="Inspect live database records logged to Supabase"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+              <span>📊 Cloud Logs</span>
             </button>
             <button
               type="button"

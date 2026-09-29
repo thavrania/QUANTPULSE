@@ -49,6 +49,7 @@ interface QuantPulseContextType {
   isOptionChainModalOpen: boolean;
   isAlertsModalOpen: boolean;
   isAuthModalOpen: boolean;
+  isCloudLogsModalOpen: boolean;
   idempotencyLocks: string[];
   totalMtmPnl: number;
   isSupabaseActive: boolean;
@@ -78,6 +79,7 @@ interface QuantPulseContextType {
   setIsOptionChainModalOpen: (open: boolean) => void;
   setIsAlertsModalOpen: (open: boolean) => void;
   setIsAuthModalOpen: (open: boolean) => void;
+  setIsCloudLogsModalOpen: (open: boolean) => void;
   removeToast: (id: string) => void;
   showToast: (message: string, variant?: 'info' | 'emerald' | 'amber' | 'rose') => void;
 }
@@ -104,6 +106,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [isOptionChainModalOpen, setIsOptionChainModalOpen] = useState<boolean>(false);
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [isCloudLogsModalOpen, setIsCloudLogsModalOpen] = useState<boolean>(false);
   const [idempotencyLocks, setIdempotencyLocks] = useState<string[]>([]);
   const [feedMode, setFeedModeState] = useState<'DHAN_LIVE' | 'SIMULATION'>('DHAN_LIVE');
   const [lastLiveSyncTime, setLastLiveSyncTime] = useState<string | null>(null);
@@ -938,8 +941,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setIsOptionChainModalOpen,
         setIsAlertsModalOpen,
         setIsAuthModalOpen,
+        setIsCloudLogsModalOpen,
         isAlertsModalOpen,
         isAuthModalOpen,
+        isCloudLogsModalOpen,
         removeToast,
         showToast,
       }}
