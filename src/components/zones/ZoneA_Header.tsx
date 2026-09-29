@@ -19,6 +19,7 @@ export function ZoneA_Header() {
     panicKillSwitch,
     setIsJsonModalOpen,
     setIsAddStockModalOpen,
+    setIsBrokerModalOpen,
   } = useQuantPulse();
 
   return (
@@ -194,6 +195,14 @@ export function ZoneA_Header() {
 
           {/* Modals & Inspection Buttons */}
           <div className="flex items-center gap-1.5 border-l border-slate-800 pl-2">
+            <button
+              type="button"
+              onClick={() => setIsBrokerModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1"
+              title="Configure Dhan HQ or Broker Gateway"
+            >
+              <span>🔌 Broker: Dhan HQ</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsAddStockModalOpen(true)}
