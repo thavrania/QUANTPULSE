@@ -93,24 +93,33 @@ export function ZoneC_Screener() {
                         {stock.isFnO ? 'F&O' : 'CASH'}
                       </span>
                       {stock.feedSource === 'LIVE_DHAN' && (
-                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
-                          LIVE
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                          <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping"></span>
+                          <span>LIVE</span>
                         </span>
                       )}
                     </div>
                     <div className="text-[10px] text-slate-400">{stock.name}</div>
                   </td>
 
-                  {/* Today Vol vs 20D Avg */}
+                  {/* Today Vol vs 20D Avg & RVOL Ratio */}
                   <td className="py-2.5 px-3 font-mono">
-                    <div className={`font-bold ${m.isEligibleForBuy ? 'text-emerald-400' : 'text-slate-200'}`}>
-                      {stock.todayVolM.toFixed(2)}M{' '}
-                      <span className="text-slate-500 font-normal">/</span> {stock.avgVol20DM.toFixed(2)}M
+                    <div className={`font-bold ${m.isEligibleForBuy ? 'text-emerald-400' : 'text-slate-200'} flex items-center gap-1.5 flex-wrap`}>
+                      <span>{stock.todayVolM.toFixed(2)}M</span>
+                      <span className="text-slate-500 font-normal">/</span>
+                      <span>{stock.avgVol20DM.toFixed(2)}M</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold ${
+                        m.rvolRatio >= 1.0
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}>
+                        {m.rvolRatio}x RVOL
+                      </span>
                     </div>
-                    <div className={`text-[10px] ${m.isEligibleForBuy ? 'text-emerald-300/80' : 'text-slate-400'}`}>
+                    <div className={`text-[10px] ${m.isEligibleForBuy ? 'text-emerald-300/80 font-bold' : 'text-slate-400'}`}>
                       {m.isEligibleForBuy
-                        ? `Surplus: +${(stock.todayVolM - stock.avgVol20DM).toFixed(2)}M (${m.rvolRatio}x)`
-                        : `Needs +${m.deficitM.toFixed(2)}M to cross`}
+                        ? `🚀 Cross Surplus: +${(stock.todayVolM - stock.avgVol20DM).toFixed(2)}M`
+                        : `Deficit: ${m.deficitM.toFixed(2)}M remaining`}
                     </div>
                   </td>
 

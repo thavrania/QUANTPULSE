@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
-import { TradeLog, TslAuditTrailEntry, CrossoverEvent, BrokerVaultEntry } from '@/lib/types/quant';
+import { TradeLog, TslAuditTrailEntry, CrossoverEvent, BrokerVaultEntry, LiveTickSnapshot } from '@/lib/types/quant';
 import { formatTokenCountdown, maskToken } from '@/lib/services/brokerVaultService';
 
 export function CloudAuditLogsModal() {
@@ -11,11 +11,12 @@ export function CloudAuditLogsModal() {
 
   const onClose = () => setIsCloudLogsModalOpen(false);
 
-  const [activeTab, setActiveTab] = useState<'TRADES' | 'TSL_TRAIL' | 'CROSSOVERS' | 'BROKER_VAULT'>('TRADES');
+  const [activeTab, setActiveTab] = useState<'TRADES' | 'TSL_TRAIL' | 'CROSSOVERS' | 'BROKER_VAULT' | 'TICK_SNAPSHOTS'>('TRADES');
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([]);
   const [tslTrails, setTslTrails] = useState<TslAuditTrailEntry[]>([]);
   const [crossovers, setCrossovers] = useState<CrossoverEvent[]>([]);
   const [brokerVaultEntries, setBrokerVaultEntries] = useState<BrokerVaultEntry[]>([]);
+  const [tickSnapshots, setTickSnapshots] = useState<LiveTickSnapshot[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
 
@@ -72,7 +73,22 @@ export function CloudAuditLogsModal() {
           setBrokerVaultEntries(vaultData as BrokerVaultEntry[]);
         }
       } catch {
-        // broker_vault table might be pending execution
+        // table might be pending
+      }
+
+      // 5. Fetch Live Tick Snapshots
+      try {
+        const { data: snapData, error: snapErr } = await supabase
+          .from('live_tick_snapshots')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (!snapErr && snapData) {
+          setTickSnapshots(snapData as LiveTickSnapshot[]);
+        }
+      } catch {
+        // table might be pending
       }
 
       setLastRefreshed(new Date().toLocaleTimeString('en-IN'));
@@ -182,7 +198,7 @@ export function CloudAuditLogsModal() {
             }`}
           >
             <span>🚀</span>
-            <span>20D Crossover Events ({crossovers.length})</span>
+            <span>20D Crossovers ({crossovers.length})</span>
           </button>
 
           <button
@@ -196,6 +212,19 @@ export function CloudAuditLogsModal() {
           >
             <span>🔑</span>
             <span>Broker Cloud Vault ({brokerVaultEntries.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('TICK_SNAPSHOTS')}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'TICK_SNAPSHOTS'
+                ? 'border-blue-400 text-blue-300'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>⚡</span>
+            <span>Live Ticks Stream ({tickSnapshots.length})</span>
           </button>
         </div>
 
@@ -450,6 +479,62 @@ export function CloudAuditLogsModal() {
                         </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'TICK_SNAPSHOTS' && (
+            <div className="overflow-x-auto space-y-2">
+              {tickSnapshots.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 text-xs">
+                  No tick snapshots recorded yet. When the Live Dhan Feed is active, tick snapshots are periodically saved to Supabase!
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400 bg-obsidian/70">
+                      <th className="py-2 px-2.5">Symbol</th>
+                      <th className="py-2 px-2.5">Spot Price (LTP)</th>
+                      <th className="py-2 px-2.5">Today Traded Vol</th>
+                      <th className="py-2 px-2.5">20D Avg Vol</th>
+                      <th className="py-2 px-2.5">Relative Vol (RVOL)</th>
+                      <th className="py-2 px-2.5 text-right">Timestamp IST</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {tickSnapshots.map((snap, idx) => (
+                      <tr key={snap.id || idx} className="hover:bg-slate-900/50">
+                        <td className="py-2 px-2.5 font-bold text-white flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                          <span>{snap.ticker}</span>
+                        </td>
+                        <td className="py-2 px-2.5 font-bold text-emerald-400">
+                          ₹{Number(snap.spot_ltp).toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2.5 text-slate-200">
+                          {Number(snap.today_vol_m).toFixed(2)}M
+                        </td>
+                        <td className="py-2 px-2.5 text-slate-400">
+                          {Number(snap.avg_vol_20d_m).toFixed(2)}M
+                        </td>
+                        <td className="py-2 px-2.5">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              snap.rvol_ratio >= 1.0
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {snap.rvol_ratio}x RVOL
+                          </span>
+                        </td>
+                        <td className="py-2 px-2.5 text-right text-amber-300 font-bold">
+                          ⏱️ {snap.timestamp_ist} IST
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}

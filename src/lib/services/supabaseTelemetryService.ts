@@ -186,3 +186,32 @@ export async function syncLiveWatchlistToCloud(
     return false;
   }
 }
+
+/**
+ * Logs batch tick snapshots to Supabase live_tick_snapshots table for high-resolution audit
+ */
+export async function logBatchTickSnapshotsToCloud(
+  snapshots: {
+    ticker: string;
+    timestamp_ist: string;
+    spot_ltp: number;
+    today_vol_m: number;
+    avg_vol_20d_m: number;
+    rvol_ratio: number;
+  }[]
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || snapshots.length === 0) return false;
+
+  try {
+    const { error } = await supabase.from('live_tick_snapshots').insert(snapshots);
+    if (error) {
+      console.warn('Supabase live_tick_snapshots insert notice:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('Error in logBatchTickSnapshotsToCloud:', err.message);
+    return false;
+  }
+}
+

@@ -30,13 +30,15 @@ export function ZoneA_Header() {
     setIsAuthModalOpen,
     setIsCloudLogsModalOpen,
     brokerVaultStatus,
+    marketSession,
+    ingestionTelemetry,
   } = useQuantPulse();
 
   return (
     <header className="sticky top-0 z-30 bg-panel/95 backdrop-blur border-b border-slate-800 px-3 py-2.5 shadow-xl">
       <div className="max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-2.5">
         
-        {/* Brand & Market Clock */}
+        {/* Brand, Market Clock & Live Pipeline Indicators */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center shadow-inner">
             <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -44,25 +46,54 @@ export function ZoneA_Header() {
             </svg>
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold tracking-tight text-sm md:text-base text-white">QUANTPULSE</span>
               <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
-                20D Volume Crossover Engine
+                20D Crossover
               </span>
+
+              {/* Market Session Beacon (NSE IST) */}
+              <span
+                className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold flex items-center gap-1.5 ${
+                  marketSession.session === 'LIVE'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : marketSession.session === 'PRE_MARKET'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                }`}
+                title={marketSession.details}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    marketSession.session === 'LIVE'
+                      ? 'bg-emerald-400 animate-pulse'
+                      : marketSession.session === 'PRE_MARKET'
+                      ? 'bg-amber-400 animate-ping'
+                      : 'bg-rose-400'
+                  }`}
+                ></span>
+                <span>{marketSession.statusLabel}</span>
+              </span>
+
+              {/* Live Ingestion Telemetry Packet Monitor */}
+              {isLiveStreaming && (
+                <span
+                  className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold flex items-center gap-1"
+                  title={`Live Dhan Ingestion Stream: ${ingestionTelemetry.packetsReceived} packets ingested • Latency: ${ingestionTelemetry.lastLatencyMs}ms`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>
+                  <span>⚡ Feed: {ingestionTelemetry.packetsReceived} pkts ({ingestionTelemetry.lastLatencyMs}ms)</span>
+                </span>
+              )}
+
               {isSupabaseActive ? (
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                  Supabase Live DB
+                  Supabase DB
                 </span>
               ) : (
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-semibold">
                   Local High-Perf Sim
-                </span>
-              )}
-              {lastLiveSyncTime && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Dhan Sync: {lastLiveSyncTime}
                 </span>
               )}
             </div>
@@ -70,6 +101,11 @@ export function ZoneA_Header() {
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span>Market Clock:</span>
               <span className="font-mono font-bold text-cyan-300">{clockTime} IST</span>
+              {lastLiveSyncTime && (
+                <span className="text-[10px] font-mono text-slate-500">
+                  • Last Sync: {lastLiveSyncTime}
+                </span>
+              )}
             </div>
           </div>
         </div>

@@ -27,7 +27,10 @@ import {
   logTradeOrderToCloud,
   logTslTransitionToCloud,
   closeTradeOrderInCloud,
+  logBatchTickSnapshotsToCloud,
 } from '@/lib/services/supabaseTelemetryService';
+import { MarketSessionInfo, getIndianMarketSession } from '@/lib/services/marketHoursService';
+import { IngestionTelemetry } from '@/lib/services/liveIngestionEngine';
 
 export interface ToastMessage {
   id: string;
@@ -59,6 +62,8 @@ interface QuantPulseContextType {
   isLiveFetching: boolean;
   brokerVaultStatus: BrokerVaultStatus | null;
   refreshBrokerVaultStatus: () => Promise<void>;
+  marketSession: MarketSessionInfo;
+  ingestionTelemetry: IngestionTelemetry;
 
   // Actions
   setSelectedTicker: (ticker: string) => void;
@@ -115,8 +120,26 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [lastLiveSyncTime, setLastLiveSyncTime] = useState<string | null>(null);
   const [isLiveFetching, setIsLiveFetching] = useState<boolean>(false);
   const [brokerVaultStatus, setBrokerVaultStatus] = useState<BrokerVaultStatus | null>(null);
+  const [marketSession, setMarketSession] = useState<MarketSessionInfo>(() => getIndianMarketSession());
+  const [ingestionTelemetry, setIngestionTelemetry] = useState<IngestionTelemetry>({
+    packetsReceived: 0,
+    lastLatencyMs: 0,
+    lastSyncTimestamp: 'Connecting...',
+    errorCount: 0,
+    streamActive: false,
+    pulseIntervalMs: 2000,
+  });
 
+  const packetCountRef = useRef<number>(0);
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Keep Indian Market Session updated every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMarketSession(getIndianMarketSession());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const refreshBrokerVaultStatus = useCallback(async () => {
     try {
@@ -521,6 +544,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
   const fetchLiveDhanQuotes = useCallback(
     async (isManualTrigger = false): Promise<boolean> => {
+      const startTime = Date.now();
       try {
         setIsLiveFetching(true);
         const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
@@ -534,7 +558,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         });
 
         const data = await res.json();
+        const latencyMs = Date.now() - startTime;
+
         if (!data.success || !data.quotes) {
+          setIngestionTelemetry((prev) => ({
+            ...prev,
+            errorCount: prev.errorCount + 1,
+            lastLatencyMs: latencyMs,
+          }));
           if (!data.isConfigured) {
             if (isManualTrigger) {
               showToast('Dhan credentials not configured. Open "🔌 Broker: Dhan HQ" to configure keys.', 'amber');
@@ -678,6 +709,35 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         const syncTime = new Date().toLocaleTimeString('en-IN');
         setLastLiveSyncTime(syncTime);
+        packetCountRef.current += 1;
+
+        setIngestionTelemetry((prev) => ({
+          packetsReceived: prev.packetsReceived + 1,
+          lastLatencyMs: latencyMs,
+          lastSyncTimestamp: syncTime,
+          errorCount: 0,
+          streamActive: isLiveStreaming,
+          pulseIntervalMs: marketSession.recommendedIntervalMs,
+        }));
+
+        // Periodic cloud snapshot logging (every 10 packets to optimize DB writes)
+        if (packetCountRef.current % 10 === 0 && isSupabaseConfigured && supabase) {
+          const snapshots = Object.entries(quotesMap).map(([ticker, q]: [string, any]) => {
+            const stock = watchlist.find((s) => s.ticker === ticker);
+            const avgVol = stock?.avgVol20DM || 1.0;
+            const vol = q.volumeM !== undefined ? Number(q.volumeM) : 0;
+            return {
+              ticker,
+              timestamp_ist: nowTime,
+              spot_ltp: Number(q.ltp) || 0,
+              today_vol_m: vol,
+              avg_vol_20d_m: avgVol,
+              rvol_ratio: avgVol > 0 ? +(vol / avgVol).toFixed(2) : 1.0,
+            };
+          });
+          logBatchTickSnapshotsToCloud(snapshots).catch(() => {});
+        }
+
         if (isManualTrigger) {
           showToast(
             `✅ Live market quotes refreshed for ${Object.keys(quotesMap).length} symbols (${syncTime} IST)`,
@@ -686,6 +746,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         }
         return true;
       } catch (err: any) {
+        setIngestionTelemetry((prev) => ({
+          ...prev,
+          errorCount: prev.errorCount + 1,
+        }));
         if (isManualTrigger) {
           showToast(`Live Quote Error: ${err.message}`, 'rose');
         }
@@ -694,7 +758,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setIsLiveFetching(false);
       }
     },
-    [watchlist, clockSeconds, idempotencyLocks, positions, runAutoScan, showToast]
+    [watchlist, clockSeconds, idempotencyLocks, positions, runAutoScan, showToast, isLiveStreaming, marketSession]
   );
 
   const refreshLiveQuotesNow = useCallback(async () => {
@@ -704,10 +768,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const toggleLiveStream = useCallback(() => {
     setIsLiveStreaming((prev) => {
       const next = !prev;
+      setIngestionTelemetry((t) => ({ ...t, streamActive: next }));
       if (next) {
+        const intervalSec = (marketSession.recommendedIntervalMs / 1000).toFixed(1);
         showToast(
           feedMode === 'DHAN_LIVE'
-            ? '🟢 Live Dhan Marketfeed Stream started (2s interval)'
+            ? `🟢 Live Dhan Ingestion Active (${intervalSec}s pulse • ${marketSession.statusLabel})`
             : '⚡ Demo Simulation Stream running — Watching 20D crossovers!',
           'emerald'
         );
@@ -716,7 +782,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       }
       return next;
     });
-  }, [feedMode, showToast]);
+  }, [feedMode, marketSession, showToast]);
 
   useEffect(() => {
     if (!isLiveStreaming) {
@@ -729,9 +795,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
     if (feedMode === 'DHAN_LIVE') {
       fetchLiveDhanQuotes();
+      const intervalMs = marketSession.recommendedIntervalMs || 2000;
       streamTimerRef.current = setInterval(() => {
         fetchLiveDhanQuotes();
-      }, 2000);
+      }, intervalMs);
     } else {
       streamTimerRef.current = setInterval(() => {
         simulateSingleTick();
@@ -744,7 +811,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         streamTimerRef.current = null;
       }
     };
-  }, [isLiveStreaming, feedMode, fetchLiveDhanQuotes, simulateSingleTick]);
+  }, [isLiveStreaming, feedMode, fetchLiveDhanQuotes, simulateSingleTick, marketSession.recommendedIntervalMs]);
 
   const forceCrossover = useCallback(
     (tickerSymbol: string) => {
@@ -988,6 +1055,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         showToast,
         brokerVaultStatus,
         refreshBrokerVaultStatus,
+        marketSession,
+        ingestionTelemetry,
       }}
     >
       {children}
