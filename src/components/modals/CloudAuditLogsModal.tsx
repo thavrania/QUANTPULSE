@@ -3,20 +3,22 @@
 import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
-import { TradeLog, TslAuditTrailEntry, CrossoverEvent, BrokerVaultEntry, LiveTickSnapshot } from '@/lib/types/quant';
+import { TradeLog, TslAuditTrailEntry, CrossoverEvent, BrokerVaultEntry, LiveTickSnapshot, StockMasterItem } from '@/lib/types/quant';
 import { formatTokenCountdown, maskToken } from '@/lib/services/brokerVaultService';
+import { STOCK_MASTER_CATALOG } from '@/lib/stocks/stockMaster';
 
 export function CloudAuditLogsModal() {
   const { showToast, isCloudLogsModalOpen, setIsCloudLogsModalOpen } = useQuantPulse();
 
   const onClose = () => setIsCloudLogsModalOpen(false);
 
-  const [activeTab, setActiveTab] = useState<'TRADES' | 'TSL_TRAIL' | 'CROSSOVERS' | 'BROKER_VAULT' | 'TICK_SNAPSHOTS'>('TRADES');
+  const [activeTab, setActiveTab] = useState<'TRADES' | 'TSL_TRAIL' | 'CROSSOVERS' | 'BROKER_VAULT' | 'TICK_SNAPSHOTS' | 'STOCK_MASTER'>('TRADES');
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([]);
   const [tslTrails, setTslTrails] = useState<TslAuditTrailEntry[]>([]);
   const [crossovers, setCrossovers] = useState<CrossoverEvent[]>([]);
   const [brokerVaultEntries, setBrokerVaultEntries] = useState<BrokerVaultEntry[]>([]);
   const [tickSnapshots, setTickSnapshots] = useState<LiveTickSnapshot[]>([]);
+  const [stockMasterList, setStockMasterList] = useState<StockMasterItem[]>(STOCK_MASTER_CATALOG);
   const [isLoading, setIsLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
 
@@ -89,6 +91,35 @@ export function CloudAuditLogsModal() {
         }
       } catch {
         // table might be pending
+      }
+
+      // 6. Fetch Stock Master Universe
+      try {
+        const { data: masterData, error: masterErr } = await supabase
+          .from('stock_master')
+          .select('*')
+          .order('ticker');
+
+        if (!masterErr && masterData && masterData.length > 0) {
+          const mappedMaster: StockMasterItem[] = masterData.map((d: any) => ({
+            ticker: d.ticker,
+            name: d.name,
+            segment: d.segment,
+            exchange: d.exchange || 'NSE',
+            sector: d.sector,
+            securityId: d.security_id,
+            lotSize: d.lot_size,
+            strikeStep: Number(d.strike_step),
+            avgVol20DM: Number(d.avg_vol_20d_m),
+            approxLtp: d.approx_ltp ? Number(d.approx_ltp) : undefined,
+            isFnO: Boolean(d.is_fno),
+          }));
+          setStockMasterList(mappedMaster);
+        } else {
+          setStockMasterList(STOCK_MASTER_CATALOG);
+        }
+      } catch {
+        setStockMasterList(STOCK_MASTER_CATALOG);
       }
 
       setLastRefreshed(new Date().toLocaleTimeString('en-IN'));
@@ -225,6 +256,19 @@ export function CloudAuditLogsModal() {
           >
             <span>⚡</span>
             <span>Live Ticks Stream ({tickSnapshots.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('STOCK_MASTER')}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'STOCK_MASTER'
+                ? 'border-indigo-400 text-indigo-300'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>🏛️</span>
+            <span>All Stocks Master ({stockMasterList.length})</span>
           </button>
         </div>
 
@@ -538,6 +582,79 @@ export function CloudAuditLogsModal() {
                   </tbody>
                 </table>
               )}
+            </div>
+          )}
+
+          {activeTab === 'STOCK_MASTER' && (
+            <div className="overflow-x-auto space-y-2">
+              <div className="p-3 bg-obsidian rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                <div>
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <span>🏛️ Complete NSE High-Liquidity Stocks Master</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono">
+                      {stockMasterList.length} Symbols
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Repository of all eligible equities, derivatives, lot sizes, strike intervals, and Dhan Security IDs.
+                  </div>
+                </div>
+              </div>
+
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400 bg-obsidian/70">
+                    <th className="py-2 px-2.5">Symbol &amp; Company</th>
+                    <th className="py-2 px-2.5">Segment &amp; Exch</th>
+                    <th className="py-2 px-2.5">Sector</th>
+                    <th className="py-2 px-2.5">Dhan Security ID</th>
+                    <th className="py-2 px-2.5">Lot Size</th>
+                    <th className="py-2 px-2.5">Strike Step</th>
+                    <th className="py-2 px-2.5">20D Avg Vol</th>
+                    <th className="py-2 px-2.5 text-right">Approx LTP</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-mono">
+                  {stockMasterList.map((stock) => (
+                    <tr key={stock.ticker} className="hover:bg-slate-900/50">
+                      <td className="py-2 px-2.5">
+                        <span className="font-bold text-white">{stock.ticker}</span>
+                        <div className="text-[10px] text-slate-300 font-sans">{stock.name}</div>
+                      </td>
+                      <td className="py-2 px-2.5">
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            stock.segment === 'NSE_FNO'
+                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {stock.segment}
+                        </span>
+                        <span className="text-[9px] text-slate-500 ml-1">({stock.exchange})</span>
+                      </td>
+                      <td className="py-2 px-2.5 font-sans text-slate-300 text-[11px]">
+                        {stock.sector}
+                      </td>
+                      <td className="py-2 px-2.5 text-cyan-300 font-bold">
+                        {stock.securityId}
+                      </td>
+                      <td className="py-2 px-2.5 text-slate-200">
+                        {stock.lotSize}
+                      </td>
+                      <td className="py-2 px-2.5 text-slate-300">
+                        ₹{stock.strikeStep}
+                      </td>
+                      <td className="py-2 px-2.5 text-emerald-400 font-bold">
+                        {stock.avgVol20DM.toFixed(2)}M
+                      </td>
+                      <td className="py-2 px-2.5 text-right font-bold text-white">
+                        ₹{stock.approxLtp?.toFixed(2) || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

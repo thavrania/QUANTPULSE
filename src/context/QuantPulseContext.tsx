@@ -9,7 +9,9 @@ import {
   InstrumentMode,
   ExecutionMode,
   BrokerVaultStatus,
+  StockMasterItem,
 } from '@/lib/types/quant';
+import { getStockMasterByTicker } from '@/lib/stocks/stockMaster';
 import {
   INITIAL_WATCHLIST_DATA,
   INITIAL_CROSSOVER_LOGS,
@@ -77,6 +79,8 @@ interface QuantPulseContextType {
   panicKillSwitch: () => void;
   advancePositionState: (posId: string, milestone: TslMilestone) => void;
   addCustomStock: (stock: Omit<Stock, 'hasCrossed20D' | 'crossoverTime' | 'crossoverSpotPrice'>) => void;
+  addStockFromMaster: (item: StockMasterItem) => void;
+  removeStockFromWatchlist: (ticker: string) => void;
   toggleLiveStream: () => void;
   simulateSingleTick: () => void;
   fetchLiveDhanQuotes: (isManualTrigger?: boolean) => Promise<boolean>;
@@ -240,21 +244,39 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       try {
         const { data: wlData } = await supabase!.from('watchlist').select('*');
         if (wlData && wlData.length > 0) {
-          const mapped: Stock[] = wlData.map((d: any) => ({
-            ticker: d.ticker,
-            name: d.name,
-            isFnO: d.is_fno,
-            lotSize: d.lot_size,
-            strikeStep: d.strike_step,
-            spotLtp: Number(d.spot_ltp),
-            todayVolM: Number(d.today_vol_m),
-            avgVol20DM: Number(d.avg_vol_20d_m),
-            hasCrossed20D: Boolean(d.has_crossed_20d),
-            crossoverTime: d.crossover_time,
-            crossoverSpotPrice: d.crossover_spot_price ? Number(d.crossover_spot_price) : null,
-            ivPct: Number(d.iv_pct || 0),
-          }));
-          setWatchlist(mapped);
+          const mapped: Stock[] = wlData.map((d: any) => {
+            const master = getStockMasterByTicker(d.ticker);
+            return {
+              ticker: d.ticker,
+              name: d.name || master?.name || d.ticker,
+              isFnO: d.is_fno !== undefined ? Boolean(d.is_fno) : (master?.isFnO ?? true),
+              segment: d.segment || master?.segment || (d.is_fno ? 'NSE_FNO' : 'NSE_EQ'),
+              sector: d.sector || master?.sector || '',
+              securityId: d.security_id || master?.securityId || '1330',
+              lotSize: d.lot_size || master?.lotSize || 250,
+              strikeStep: d.strike_step || master?.strikeStep || 50,
+              spotLtp: Number(d.spot_ltp) || master?.approxLtp || 1000,
+              todayVolM: Number(d.today_vol_m) || 0,
+              avgVol20DM: Number(d.avg_vol_20d_m) || master?.avgVol20DM || 1.0,
+              hasCrossed20D: Boolean(d.has_crossed_20d),
+              crossoverTime: d.crossover_time,
+              crossoverSpotPrice: d.crossover_spot_price ? Number(d.crossover_spot_price) : null,
+              ivPct: Number(d.iv_pct || (master?.isFnO ? 16.5 : 0)),
+              dayHigh: d.day_high ? Number(d.day_high) : undefined,
+              dayLow: d.day_low ? Number(d.day_low) : undefined,
+              dayOpen: d.day_open ? Number(d.day_open) : undefined,
+              dayClose: d.day_close ? Number(d.day_close) : undefined,
+              changePct: d.change_pct !== undefined ? Number(d.change_pct) : undefined,
+              feedSource: d.feed_source || 'LIVE_DHAN',
+            };
+          });
+
+          // Focus watchlist strictly on the requested stocks (TCS, ICICIBANK, RELIANCE, HDFCBANK)
+          const TARGET_FOUR = ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK'];
+          const filteredMapped = mapped.filter((s) => TARGET_FOUR.includes(s.ticker));
+          const existingTickers = new Set(filteredMapped.map((s) => s.ticker));
+          const missingStocks = INITIAL_WATCHLIST_DATA.filter((s) => !existingTickers.has(s.ticker));
+          setWatchlist([...filteredMapped, ...missingStocks]);
         }
 
         const { data: evData } = await supabase!.from('crossover_events').select('*').order('created_at', { ascending: false });
@@ -1011,6 +1033,82 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     [clockSeconds, showToast]
   );
 
+  const addStockFromMaster = useCallback(
+    (master: StockMasterItem) => {
+      setWatchlist((prev) => {
+        if (prev.some((s) => s.ticker === master.ticker)) {
+          showToast(`${master.ticker} is already in the active Watchlist.`, 'info');
+          return prev;
+        }
+        const newStock: Stock = {
+          ticker: master.ticker,
+          name: master.name,
+          isFnO: master.isFnO,
+          segment: master.segment,
+          sector: master.sector,
+          securityId: master.securityId,
+          lotSize: master.lotSize,
+          strikeStep: master.strikeStep,
+          spotLtp: master.approxLtp || 1000,
+          todayVolM: +(master.avgVol20DM * 0.4).toFixed(2),
+          avgVol20DM: master.avgVol20DM,
+          hasCrossed20D: false,
+          crossoverTime: null,
+          crossoverSpotPrice: null,
+          ivPct: master.isFnO ? 16.5 : 0,
+          justCrossedHighlight: false,
+          feedSource: 'LIVE_DHAN',
+        };
+
+        if (isSupabaseConfigured && supabase) {
+          supabase
+            .from('watchlist')
+            .upsert({
+              ticker: newStock.ticker,
+              name: newStock.name,
+              is_fno: newStock.isFnO,
+              segment: newStock.segment,
+              sector: newStock.sector,
+              security_id: newStock.securityId,
+              lot_size: newStock.lotSize,
+              strike_step: newStock.strikeStep,
+              spot_ltp: newStock.spotLtp,
+              today_vol_m: newStock.todayVolM,
+              avg_vol_20d_m: newStock.avgVol20DM,
+              has_crossed_20d: false,
+            })
+            .then();
+        }
+
+        setSelectedTicker(master.ticker);
+        showToast(`✅ Added ${master.ticker} (${master.name}) to Active Watchlist!`, 'emerald');
+        return [...prev, newStock];
+      });
+    },
+    [showToast]
+  );
+
+  const removeStockFromWatchlist = useCallback(
+    (ticker: string) => {
+      setWatchlist((prev) => {
+        if (prev.length <= 1) {
+          showToast('Cannot remove the last stock from watchlist.', 'amber');
+          return prev;
+        }
+        const updated = prev.filter((s) => s.ticker !== ticker);
+        if (selectedTicker === ticker) {
+          setSelectedTicker(updated[0].ticker);
+        }
+        if (isSupabaseConfigured && supabase) {
+          supabase.from('watchlist').delete().eq('ticker', ticker).then();
+        }
+        showToast(`Removed ${ticker} from Active Watchlist.`, 'info');
+        return updated;
+      });
+    },
+    [selectedTicker, showToast]
+  );
+
   const resetSimulation = useCallback(() => {
     if (streamTimerRef.current) {
       clearInterval(streamTimerRef.current);
@@ -1056,6 +1154,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         panicKillSwitch,
         advancePositionState,
         addCustomStock,
+        addStockFromMaster,
+        removeStockFromWatchlist,
         toggleLiveStream,
         simulateSingleTick,
         resetSimulation,

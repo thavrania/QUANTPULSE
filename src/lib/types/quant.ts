@@ -6,9 +6,12 @@ export type InstrumentMode = 'STOCK' | 'OPTION';
 export type ExecutionMode = 'MANUAL' | 'AUTO';
 
 export interface Stock {
-  ticker: string;
-  name: string;
+  ticker: string; // Short name / Symbol (e.g. TCS, RELIANCE)
+  name: string; // Full Company Name
   isFnO: boolean;
+  segment?: 'NSE_FNO' | 'NSE_EQ' | string;
+  sector?: string; // Industry sector (e.g. IT Services, Banking)
+  securityId?: string; // Dhan Official Security ID
   lotSize: number;
   strikeStep: number;
   spotLtp: number;
@@ -25,6 +28,20 @@ export interface Stock {
   dayClose?: number;
   changePct?: number;
   feedSource?: 'LIVE_DHAN' | 'SIMULATED';
+}
+
+export interface StockMasterItem {
+  ticker: string; // Short name (e.g. TCS, RELIANCE, HDFCBANK, ICICIBANK)
+  name: string; // Full Company Name
+  segment: 'NSE_FNO' | 'NSE_EQ';
+  exchange: 'NSE';
+  sector: string;
+  securityId: string;
+  lotSize: number;
+  strikeStep: number;
+  avgVol20DM: number;
+  approxLtp?: number;
+  isFnO: boolean;
 }
 
 export interface CrossoverEvent {

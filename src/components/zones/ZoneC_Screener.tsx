@@ -79,27 +79,39 @@ export function ZoneC_Screener() {
                     stock.justCrossedHighlight ? 'animate-crossover-pulse bg-emerald-950/30' : ''
                   } ${isSelectedRow ? 'bg-slate-800/85' : 'hover:bg-slate-900/70'}`}
                 >
-                  {/* Stock & Segment */}
+                  {/* Stock, Segment, Sector & Contract Specs */}
                   <td className="py-2.5 px-3">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-white">{stock.ticker}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-sm text-white">{stock.ticker}</span>
                       <span
-                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${
                           stock.isFnO
-                            ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/35'
                             : 'bg-slate-800 text-slate-400 border border-slate-700'
                         }`}
                       >
-                        {stock.isFnO ? 'F&O' : 'CASH'}
+                        {stock.segment || (stock.isFnO ? 'NSE_FNO' : 'NSE_EQ')}
                       </span>
+                      {stock.sector && (
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                          {stock.sector}
+                        </span>
+                      )}
                       {stock.feedSource === 'LIVE_DHAN' && (
-                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
                           <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping"></span>
                           <span>LIVE</span>
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-slate-400">{stock.name}</div>
+                    <div className="text-[11px] text-slate-300 font-medium mt-0.5">{stock.name}</div>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-2">
+                      <span>Dhan ID: <strong className="text-slate-300">{stock.securityId || '1330'}</strong></span>
+                      <span>•</span>
+                      <span>Lot: <strong className="text-cyan-300">{stock.lotSize}</strong></span>
+                      <span>•</span>
+                      <span>Step: <strong className="text-slate-300">₹{stock.strikeStep}</strong></span>
+                    </div>
                   </td>
 
                   {/* Today Vol vs 20D Avg & RVOL Ratio */}
@@ -160,14 +172,16 @@ export function ZoneC_Screener() {
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-[11px]">
                           ⏱️ {stock.crossoverTime}
                         </span>
-                        <div className="text-[10px] text-slate-400 mt-0.5">Latched IST</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {stock.crossoverSpotPrice ? `At ₹${stock.crossoverSpotPrice.toFixed(2)}` : 'Latched IST'}
+                        </div>
                       </div>
                     ) : (
                       <span className="text-[11px] text-slate-500">⏳ Waiting...</span>
                     )}
                   </td>
 
-                  {/* Spot LTP & Price @ Cross */}
+                  {/* Spot LTP & OHLC */}
                   <td className="py-2.5 px-3 font-mono">
                     <div className="flex items-center gap-1.5 font-bold text-white">
                       <span>₹{stock.spotLtp.toFixed(2)}</span>
@@ -182,17 +196,13 @@ export function ZoneC_Screener() {
                         </span>
                       )}
                     </div>
-                    {stock.dayHigh && stock.dayLow ? (
-                      <div className="text-[10px] text-slate-400">
-                        H: ₹{stock.dayHigh.toFixed(2)} • L: ₹{stock.dayLow.toFixed(2)}
-                      </div>
-                    ) : (
-                      <div className="text-[10px] text-slate-400">
-                        {stock.crossoverSpotPrice
-                          ? `Crossed @ ₹${stock.crossoverSpotPrice.toFixed(2)}`
-                          : 'Pre-crossover'}
-                      </div>
-                    )}
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      {stock.dayHigh && stock.dayLow ? (
+                        <span>H: ₹{stock.dayHigh.toFixed(2)} • L: ₹{stock.dayLow.toFixed(2)}</span>
+                      ) : (
+                        <span>Open: ₹{(stock.dayOpen || stock.spotLtp * 0.995).toFixed(2)}</span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Eligibility Status Badge */}
