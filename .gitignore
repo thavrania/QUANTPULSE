@@ -30,3 +30,7 @@ next-env.d.ts
 
 # Archives
 *.zip
+
+# Sensitive local files
+*.rtf
+Cred.*
