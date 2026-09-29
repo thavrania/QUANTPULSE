@@ -20,6 +20,8 @@ export function ZoneA_Header() {
     setIsJsonModalOpen,
     setIsAddStockModalOpen,
     setIsBrokerModalOpen,
+    setIsAlertsModalOpen,
+    setIsAuthModalOpen,
   } = useQuantPulse();
 
   return (
@@ -202,6 +204,22 @@ export function ZoneA_Header() {
               title="Configure Dhan HQ or Broker Gateway"
             >
               <span>🔌 Broker: Dhan HQ</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAlertsModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1"
+              title="Configure Telegram Bot Webhook Alerts"
+            >
+              <span>🔔 Alerts</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAuthModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1"
+              title="Supabase User Profile & Authentication"
+            >
+              <span>👤 Account</span>
             </button>
             <button
               type="button"

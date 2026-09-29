@@ -42,6 +42,8 @@ interface QuantPulseContextType {
   isAddStockModalOpen: boolean;
   isBrokerModalOpen: boolean;
   isOptionChainModalOpen: boolean;
+  isAlertsModalOpen: boolean;
+  isAuthModalOpen: boolean;
   idempotencyLocks: string[];
   totalMtmPnl: number;
   isSupabaseActive: boolean;
@@ -63,6 +65,8 @@ interface QuantPulseContextType {
   setIsAddStockModalOpen: (open: boolean) => void;
   setIsBrokerModalOpen: (open: boolean) => void;
   setIsOptionChainModalOpen: (open: boolean) => void;
+  setIsAlertsModalOpen: (open: boolean) => void;
+  setIsAuthModalOpen: (open: boolean) => void;
   removeToast: (id: string) => void;
   showToast: (message: string, variant?: 'info' | 'emerald' | 'amber' | 'rose') => void;
 }
@@ -87,6 +91,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [isAddStockModalOpen, setIsAddStockModalOpen] = useState<boolean>(false);
   const [isBrokerModalOpen, setIsBrokerModalOpen] = useState<boolean>(false);
   const [isOptionChainModalOpen, setIsOptionChainModalOpen] = useState<boolean>(false);
+  const [isAlertsModalOpen, setIsAlertsModalOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [idempotencyLocks, setIdempotencyLocks] = useState<string[]>([]);
 
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -280,6 +286,24 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           state_label: newPos.stateLabel,
         }).then();
       }
+
+      // Automated Telegram Order Alert
+      if (typeof window !== 'undefined') {
+        const botToken = localStorage.getItem('qp_telegram_bot_token');
+        const chatId = localStorage.getItem('qp_telegram_chat_id');
+        const notifyOrder = localStorage.getItem('qp_notify_order') !== 'false';
+        if (botToken && chatId && notifyOrder) {
+          fetch('/api/alerts/telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              botToken,
+              chatId,
+              message: `⚡ *QUANTPULSE ORDER DISPATCHED!*\n• Instrument: \`${activeLeg.symbol}\`\n• Action: \`${triggeredBy} BUY\`\n• Quantity: \`${activeLeg.quantity} Units\`\n• Entry Price: \`₹${activeLeg.entryPrice.toFixed(2)}\`\n• Order ID: \`${newPos.id}\`\n• Cross Reference: \`${newPos.crossoverTime} IST\``,
+            }),
+          }).catch(() => {});
+        }
+      }
     },
     [watchlist, positions, config, clockSeconds, showToast]
   );
@@ -340,6 +364,24 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               crossover_time: event.time,
               crossover_spot_price: event.crossPrice,
             }).eq('ticker', event.ticker).then();
+          }
+
+          // Automated Telegram Push Alert
+          if (typeof window !== 'undefined') {
+            const botToken = localStorage.getItem('qp_telegram_bot_token');
+            const chatId = localStorage.getItem('qp_telegram_chat_id');
+            const notifyCross = localStorage.getItem('qp_notify_crossover') !== 'false';
+            if (botToken && chatId && notifyCross) {
+              fetch('/api/alerts/telegram', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  botToken,
+                  chatId,
+                  message: `🚀 *QUANTPULSE 20D CROSSOVER!*\nSymbol: \`${stock.ticker}\`\nTime: \`${timeStr} IST\`\nToday Vol: \`${newTodayVol.toFixed(2)}M\` (vs 20D Avg: \`${stock.avgVol20DM.toFixed(2)}M\`)\nSpot Price: \`₹${newSpotLtp.toFixed(2)}\`\nStatus: 🟢 *ELIGIBLE FOR BUY*`,
+                }),
+              }).catch(() => {});
+            }
           }
         }
         return updated;
@@ -550,6 +592,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setIsAddStockModalOpen,
         setIsBrokerModalOpen,
         setIsOptionChainModalOpen,
+        setIsAlertsModalOpen,
+        setIsAuthModalOpen,
+        isAlertsModalOpen,
+        isAuthModalOpen,
         removeToast,
         showToast,
       }}
