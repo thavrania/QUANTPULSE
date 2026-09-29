@@ -133,6 +133,47 @@ export function ZoneB_Watchlist() {
         </button>
       </form>
 
+      {/* Pre-Market Automated 20D Baseline Sync Banner (Epic 2) */}
+      <div className="px-3 py-2 bg-obsidian/90 border-b border-slate-800 flex items-center justify-between text-xs">
+        <div>
+          <div className="font-semibold text-white flex items-center gap-1.5">
+            <span>🌅 09:00 AM Pre-Market Engine</span>
+          </div>
+          <div className="text-[10px] text-slate-400">Automated 20D Volume Baseline Job</div>
+        </div>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const clientId = localStorage.getItem('qp_dhan_client_id') || '';
+              const accessToken = localStorage.getItem('qp_dhan_access_token') || '';
+              const res = await fetch('/api/pipeline/sync-baselines', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId, accessToken }),
+              });
+              const data = await res.json();
+              if (data.success) {
+                // update local state
+                if (data.baselines) {
+                  data.baselines.forEach((b: any) => {
+                    const st = watchlist.find((s) => s.ticker === b.ticker);
+                    if (st) st.avgVol20DM = b.avgVolume20DM;
+                  });
+                }
+                alert(`Pre-market baseline sync completed! ${data.symbolsEvaluated} symbols updated via ${data.dataSource}.`);
+              }
+            } catch (err: any) {
+              alert(`Sync failed: ${err.message}`);
+            }
+          }}
+          className="px-2 py-1 rounded text-[10px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition flex items-center gap-1"
+          title="Manually trigger the 09:00 AM IST 20D baseline calculation job"
+        >
+          <span>⚡ Run 09:00 AM Sync</span>
+        </button>
+      </div>
+
       {/* Crossover Timestamp Event Log Title */}
       <div className="px-3 py-2 bg-slate-900/70 border-b border-slate-800 flex items-center justify-between">
         <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
