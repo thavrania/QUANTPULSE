@@ -31,6 +31,7 @@ import {
 } from '@/lib/services/supabaseTelemetryService';
 import { MarketSessionInfo, getIndianMarketSession } from '@/lib/services/marketHoursService';
 import { IngestionTelemetry } from '@/lib/services/liveIngestionEngine';
+import { requestQueueEngine } from '@/lib/engine/requestQueueEngine';
 
 export interface ToastMessage {
   id: string;
@@ -187,8 +188,18 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
+  const recentToastsRef = useRef<Map<string, number>>(new Map());
+
   const showToast = useCallback(
     (message: string, variant: 'info' | 'emerald' | 'amber' | 'rose' = 'info') => {
+      // Deduplicate: Suppress identical toast messages within 8 seconds
+      const now = Date.now();
+      const lastShown = recentToastsRef.current.get(message);
+      if (lastShown && now - lastShown < 8000) {
+        return;
+      }
+      recentToastsRef.current.set(message, now);
+
       const id = Math.random().toString(36).substring(2, 9);
       setToasts((prev) => [...prev, { id, message, variant }]);
       setTimeout(() => {
@@ -197,6 +208,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     },
     []
   );
+
+  // Circuit Breaker auto-pause listener
+  useEffect(() => {
+    const unsub = requestQueueEngine.onTrip((state) => {
+      setIsLiveStreaming(false);
+      showToast(`Stream Paused: ${state.reason}`, 'amber');
+    });
+    return unsub;
+  }, [showToast]);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -544,18 +564,19 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
   const fetchLiveDhanQuotes = useCallback(
     async (isManualTrigger = false): Promise<boolean> => {
-      const startTime = Date.now();
-      try {
-        setIsLiveFetching(true);
-        const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
-        const accessToken = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_access_token') || '' : '';
+      const res = await requestQueueEngine.executeBatchExclusive(async () => {
+        const startTime = Date.now();
+        try {
+          setIsLiveFetching(true);
+          const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
+          const accessToken = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_access_token') || '' : '';
 
-        const tickers = watchlist.map((s) => s.ticker);
-        const res = await fetch('/api/broker/dhan/quote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tickers, clientId, accessToken }),
-        });
+          const tickers = watchlist.map((s) => s.ticker);
+          const res = await fetch('/api/broker/dhan/quote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tickers, clientId, accessToken }),
+          });
 
         const data = await res.json();
         const latencyMs = Date.now() - startTime;
@@ -757,9 +778,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       } finally {
         setIsLiveFetching(false);
       }
-    },
-    [watchlist, clockSeconds, idempotencyLocks, positions, runAutoScan, showToast, isLiveStreaming, marketSession]
-  );
+    });
+
+    return res ?? false;
+  },
+  [watchlist, clockSeconds, idempotencyLocks, positions, runAutoScan, showToast, isLiveStreaming, marketSession]
+);
 
   const refreshLiveQuotesNow = useCallback(async () => {
     await fetchLiveDhanQuotes(true);

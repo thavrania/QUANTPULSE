@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
 import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
+import { fetchFreeLiveQuotes } from '@/lib/market/freeLiveMarketService';
 
 export interface LiveQuoteRecord {
   ltp: number;
@@ -27,80 +28,118 @@ export async function POST(req: NextRequest) {
       token = token || vault.accessToken;
     }
 
-    if (!cid || !token) {
-      return NextResponse.json(
-        {
-          success: false,
-          isConfigured: false,
-          message: 'Dhan Client ID and Access Token are required. Please configure in Broker settings or Cloud Vault.',
-        },
-        { status: 400 }
-      );
-    }
-
     const tickerList: string[] =
       Array.isArray(tickers) && tickers.length > 0
         ? tickers
         : ['RELIANCE', 'TATAMOTORS', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'ZOMATO'];
 
-    const securityIds = tickerList.map((t) => parseInt(getDhanSecurityId(t), 10));
-
-    // Request quotes from Dhan Marketfeed API (Batch multi-instrument quote)
-    const response = await fetch(`${DHAN_BASE_URL}/marketfeed/quote`, {
-      method: 'POST',
-      headers: {
-        'access-token': token,
-        'client-id': cid,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        NSE_EQ: securityIds,
-      }),
-      cache: 'no-store',
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
+    // 1. If no Dhan credentials provided, serve from 100% Free Live NSE Feed
+    if (!cid || !token) {
+      const freeQuotes = await fetchFreeLiveQuotes(tickerList);
       return NextResponse.json({
-        success: false,
-        isConfigured: true,
-        message: `Dhan Quote API error (${response.status}): ${errText}`,
+        success: true,
+        isConfigured: false,
+        count: Object.keys(freeQuotes).length,
+        quotes: freeQuotes,
+        source: 'FREE_NSE_LIVE',
+        notice: '100% Free Live NSE Feed Active ($0/month subscription).',
+        timestamp: new Date().toISOString(),
       });
     }
 
-    const quoteData = await response.json();
-    const nseData = quoteData?.data?.NSE_EQ || {};
+    const securityIds = tickerList.map((t) => parseInt(getDhanSecurityId(t), 10));
 
-    const quotes: Record<string, LiveQuoteRecord> = {};
+    // 2. Try Dhan Marketfeed API
+    try {
+      const response = await fetch(`${DHAN_BASE_URL}/marketfeed/quote`, {
+        method: 'POST',
+        headers: {
+          'access-token': token,
+          'client-id': cid,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          NSE_EQ: securityIds,
+        }),
+        cache: 'no-store',
+      });
 
-    tickerList.forEach((sym) => {
-      const secId = getDhanSecurityId(sym);
-      const item = nseData[secId];
-      if (item) {
-        const ltp = item.last_price || item.close || 0;
-        const close = item.close || ltp;
-        const calcChange = close > 0 ? +(((ltp - close) / close) * 100).toFixed(2) : 0;
+      // If Dhan rejects with 401 (e.g. 806 Data API not subscribed) or 429:
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`[QuoteRoute] Dhan error (${response.status}): ${errText}. Falling back to 100% Free Live Feed.`);
 
-        quotes[sym] = {
-          ltp: +(ltp).toFixed(2),
-          volumeM: +((item.volume || 0) / 1_000_000).toFixed(3),
-          high: +(item.high || ltp).toFixed(2),
-          low: +(item.low || ltp).toFixed(2),
-          open: +(item.open || ltp).toFixed(2),
-          close: +(close).toFixed(2),
-          changePct: item.change_percent !== undefined ? +item.change_percent.toFixed(2) : calcChange,
-          averagePrice: item.average_price ? +(item.average_price).toFixed(2) : undefined,
-        };
+        const freeQuotes = await fetchFreeLiveQuotes(tickerList);
+        return NextResponse.json({
+          success: true,
+          isConfigured: true,
+          count: Object.keys(freeQuotes).length,
+          quotes: freeQuotes,
+          source: 'FREE_NSE_LIVE',
+          notice: 'Active on 100% Free Live NSE Feed (Dhan Data API add-on not subscribed).',
+          timestamp: new Date().toISOString(),
+        });
       }
-    });
 
-    return NextResponse.json({
-      success: true,
-      isConfigured: true,
-      count: Object.keys(quotes).length,
-      quotes,
-      timestamp: new Date().toISOString(),
-    });
+      const quoteData = await response.json();
+      const nseData = quoteData?.data?.NSE_EQ || {};
+
+      const quotes: Record<string, LiveQuoteRecord> = {};
+
+      tickerList.forEach((sym) => {
+        const secId = getDhanSecurityId(sym);
+        const item = nseData[secId];
+        if (item) {
+          const ltp = item.last_price || item.close || 0;
+          const close = item.close || ltp;
+          const calcChange = close > 0 ? +(((ltp - close) / close) * 100).toFixed(2) : 0;
+
+          quotes[sym] = {
+            ltp: +(ltp).toFixed(2),
+            volumeM: +((item.volume || 0) / 1_000_000).toFixed(3),
+            high: +(item.high || ltp).toFixed(2),
+            low: +(item.low || ltp).toFixed(2),
+            open: +(item.open || ltp).toFixed(2),
+            close: +(close).toFixed(2),
+            changePct: item.change_percent !== undefined ? +item.change_percent.toFixed(2) : calcChange,
+            averagePrice: item.average_price ? +(item.average_price).toFixed(2) : undefined,
+          };
+        }
+      });
+
+      // If Dhan returned empty map, fall back to free feed
+      if (Object.keys(quotes).length === 0) {
+        const freeQuotes = await fetchFreeLiveQuotes(tickerList);
+        return NextResponse.json({
+          success: true,
+          isConfigured: true,
+          count: Object.keys(freeQuotes).length,
+          quotes: freeQuotes,
+          source: 'FREE_NSE_LIVE',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        isConfigured: true,
+        count: Object.keys(quotes).length,
+        quotes,
+        source: 'DHAN_HQ',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (dhanErr: any) {
+      console.warn('[QuoteRoute] Dhan network exception. Falling back to free feed:', dhanErr.message);
+      const freeQuotes = await fetchFreeLiveQuotes(tickerList);
+      return NextResponse.json({
+        success: true,
+        isConfigured: true,
+        count: Object.keys(freeQuotes).length,
+        quotes: freeQuotes,
+        source: 'FREE_NSE_LIVE',
+        timestamp: new Date().toISOString(),
+      });
+    }
   } catch (err: any) {
     return NextResponse.json(
       { success: false, message: `Failed to fetch live quotes: ${err.message}` },
