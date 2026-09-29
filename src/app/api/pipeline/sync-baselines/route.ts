@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { batchSyncWatchlistBaselines, BaselineCalculationOutput } from '@/lib/engine/baselineBatchService';
+import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 
 export const maxDuration = 60; // Allow up to 60 seconds on Vercel Pro/Hobby
 
@@ -35,6 +36,13 @@ async function handleSync(req: NextRequest) {
       } catch {
         // no body or json
       }
+    }
+
+    // If still missing, resolve from Supabase Cloud Vault
+    if (!clientId || !accessToken) {
+      const vault = await getActiveBrokerCredentials();
+      clientId = clientId || vault.clientId;
+      accessToken = accessToken || vault.accessToken;
     }
 
     // 2. Fetch list of monitored tickers

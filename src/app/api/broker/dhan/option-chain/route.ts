@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
 import { buildOptionChainMatrix, OptionChainSummary } from '@/lib/engine/optionChainEngine';
+import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,15 +17,24 @@ export async function POST(req: NextRequest) {
 
     const step = strikeStep || (spotLtp > 1500 ? 50 : 20);
 
+    let activeClientId = clientId;
+    let activeAccessToken = accessToken;
+
+    if (!activeClientId || !activeAccessToken) {
+      const vault = await getActiveBrokerCredentials();
+      activeClientId = activeClientId || vault.clientId;
+      activeAccessToken = activeAccessToken || vault.accessToken;
+    }
+
     // 1. Try querying Dhan Option Chain API if credentials supplied
-    if (clientId && accessToken) {
+    if (activeClientId && activeAccessToken) {
       try {
         const securityId = parseInt(getDhanSecurityId(ticker), 10);
         const dhanRes = await fetch(`${DHAN_BASE_URL}/optionchain`, {
           method: 'POST',
           headers: {
-            'access-token': accessToken,
-            'client-id': clientId,
+            'access-token': activeAccessToken,
+            'client-id': activeClientId,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({

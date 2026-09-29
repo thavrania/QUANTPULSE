@@ -29,6 +29,7 @@ export function ZoneA_Header() {
     setIsAlertsModalOpen,
     setIsAuthModalOpen,
     setIsCloudLogsModalOpen,
+    brokerVaultStatus,
   } = useQuantPulse();
 
   return (
@@ -262,14 +263,48 @@ export function ZoneA_Header() {
 
           {/* Modals & Inspection Buttons */}
           <div className="flex items-center gap-1.5 border-l border-slate-800 pl-2">
-            <button
-              type="button"
-              onClick={() => setIsBrokerModalOpen(true)}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1"
-              title="Configure Dhan HQ or Broker Gateway"
-            >
-              <span>🔌 Broker: Dhan HQ</span>
-            </button>
+            {brokerVaultStatus?.isConfigured ? (
+              brokerVaultStatus.isExpired ? (
+                <button
+                  type="button"
+                  onClick={() => setIsBrokerModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition flex items-center gap-1.5 animate-pulse"
+                  title="Dhan Access Token Expired! Click to renew in Cloud Vault."
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                  <span>🔴 Token Expired</span>
+                </button>
+              ) : brokerVaultStatus.isExpiringSoon ? (
+                <button
+                  type="button"
+                  onClick={() => setIsBrokerModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5"
+                  title={`Dhan Token expires in ${brokerVaultStatus.tokenTimeRemaining}. Click to refresh.`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                  <span>⚠️ Dhan: {brokerVaultStatus.tokenTimeRemaining}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsBrokerModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1.5 shadow-sm"
+                  title={`Dhan HQ API v2 Active • Latency: ${brokerVaultStatus.lastLatencyMs ?? 0}ms • Margin: ₹${(brokerVaultStatus.availableMargin || 0).toLocaleString('en-IN')} • Token Expiry: ${brokerVaultStatus.tokenTimeRemaining} remaining`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>🟢 Dhan: {brokerVaultStatus.tokenTimeRemaining}</span>
+                </button>
+              )
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsBrokerModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1"
+                title="Configure Dhan HQ or Broker Gateway"
+              >
+                <span>🔌 Broker: Dhan HQ</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setIsAlertsModalOpen(true)}

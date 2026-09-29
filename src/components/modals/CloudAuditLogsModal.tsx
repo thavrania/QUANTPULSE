@@ -3,17 +3,19 @@
 import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
-import { TradeLog, TslAuditTrailEntry, CrossoverEvent } from '@/lib/types/quant';
+import { TradeLog, TslAuditTrailEntry, CrossoverEvent, BrokerVaultEntry } from '@/lib/types/quant';
+import { formatTokenCountdown, maskToken } from '@/lib/services/brokerVaultService';
 
 export function CloudAuditLogsModal() {
   const { showToast, isCloudLogsModalOpen, setIsCloudLogsModalOpen } = useQuantPulse();
 
   const onClose = () => setIsCloudLogsModalOpen(false);
 
-  const [activeTab, setActiveTab] = useState<'TRADES' | 'TSL_TRAIL' | 'CROSSOVERS'>('TRADES');
+  const [activeTab, setActiveTab] = useState<'TRADES' | 'TSL_TRAIL' | 'CROSSOVERS' | 'BROKER_VAULT'>('TRADES');
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([]);
   const [tslTrails, setTslTrails] = useState<TslAuditTrailEntry[]>([]);
   const [crossovers, setCrossovers] = useState<CrossoverEvent[]>([]);
+  const [brokerVaultEntries, setBrokerVaultEntries] = useState<BrokerVaultEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
 
@@ -58,6 +60,21 @@ export function CloudAuditLogsModal() {
         setCrossovers(crossData as CrossoverEvent[]);
       }
 
+      // 4. Fetch Broker Vault Records
+      try {
+        const { data: vaultData, error: vaultErr } = await supabase
+          .from('broker_vault')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (!vaultErr && vaultData) {
+          setBrokerVaultEntries(vaultData as BrokerVaultEntry[]);
+        }
+      } catch {
+        // broker_vault table might be pending execution
+      }
+
       setLastRefreshed(new Date().toLocaleTimeString('en-IN'));
     } catch (err: any) {
       showToast(`Error fetching cloud logs: ${err.message}`, 'rose');
@@ -75,8 +92,8 @@ export function CloudAuditLogsModal() {
   if (!isCloudLogsModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-panel border border-slate-700 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-panel border border-slate-700 rounded-2xl max-w-5xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-800 bg-slate-900 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -128,60 +145,67 @@ export function CloudAuditLogsModal() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="px-5 pt-3 border-b border-slate-800 bg-slate-900/50 flex gap-2">
+        <div className="px-5 pt-3 border-b border-slate-800 bg-slate-900/50 flex gap-2 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('TRADES')}
-            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'TRADES'
                 ? 'border-cyan-400 text-cyan-300'
                 : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
-            <span>📜 Trade Orders Ledger</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
-              {tradeLogs.length}
-            </span>
+            <span>📜</span>
+            <span>Trade Logs Ledger ({tradeLogs.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('TSL_TRAIL')}
-            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'TSL_TRAIL'
                 ? 'border-emerald-400 text-emerald-300'
                 : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
-            <span>📈 Trailing SL Milestones</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
-              {tslTrails.length}
-            </span>
+            <span>📈</span>
+            <span>TSL Audit Trail ({tslTrails.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('CROSSOVERS')}
-            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'CROSSOVERS'
+                ? 'border-purple-400 text-purple-300'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>🚀</span>
+            <span>20D Crossover Events ({crossovers.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('BROKER_VAULT')}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'BROKER_VAULT'
                 ? 'border-amber-400 text-amber-300'
                 : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
-            <span>⏱️ 20D Crossover Audit Log</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
-              {crossovers.length}
-            </span>
+            <span>🔑</span>
+            <span>Broker Cloud Vault ({brokerVaultEntries.length})</span>
           </button>
         </div>
 
-        {/* Tab Content */}
-        <div className="p-4 flex-1 overflow-y-auto">
+        {/* Content Body */}
+        <div className="p-5 overflow-y-auto flex-1 text-slate-300">
           {activeTab === 'TRADES' && (
             <div className="overflow-x-auto">
               {tradeLogs.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 text-xs">
-                  No trade logs in Supabase yet. Place a trade in Zone D to see the permanent ledger update!
+                  No trade logs found in Supabase yet. Execute a trade order in Zone B to see the permanent ledger!
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse text-xs">
@@ -189,53 +213,64 @@ export function CloudAuditLogsModal() {
                     <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400 bg-obsidian/70">
                       <th className="py-2 px-2.5">Order ID</th>
                       <th className="py-2 px-2.5">Symbol</th>
-                      <th className="py-2 px-2.5">Action &amp; Mode</th>
+                      <th className="py-2 px-2.5">Action</th>
+                      <th className="py-2 px-2.5">Mode</th>
                       <th className="py-2 px-2.5">Qty / Lots</th>
                       <th className="py-2 px-2.5">Entry Price</th>
                       <th className="py-2 px-2.5">Stop Loss</th>
                       <th className="py-2 px-2.5">Target</th>
                       <th className="py-2 px-2.5">Status</th>
-                      <th className="py-2 px-2.5 text-right">Logged At (UTC)</th>
+                      <th className="py-2 px-2.5 text-right">Timestamp</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-mono">
                     {tradeLogs.map((log) => (
-                      <tr key={log.order_id || log.id} className="hover:bg-slate-900/50">
+                      <tr key={log.id || log.order_id} className="hover:bg-slate-900/50">
                         <td className="py-2 px-2.5 text-cyan-300 font-bold">{log.order_id}</td>
                         <td className="py-2 px-2.5 font-bold text-white">{log.symbol}</td>
                         <td className="py-2 px-2.5">
-                          <span className="text-emerald-400 font-bold mr-1">{log.action}</span>
                           <span
-                            className={`text-[9px] px-1 py-0.2 rounded ${
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              log.action === 'BUY'
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'bg-rose-500/20 text-rose-400'
+                            }`}
+                          >
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2.5">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] ${
                               log.routing_mode === 'LIVE_DHAN'
-                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                                ? 'bg-rose-500/15 text-rose-300 font-bold'
+                                : 'bg-cyan-500/15 text-cyan-300'
                             }`}
                           >
                             {log.routing_mode}
                           </span>
                         </td>
-                        <td className="py-2 px-2.5 text-slate-200">
-                          {log.lots ? `${log.lots} Lot (${log.quantity})` : `${log.quantity} Eq`}
+                        <td className="py-2 px-2.5 text-slate-300">
+                          {log.quantity} {log.lots ? `(${log.lots}L)` : ''}
                         </td>
-                        <td className="py-2 px-2.5 font-bold text-white">₹{log.entry_price}</td>
+                        <td className="py-2 px-2.5 text-white font-bold">₹{log.entry_price}</td>
                         <td className="py-2 px-2.5 text-rose-400">₹{log.stop_loss}</td>
                         <td className="py-2 px-2.5 text-emerald-400">₹{log.target_price}</td>
                         <td className="py-2 px-2.5">
                           <span
-                            className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               log.status === 'OPEN'
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                                 : log.status === 'CLOSED'
-                                ? 'bg-slate-800 text-slate-300'
-                                : 'bg-rose-500/20 text-rose-300'
+                                ? 'bg-slate-800 text-slate-400 border border-slate-700'
+                                : 'bg-rose-500/15 text-rose-300'
                             }`}
                           >
                             {log.status}
                           </span>
                         </td>
-                        <td className="py-2 px-2.5 text-right text-[10px] text-slate-400">
-                          {log.created_at ? new Date(log.created_at).toLocaleTimeString() : '—'}
+                        <td className="py-2 px-2.5 text-right text-slate-400">
+                          {new Date(log.created_at || '').toLocaleTimeString('en-IN')}
                         </td>
                       </tr>
                     ))}
@@ -289,48 +324,135 @@ export function CloudAuditLogsModal() {
 
           {activeTab === 'CROSSOVERS' && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400 bg-obsidian/70">
-                    <th className="py-2 px-2.5">Symbol</th>
-                    <th className="py-2 px-2.5">Segment</th>
-                    <th className="py-2 px-2.5">Exact Crossover Time</th>
-                    <th className="py-2 px-2.5">Spot Price at Cross</th>
-                    <th className="py-2 px-2.5">20D Avg Benchmark</th>
-                    <th className="py-2 px-2.5 text-right">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 font-mono">
-                  {crossovers.map((cross, idx) => (
-                    <tr key={cross.id || idx} className="hover:bg-slate-900/50">
-                      <td className="py-2 px-2.5 font-bold text-white">{cross.ticker}</td>
-                      <td className="py-2 px-2.5">
-                        <span
-                          className={`text-[9px] px-1.5 py-0.2 rounded ${
-                            cross.isFnO
-                              ? 'bg-purple-500/20 text-purple-300'
-                              : 'bg-slate-800 text-slate-400'
-                          }`}
-                        >
-                          {cross.isFnO ? 'F&O' : 'CASH'}
-                        </span>
-                      </td>
-                      <td className="py-2 px-2.5 font-bold text-amber-300">
-                        ⏱️ {cross.time} IST
-                      </td>
-                      <td className="py-2 px-2.5 font-bold text-emerald-400">
-                        ₹{cross.crossPrice?.toFixed(2)}
-                      </td>
-                      <td className="py-2 px-2.5 text-slate-300">{cross.avgVol20DM}M</td>
-                      <td className="py-2 px-2.5 text-right">
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
-                          LATCHED
-                        </span>
-                      </td>
+              {crossovers.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 text-xs">
+                  No 20D volume crossovers recorded in the database yet.
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400 bg-obsidian/70">
+                      <th className="py-2 px-2.5">Symbol</th>
+                      <th className="py-2 px-2.5">Segment</th>
+                      <th className="py-2 px-2.5">Exact Crossover Time</th>
+                      <th className="py-2 px-2.5">Spot Price at Cross</th>
+                      <th className="py-2 px-2.5">20D Avg Benchmark</th>
+                      <th className="py-2 px-2.5 text-right">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {crossovers.map((cross, idx) => (
+                      <tr key={cross.id || idx} className="hover:bg-slate-900/50">
+                        <td className="py-2 px-2.5 font-bold text-white">{cross.ticker}</td>
+                        <td className="py-2 px-2.5">
+                          <span
+                            className={`text-[9px] px-1.5 py-0.2 rounded ${
+                              cross.isFnO
+                                ? 'bg-purple-500/20 text-purple-300'
+                                : 'bg-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {cross.isFnO ? 'F&O' : 'CASH'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2.5 font-bold text-amber-300">
+                          ⏱️ {cross.time} IST
+                        </td>
+                        <td className="py-2 px-2.5 font-bold text-emerald-400">
+                          ₹{cross.crossPrice?.toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2.5 text-slate-300">{cross.avgVol20DM}M</td>
+                        <td className="py-2 px-2.5 text-right">
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                            LATCHED
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'BROKER_VAULT' && (
+            <div className="overflow-x-auto space-y-4">
+              {brokerVaultEntries.length === 0 ? (
+                <div className="p-6 bg-obsidian rounded-xl border border-slate-800 text-center space-y-2">
+                  <div className="text-amber-400 font-bold text-sm">
+                    No Broker Vault Records in Supabase Yet
+                  </div>
+                  <p className="text-slate-400 text-xs max-w-lg mx-auto">
+                    To enable 24h cloud auto-auth across all your devices and automated Vercel Cron jobs:
+                  </p>
+                  <div className="text-left max-w-lg mx-auto bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] font-mono text-cyan-300">
+                    1. Run <strong className="text-emerald-300">supabase_phase2_broker_vault.sql</strong> in your Supabase SQL Editor.<br />
+                    2. In QuantPulse, open <strong className="text-white">🔌 Broker</strong> and click <strong className="text-emerald-300">☁️ Save &amp; Sync to Cloud Vault</strong>.
+                  </div>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400 bg-obsidian/70">
+                      <th className="py-2 px-2.5">Broker Gateway</th>
+                      <th className="py-2 px-2.5">Client ID</th>
+                      <th className="py-2 px-2.5">Masked Token</th>
+                      <th className="py-2 px-2.5">Token Expiry &amp; Status</th>
+                      <th className="py-2 px-2.5">Ping Latency</th>
+                      <th className="py-2 px-2.5">Available Margin</th>
+                      <th className="py-2 px-2.5 text-right">Primary Vault</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {brokerVaultEntries.map((entry, idx) => {
+                      const countdown = formatTokenCountdown(entry.token_expiry_at);
+                      return (
+                        <tr key={entry.id || idx} className="hover:bg-slate-900/50">
+                          <td className="py-2 px-2.5 font-bold text-white flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            <span>{entry.broker_name}</span>
+                          </td>
+                          <td className="py-2 px-2.5 text-cyan-300 font-bold">{entry.client_id}</td>
+                          <td className="py-2 px-2.5 text-slate-400">{maskToken(entry.access_token)}</td>
+                          <td className="py-2 px-2.5">
+                            {countdown.isExpired ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                🔴 Expired
+                              </span>
+                            ) : countdown.isExpiringSoon ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                ⚠️ {countdown.formatted} left
+                              </span>
+                            ) : (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
+                                🟢 {countdown.formatted} left
+                              </span>
+                            )}
+                            <div className="text-[9px] text-slate-500 mt-0.5">
+                              Exp: {new Date(entry.token_expiry_at).toLocaleTimeString('en-IN')} IST
+                            </div>
+                          </td>
+                          <td className="py-2 px-2.5 text-slate-300">
+                            {entry.last_ping_latency_ms ? `${entry.last_ping_latency_ms}ms` : 'N/A'}
+                          </td>
+                          <td className="py-2 px-2.5 text-emerald-400 font-bold">
+                            ₹{Number(entry.available_margin || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2 px-2.5 text-right">
+                            {entry.is_primary ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                                ⭐ ACTIVE PRIMARY
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-500">Archived</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           )}
         </div>

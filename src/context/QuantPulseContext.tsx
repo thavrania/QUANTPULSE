@@ -8,6 +8,7 @@ import {
   SystemConfig,
   InstrumentMode,
   ExecutionMode,
+  BrokerVaultStatus,
 } from '@/lib/types/quant';
 import {
   INITIAL_WATCHLIST_DATA,
@@ -56,6 +57,8 @@ interface QuantPulseContextType {
   feedMode: 'DHAN_LIVE' | 'SIMULATION';
   lastLiveSyncTime: string | null;
   isLiveFetching: boolean;
+  brokerVaultStatus: BrokerVaultStatus | null;
+  refreshBrokerVaultStatus: () => Promise<void>;
 
   // Actions
   setSelectedTicker: (ticker: string) => void;
@@ -111,8 +114,41 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [feedMode, setFeedModeState] = useState<'DHAN_LIVE' | 'SIMULATION'>('DHAN_LIVE');
   const [lastLiveSyncTime, setLastLiveSyncTime] = useState<string | null>(null);
   const [isLiveFetching, setIsLiveFetching] = useState<boolean>(false);
+  const [brokerVaultStatus, setBrokerVaultStatus] = useState<BrokerVaultStatus | null>(null);
 
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const refreshBrokerVaultStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/broker/vault');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setBrokerVaultStatus(data.data);
+
+        // Auto-auth: If local storage has empty credentials but vault is configured, restore to localStorage
+        if (typeof window !== 'undefined' && data.data.isConfigured && data.data.source === 'VAULT') {
+          const currentToken = localStorage.getItem('qp_dhan_access_token');
+          if (!currentToken && data.data.clientId) {
+            localStorage.setItem('qp_dhan_client_id', data.data.clientId);
+            if (data.data.tokenExpiryAt) {
+              localStorage.setItem('qp_token_expiry_at', data.data.tokenExpiryAt);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error refreshing broker vault:', err);
+    }
+  }, []);
+
+  // Periodic broker vault countdown & status refresh (every 30 seconds)
+  useEffect(() => {
+    refreshBrokerVaultStatus();
+    const interval = setInterval(() => {
+      refreshBrokerVaultStatus();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [refreshBrokerVaultStatus]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -232,6 +268,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'active_positions' }, () => {
         loadFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'broker_vault' }, () => {
+        refreshBrokerVaultStatus();
       })
       .subscribe();
 
@@ -947,6 +986,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         isCloudLogsModalOpen,
         removeToast,
         showToast,
+        brokerVaultStatus,
+        refreshBrokerVaultStatus,
       }}
     >
       {children}

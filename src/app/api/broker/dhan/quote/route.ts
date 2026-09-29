@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 
 export interface LiveQuoteRecord {
   ltp: number;
@@ -17,15 +18,21 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { tickers, clientId, accessToken } = body;
 
-    const cid = clientId || process.env.DHAN_CLIENT_ID;
-    const token = accessToken || process.env.DHAN_ACCESS_TOKEN;
+    let cid = clientId;
+    let token = accessToken;
+
+    if (!cid || !token) {
+      const vault = await getActiveBrokerCredentials();
+      cid = cid || vault.clientId;
+      token = token || vault.accessToken;
+    }
 
     if (!cid || !token) {
       return NextResponse.json(
         {
           success: false,
           isConfigured: false,
-          message: 'Dhan Client ID and Access Token are required. Please configure in Broker settings.',
+          message: 'Dhan Client ID and Access Token are required. Please configure in Broker settings or Cloud Vault.',
         },
         { status: 400 }
       );

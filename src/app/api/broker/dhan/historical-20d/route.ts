@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { ticker, clientId, accessToken } = body;
 
-    if (!ticker || !clientId || !accessToken) {
+    let cid = clientId;
+    let token = accessToken;
+
+    if (!cid || !token) {
+      const vault = await getActiveBrokerCredentials();
+      cid = cid || vault.clientId;
+      token = token || vault.accessToken;
+    }
+
+    if (!ticker || !cid || !token) {
       return NextResponse.json(
-        { success: false, message: 'Ticker, Client ID, and Access Token are required.' },
+        { success: false, message: 'Ticker, Client ID, and Access Token are required (or configure Cloud Vault).' },
         { status: 400 }
       );
     }
@@ -33,8 +43,8 @@ export async function POST(req: NextRequest) {
     const response = await fetch(`${DHAN_BASE_URL}/charts/historical`, {
       method: 'POST',
       headers: {
-        'access-token': accessToken,
-        'client-id': clientId,
+        'access-token': token,
+        'client-id': cid,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),

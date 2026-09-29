@@ -3,9 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
 import { BrokerType, BrokerConnectionTestResult } from '@/lib/broker/types';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 
 export function BrokerSettingsModal() {
-  const { watchlist, showToast, isBrokerModalOpen, setIsBrokerModalOpen } = useQuantPulse();
+  const {
+    watchlist,
+    showToast,
+    isBrokerModalOpen,
+    setIsBrokerModalOpen,
+    brokerVaultStatus,
+    refreshBrokerVaultStatus,
+  } = useQuantPulse();
 
   const [broker, setBroker] = useState<BrokerType>('DHAN');
   const [clientId, setClientId] = useState('');
@@ -13,31 +21,145 @@ export function BrokerSettingsModal() {
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncingBaselines, setIsSyncingBaselines] = useState(false);
   const [isTestingQuote, setIsTestingQuote] = useState(false);
+  const [isSyncingVault, setIsSyncingVault] = useState(false);
+  const [isPullingVault, setIsPullingVault] = useState(false);
   const [testResult, setTestResult] = useState<BrokerConnectionTestResult | null>(null);
   const [liveQuotePreview, setLiveQuotePreview] = useState<Record<string, any> | null>(null);
 
   // Load saved credentials from localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isBrokerModalOpen) {
       const savedBroker = (localStorage.getItem('qp_broker_type') as BrokerType) || 'DHAN';
       const savedClientId = localStorage.getItem('qp_dhan_client_id') || '';
       const savedToken = localStorage.getItem('qp_dhan_access_token') || '';
       setBroker(savedBroker);
       setClientId(savedClientId);
       setAccessToken(savedToken);
+
+      // Auto-fetch if local is empty and vault is configured
+      if (!savedClientId && brokerVaultStatus?.clientId) {
+        setClientId(brokerVaultStatus.clientId);
+      }
     }
-  }, [isBrokerModalOpen]);
+  }, [isBrokerModalOpen, brokerVaultStatus]);
 
   if (!isBrokerModalOpen) return null;
 
   const onClose = () => setIsBrokerModalOpen(false);
 
-  const handleSave = () => {
+  const handleSaveLocal = () => {
     localStorage.setItem('qp_broker_type', broker);
     localStorage.setItem('qp_dhan_client_id', clientId.trim());
     localStorage.setItem('qp_dhan_access_token', accessToken.trim());
-    showToast(`Broker configuration saved (${broker})`, 'emerald');
+    showToast(`Broker configuration saved locally (${broker})`, 'emerald');
+    refreshBrokerVaultStatus();
     onClose();
+  };
+
+  const handleSaveAndSyncVault = async () => {
+    if (!clientId.trim() || !accessToken.trim()) {
+      showToast('Please enter both Dhan Client ID and Access Token.', 'rose');
+      return;
+    }
+
+    setIsSyncingVault(true);
+    setTestResult(null);
+
+    try {
+      const res = await fetch('/api/broker/vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brokerName: broker,
+          clientId: clientId.trim(),
+          accessToken: accessToken.trim(),
+          expiryHours: 24,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        localStorage.setItem('qp_broker_type', broker);
+        localStorage.setItem('qp_dhan_client_id', clientId.trim());
+        localStorage.setItem('qp_dhan_access_token', accessToken.trim());
+        if (data.expiryAt) localStorage.setItem('qp_token_expiry_at', data.expiryAt);
+
+        setTestResult({
+          success: true,
+          message: data.message,
+          broker: 'DHAN',
+          latencyMs: data.latencyMs,
+          availableCash: data.availableMargin,
+        });
+
+        await refreshBrokerVaultStatus();
+        showToast('✅ Dhan HQ Authenticated & Synced to Cloud Vault!', 'emerald');
+      } else {
+        setTestResult({
+          success: false,
+          message: data.message || 'Authentication failed',
+          broker: 'DHAN',
+          latencyMs: data.latencyMs,
+        });
+        showToast(data.message || 'Authentication failed', 'rose');
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: err.message || 'Failed to ping Dhan API and sync to vault',
+        broker: 'DHAN',
+      });
+      showToast(`Sync error: ${err.message}`, 'rose');
+    } finally {
+      setIsSyncingVault(false);
+    }
+  };
+
+  const handlePullFromVault = async () => {
+    setIsPullingVault(true);
+    try {
+      if (isSupabaseConfigured && supabase) {
+        const { data: vData, error } = await supabase
+          .from('broker_vault')
+          .select('*')
+          .eq('is_primary', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!error && vData && vData.client_id) {
+          setClientId(vData.client_id);
+          setAccessToken(vData.access_token);
+          setBroker((vData.broker_name as BrokerType) || 'DHAN');
+
+          localStorage.setItem('qp_broker_type', vData.broker_name || 'DHAN');
+          localStorage.setItem('qp_dhan_client_id', vData.client_id);
+          localStorage.setItem('qp_dhan_access_token', vData.access_token);
+          if (vData.token_expiry_at) {
+            localStorage.setItem('qp_token_expiry_at', vData.token_expiry_at);
+          }
+
+          await refreshBrokerVaultStatus();
+          showToast('📥 Active credentials pulled from Cloud Vault!', 'emerald');
+          return;
+        }
+      }
+
+      // Fallback to API route if direct query has issue
+      const res = await fetch('/api/broker/vault');
+      const data = await res.json();
+      if (data.success && data.data?.isConfigured && data.data.clientId) {
+        setClientId(data.data.clientId);
+        showToast('Client ID restored from Cloud Vault.', 'emerald');
+      } else {
+        showToast('No active credentials stored in Supabase Cloud Vault.', 'amber');
+      }
+    } catch (err: any) {
+      showToast(`Error pulling vault: ${err.message}`, 'rose');
+    } finally {
+      setIsPullingVault(false);
+    }
   };
 
   const handleTestConnection = async () => {
@@ -151,7 +273,7 @@ export function BrokerSettingsModal() {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-panel border border-slate-700 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-panel border border-slate-700 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
           <div className="flex items-center gap-2.5">
@@ -159,8 +281,8 @@ export function BrokerSettingsModal() {
               🔌
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Live Broker Gateway Configuration</h3>
-              <p className="text-xs text-slate-400">Epic 1: Direct Exchange WebSocket &amp; Order Gateway</p>
+              <h3 className="text-sm font-bold text-white">Live Broker Gateway &amp; Cloud Vault</h3>
+              <p className="text-xs text-slate-400">Phase 2: 24h Auto-Auth &amp; Multi-Device Cloud Sync</p>
             </div>
           </div>
           <button
@@ -174,6 +296,65 @@ export function BrokerSettingsModal() {
 
         {/* Content */}
         <div className="p-5 space-y-4 overflow-y-auto text-xs text-slate-300">
+          
+          {/* Cloud Vault Status Card */}
+          <div className="p-3.5 bg-obsidian rounded-xl border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">☁️</span>
+                <span className="font-bold text-white text-xs">Supabase Cloud Vault</span>
+                {brokerVaultStatus?.isConfigured ? (
+                  brokerVaultStatus.isExpired ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">
+                      🔴 Expired
+                    </span>
+                  ) : brokerVaultStatus.isExpiringSoon ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                      ⚠️ Expiring Soon ({brokerVaultStatus.tokenTimeRemaining})
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      🟢 Active ({brokerVaultStatus.tokenTimeRemaining})
+                    </span>
+                  )
+                ) : (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                    Not Configured
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handlePullFromVault}
+                disabled={isPullingVault}
+                className="text-[10px] font-semibold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 px-2 py-1 rounded transition flex items-center gap-1"
+                title="Fetch active keys from Supabase database to auto-fill this form"
+              >
+                <span>{isPullingVault ? 'Pulling...' : '📥 Pull from Cloud Vault'}</span>
+              </button>
+            </div>
+
+            {brokerVaultStatus?.isConfigured && (
+              <div className="grid grid-cols-3 gap-2 text-[10px] font-mono pt-1 text-slate-400 border-t border-slate-800/80">
+                <div>
+                  <span className="block text-slate-500">Client ID:</span>
+                  <span className="text-white font-bold">{brokerVaultStatus.clientId}</span>
+                </div>
+                <div>
+                  <span className="block text-slate-500">Token Mask:</span>
+                  <span className="text-slate-300">{brokerVaultStatus.maskedToken}</span>
+                </div>
+                <div>
+                  <span className="block text-slate-500">Available Margin:</span>
+                  <span className="text-emerald-400 font-bold">
+                    ₹{(brokerVaultStatus.availableMargin || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Broker Selector */}
           <div>
             <label className="block text-[10px] text-slate-400 uppercase font-semibold mb-1">
@@ -255,7 +436,7 @@ export function BrokerSettingsModal() {
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="Paste your 24-hour or permanent Dhan Access Token here..."
+                  placeholder="Paste your 24-hour Dhan Access Token here..."
                   value={accessToken}
                   onChange={(e) => setAccessToken(e.target.value)}
                   className="w-full bg-slate-900 text-xs font-mono text-white px-3 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-400"
@@ -364,7 +545,7 @@ export function BrokerSettingsModal() {
             </div>
           )}
 
-          {/* How to get credentials helper box */}
+          {/* Quick instructions box */}
           <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
             <div className="font-semibold text-slate-200">How to get your Dhan API keys in 30 seconds:</div>
             <div>1. Log in to <strong className="text-white">web.dhan.co</strong>.</div>
@@ -374,21 +555,34 @@ export function BrokerSettingsModal() {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-slate-800 bg-slate-900 flex justify-end gap-2.5">
+        <div className="px-5 py-3 border-t border-slate-800 bg-slate-900 flex items-center justify-between">
           <button
             type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+            onClick={handleSaveLocal}
+            className="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+            title="Saves to this browser only"
           >
-            Cancel
+            💾 Save Local Only
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md transition"
-          >
-            Save Gateway Settings
-          </button>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveAndSyncVault}
+              disabled={isSyncingVault}
+              className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md transition flex items-center gap-1.5"
+              title="Pings Dhan HQ, verifies token, and saves to Supabase Cloud Vault for all devices"
+            >
+              <span>{isSyncingVault ? 'Verifying & Syncing...' : '☁️ Save & Sync to Cloud Vault'}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

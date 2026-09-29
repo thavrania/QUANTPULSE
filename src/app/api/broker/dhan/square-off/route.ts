@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,8 +18,18 @@ export async function POST(req: NextRequest) {
 
     const exitTime = new Date().toLocaleTimeString('en-IN', { hour12: false });
 
+    // Resolve credentials if live and not provided
+    let activeClientId = clientId;
+    let activeAccessToken = accessToken;
+
+    if (!isPaper && (!activeClientId || !activeAccessToken)) {
+      const vault = await getActiveBrokerCredentials();
+      activeClientId = activeClientId || vault.clientId;
+      activeAccessToken = activeAccessToken || vault.accessToken;
+    }
+
     // Paper Trading square off
-    if (isPaper || !clientId || !accessToken) {
+    if (isPaper || !activeClientId || !activeAccessToken) {
       return NextResponse.json({
         success: true,
         mode: 'PAPER',
@@ -35,7 +46,7 @@ export async function POST(req: NextRequest) {
     const securityId = getDhanSecurityId(ticker);
 
     const squareOffPayload = {
-      dhanClientId: clientId,
+      dhanClientId: activeClientId,
       transactionType: 'SELL',
       exchangeSegment: exchangeSegment,
       productType: 'INTRADAY',
@@ -50,8 +61,8 @@ export async function POST(req: NextRequest) {
     const dhanRes = await fetch(`${DHAN_BASE_URL}/orders`, {
       method: 'POST',
       headers: {
-        'access-token': accessToken,
-        'client-id': clientId,
+        'access-token': activeAccessToken,
+        'client-id': activeClientId,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(squareOffPayload),

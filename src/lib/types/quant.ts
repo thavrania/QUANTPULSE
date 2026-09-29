@@ -186,3 +186,32 @@ export interface LiveTickSnapshot {
   created_at?: string;
 }
 
+export interface BrokerVaultEntry {
+  id?: string;
+  broker_name: string;
+  client_id: string;
+  access_token: string;
+  token_generated_at?: string;
+  token_expiry_at: string;
+  status: 'ACTIVE' | 'EXPIRED' | 'REVOKED';
+  last_ping_latency_ms?: number;
+  available_margin?: number;
+  is_primary?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BrokerVaultStatus {
+  isConfigured: boolean;
+  brokerName: string;
+  clientId: string;
+  maskedToken: string;
+  tokenExpiryAt: string | null;
+  tokenTimeRemaining: string;
+  isExpired: boolean;
+  isExpiringSoon: boolean;
+  lastLatencyMs?: number | null;
+  availableMargin?: number | null;
+  source: 'VAULT' | 'LOCAL' | 'ENV' | 'NONE';
+}
+

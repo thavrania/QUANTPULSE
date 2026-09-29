@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,10 +28,20 @@ export async function POST(req: NextRequest) {
 
     const orderTime = new Date().toLocaleTimeString('en-IN', { hour12: false });
 
+    // Resolve credentials if not paper and not provided
+    let activeClientId = clientId;
+    let activeAccessToken = accessToken;
+
+    if (!isPaper && (!activeClientId || !activeAccessToken)) {
+      const vault = await getActiveBrokerCredentials();
+      activeClientId = activeClientId || vault.clientId;
+      activeAccessToken = activeAccessToken || vault.accessToken;
+    }
+
     // =====================================================================
     // 1. PAPER TRADING ENGINE (Virtual Execution against real price)
     // =====================================================================
-    if (isPaper || !clientId || !accessToken) {
+    if (isPaper || !activeClientId || !activeAccessToken) {
       const paperOrderId = `PAPER-${Math.floor(100000 + Math.random() * 900000)}`;
 
       return NextResponse.json({
@@ -56,7 +67,7 @@ export async function POST(req: NextRequest) {
     const securityId = getDhanSecurityId(ticker);
 
     const dhanOrderPayload = {
-      dhanClientId: clientId,
+      dhanClientId: activeClientId,
       transactionType: action,
       exchangeSegment: exchangeSegment,
       productType: 'INTRADAY', // MIS intraday for algorithmic volume crossover terminal
@@ -72,8 +83,8 @@ export async function POST(req: NextRequest) {
     const dhanResponse = await fetch(`${DHAN_BASE_URL}/orders`, {
       method: 'POST',
       headers: {
-        'access-token': accessToken,
-        'client-id': clientId,
+        'access-token': activeAccessToken,
+        'client-id': activeClientId,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(dhanOrderPayload),
