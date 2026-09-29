@@ -41,6 +41,7 @@ interface QuantPulseContextType {
   isJsonModalOpen: boolean;
   isAddStockModalOpen: boolean;
   isBrokerModalOpen: boolean;
+  isOptionChainModalOpen: boolean;
   idempotencyLocks: string[];
   totalMtmPnl: number;
   isSupabaseActive: boolean;
@@ -61,6 +62,7 @@ interface QuantPulseContextType {
   setIsJsonModalOpen: (open: boolean) => void;
   setIsAddStockModalOpen: (open: boolean) => void;
   setIsBrokerModalOpen: (open: boolean) => void;
+  setIsOptionChainModalOpen: (open: boolean) => void;
   removeToast: (id: string) => void;
   showToast: (message: string, variant?: 'info' | 'emerald' | 'amber' | 'rose') => void;
 }
@@ -84,6 +86,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [isJsonModalOpen, setIsJsonModalOpen] = useState<boolean>(false);
   const [isAddStockModalOpen, setIsAddStockModalOpen] = useState<boolean>(false);
   const [isBrokerModalOpen, setIsBrokerModalOpen] = useState<boolean>(false);
+  const [isOptionChainModalOpen, setIsOptionChainModalOpen] = useState<boolean>(false);
   const [idempotencyLocks, setIdempotencyLocks] = useState<string[]>([]);
 
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -527,6 +530,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         isJsonModalOpen,
         isAddStockModalOpen,
         isBrokerModalOpen,
+        isOptionChainModalOpen,
         idempotencyLocks,
         totalMtmPnl,
         isSupabaseActive: isSupabaseConfigured,
@@ -545,6 +549,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setIsJsonModalOpen,
         setIsAddStockModalOpen,
         setIsBrokerModalOpen,
+        setIsOptionChainModalOpen,
         removeToast,
         showToast,
       }}

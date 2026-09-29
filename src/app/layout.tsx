@@ -6,6 +6,7 @@ import { ToastContainer } from '@/components/ui/ToastContainer';
 import { JsonPayloadModal } from '@/components/modals/JsonPayloadModal';
 import { AddStockModal } from '@/components/modals/AddStockModal';
 import { BrokerSettingsModal } from '@/components/modals/BrokerSettingsModal';
+import { OptionChainModal } from '@/components/modals/OptionChainModal';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -38,6 +39,7 @@ export default function RootLayout({
           <JsonPayloadModal />
           <AddStockModal />
           <BrokerSettingsModal />
+          <OptionChainModal />
           <ToastContainer />
         </QuantPulseProvider>
       </body>

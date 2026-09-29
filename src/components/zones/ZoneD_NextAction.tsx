@@ -13,6 +13,7 @@ export function ZoneD_NextAction() {
     forceCrossover,
     idempotencyLocks,
     setIsJsonModalOpen,
+    setIsOptionChainModalOpen,
   } = useQuantPulse();
 
   const stock =
@@ -170,19 +171,33 @@ export function ZoneD_NextAction() {
             </div>
 
             {'lots' in activeLeg && activeLeg.lots && (
-              <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] font-mono">
-                <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
-                  <div className="text-[9px] text-purple-300 uppercase">ATM Strike</div>
-                  <div className="font-bold text-white">{activeLeg.strikePrice} CE</div>
+              <div className="space-y-2 pt-1">
+                <div className="grid grid-cols-4 gap-1.5 text-[11px] font-mono">
+                  <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                    <div className="text-[9px] text-purple-300 uppercase">ATM Strike</div>
+                    <div className="font-bold text-white">{activeLeg.strikePrice} CE</div>
+                  </div>
+                  <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                    <div className="text-[9px] text-purple-300 uppercase">Delta (Δ)</div>
+                    <div className="font-bold text-cyan-300">{activeLeg.delta}</div>
+                  </div>
+                  <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                    <div className="text-[9px] text-purple-300 uppercase">Theta (Θ)</div>
+                    <div className="font-bold text-rose-300">-₹{+(activeLeg.entryPrice * 0.045).toFixed(1)}/d</div>
+                  </div>
+                  <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
+                    <div className="text-[9px] text-purple-300 uppercase">IV %</div>
+                    <div className="font-bold text-white">{activeLeg.ivPct}%</div>
+                  </div>
                 </div>
-                <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
-                  <div className="text-[9px] text-purple-300 uppercase">Delta</div>
-                  <div className="font-bold text-white">{activeLeg.delta}</div>
-                </div>
-                <div className="bg-purple-500/10 border border-purple-500/20 p-1.5 rounded text-center">
-                  <div className="text-[9px] text-purple-300 uppercase">IV %</div>
-                  <div className="font-bold text-white">{activeLeg.ivPct}%</div>
-                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsOptionChainModalOpen(true)}
+                  className="w-full py-1.5 rounded-lg text-xs font-semibold bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 transition flex items-center justify-center gap-1.5"
+                >
+                  <span>📊 Inspect Multi-Strike Option Chain Matrix &amp; PCR</span>
+                </button>
               </div>
             )}
           </div>
