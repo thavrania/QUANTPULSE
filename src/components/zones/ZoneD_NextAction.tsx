@@ -1,8 +1,7 @@
-'use client';
-
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
 import { buildNextActionPayload } from '@/lib/engine/optionPricing';
+import { LiveOrderConfirmationModal, OrderPreviewDetails } from '@/components/modals/LiveOrderConfirmationModal';
 
 export function ZoneD_NextAction() {
   const {
@@ -14,7 +13,12 @@ export function ZoneD_NextAction() {
     idempotencyLocks,
     setIsJsonModalOpen,
     setIsOptionChainModalOpen,
+    showToast,
   } = useQuantPulse();
+
+  const [isPaperMode, setIsPaperMode] = useState<boolean>(true);
+  const [previewOrder, setPreviewOrder] = useState<OrderPreviewDetails | null>(null);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
 
   const stock =
     watchlist.find((s) => s.ticker === selectedTicker) || watchlist[0];
@@ -203,20 +207,67 @@ export function ZoneD_NextAction() {
           </div>
         </div>
 
-        {/* Execution Footer (Manual vs Auto) */}
-        <div className="pt-2 border-t border-slate-800 space-y-2">
+        {/* Execution Footer (Manual vs Auto & Paper vs Live) */}
+        <div className="pt-2 border-t border-slate-800 space-y-2.5">
+          {/* OMS Routing Selector (Paper vs Live Dhan) */}
+          <div className="flex items-center justify-between bg-obsidian px-2.5 py-1.5 rounded-lg border border-slate-800 text-[10px]">
+            <span className="text-slate-400 font-semibold uppercase">Routing:</span>
+            <div className="inline-flex items-center p-0.5 rounded-md bg-slate-900 border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setIsPaperMode(true)}
+                className={`px-2 py-0.5 rounded font-semibold transition ${
+                  isPaperMode
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📝 Paper Sim
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsPaperMode(false)}
+                className={`px-2 py-0.5 rounded font-semibold transition ${
+                  !isPaperMode
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                ⚡ Live Dhan
+              </button>
+            </div>
+          </div>
+
           {config.executionMode === 'MANUAL' ? (
             isEligible ? (
               <div>
                 <button
                   type="button"
-                  onClick={() => executeBuy(stock.ticker, 'MANUAL')}
-                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg transition flex items-center justify-center gap-2"
+                  onClick={() => {
+                    setPreviewOrder({
+                      ticker: stock.ticker,
+                      symbol: activeLeg.symbol,
+                      instrumentType: activeLeg.instrumentType,
+                      action: 'BUY',
+                      quantity: activeLeg.quantity,
+                      lots: 'lots' in activeLeg ? activeLeg.lots : null,
+                      entryPrice: activeLeg.entryPrice,
+                      stopLossPrice: activeLeg.stopLossPrice,
+                      targetPrice: activeLeg.targetPrice,
+                      capitalRequired: activeLeg.capitalRequired,
+                      isPaper: isPaperMode,
+                    });
+                  }}
+                  className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-slate-950 shadow-lg transition flex items-center justify-center gap-2 ${
+                    isPaperMode
+                      ? 'bg-emerald-500 hover:bg-emerald-400'
+                      : 'bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 hover:to-amber-400'
+                  }`}
                 >
-                  <span>🚀 Execute Buy: {activeLeg.symbol}</span>
+                  <span>🚀 Execute {isPaperMode ? 'Paper Buy' : 'LIVE BUY'}: {activeLeg.symbol}</span>
                 </button>
                 <div className="text-[10px] text-center text-slate-400 mt-1">
-                  Toggle 2 is <strong>MANUAL</strong> — Click to place order for this eligible stock.
+                  Routing: <strong className={isPaperMode ? 'text-cyan-300' : 'text-rose-400'}>{isPaperMode ? 'Paper Virtual Engine' : 'Live Dhan Exchange API'}</strong>
                 </div>
               </div>
             ) : (
@@ -239,12 +290,51 @@ export function ZoneD_NextAction() {
               <p className="text-[11px] text-slate-300">
                 {isAlreadyTraded
                   ? `${stock.ticker} was automatically bought upon crossing its 20-Day Volume Average at ${stock.crossoverTime}.`
-                  : `The instant ${stock.ticker} crosses ${stock.avgVol20DM.toFixed(2)}M volume, the system will auto-buy ${activeLeg.symbol}.`}
+                  : `The instant ${stock.ticker} crosses ${stock.avgVol20DM.toFixed(2)}M volume, the system will auto-buy ${activeLeg.symbol} via ${isPaperMode ? 'Paper Engine' : 'Live Dhan API'}.`}
               </p>
             </div>
           )}
         </div>
       </div>
+
+      {/* Pre-Trade Confirmation Modal */}
+      <LiveOrderConfirmationModal
+        isOpen={Boolean(previewOrder)}
+        order={previewOrder}
+        isSubmitting={isSubmittingOrder}
+        onCancel={() => setPreviewOrder(null)}
+        onConfirm={async () => {
+          if (!previewOrder) return;
+          setIsSubmittingOrder(true);
+          try {
+            const clientId = localStorage.getItem('qp_dhan_client_id') || '';
+            const accessToken = localStorage.getItem('qp_dhan_access_token') || '';
+
+            const res = await fetch('/api/broker/dhan/place-order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...previewOrder,
+                clientId,
+                accessToken,
+              }),
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              executeBuy(previewOrder.ticker, 'MANUAL');
+              showToast(`✅ ${data.message}`, 'emerald');
+            } else {
+              showToast(`❌ ${data.message}`, 'rose');
+            }
+          } catch (err: any) {
+            showToast(`Order failed: ${err.message}`, 'rose');
+          } finally {
+            setIsSubmittingOrder(false);
+            setPreviewOrder(null);
+          }
+        }}
+      />
     </section>
   );
 }

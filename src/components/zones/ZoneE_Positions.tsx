@@ -150,10 +150,33 @@ export function ZoneE_Positions() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => advancePositionState(pos.id, 'EXIT')}
-                              className="px-2 py-1 rounded text-[10px] font-mono bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30"
+                              onClick={async () => {
+                                try {
+                                  const clientId = localStorage.getItem('qp_dhan_client_id') || '';
+                                  const accessToken = localStorage.getItem('qp_dhan_access_token') || '';
+                                  await fetch('/api/broker/dhan/square-off', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      positionId: pos.id,
+                                      ticker: pos.ticker,
+                                      symbol: pos.symbol,
+                                      quantity: pos.quantity,
+                                      instrumentType: pos.instrumentType,
+                                      isPaper: !pos.id.startsWith('DHAN'),
+                                      clientId,
+                                      accessToken,
+                                    }),
+                                  });
+                                } catch {
+                                  // fallback
+                                }
+                                advancePositionState(pos.id, 'EXIT');
+                              }}
+                              className="px-2 py-1 rounded text-[10px] font-mono bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-bold"
+                              title="Square off position and exit"
                             >
-                              Exit
+                              ⚡ Square Off
                             </button>
                           </>
                         ) : (
