@@ -22,6 +22,11 @@ import {
   TslMilestone,
 } from '@/lib/engine/tslStateMachine';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
+import {
+  logTradeOrderToCloud,
+  logTslTransitionToCloud,
+  closeTradeOrderInCloud,
+} from '@/lib/services/supabaseTelemetryService';
 
 export interface ToastMessage {
   id: string;
@@ -308,6 +313,23 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           state_index: newPos.stateIndex,
           state_label: newPos.stateLabel,
         }).then();
+
+        // Also append permanent audit log to trade_logs
+        logTradeOrderToCloud({
+          order_id: newPos.id,
+          ticker: newPos.ticker,
+          symbol: newPos.symbol,
+          action: 'BUY',
+          instrument_type: newPos.instrumentType,
+          routing_mode: typeof window !== 'undefined' && localStorage.getItem('qp_order_routing_mode') === 'LIVE' ? 'LIVE_DHAN' : 'PAPER',
+          quantity: newPos.quantity,
+          lots: newPos.lots,
+          entry_price: newPos.entryPrice,
+          stop_loss: newPos.activeTrailingSl,
+          target_price: newPos.targetPrice,
+          crossover_ref_time: newPos.crossoverTime,
+          status: 'OPEN',
+        });
       }
 
       // Automated Telegram Order Alert
@@ -416,7 +438,42 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     });
 
     setPositions((prevPos) =>
-      prevPos.map((pos) => autoUpdatePositionFromTick(pos))
+      prevPos.map((pos) => {
+        const nextPos = autoUpdatePositionFromTick(pos);
+        if (nextPos.stateIndex !== pos.stateIndex) {
+          logTslTransitionToCloud({
+            position_id: pos.id,
+            symbol: pos.symbol,
+            from_state: pos.stateIndex,
+            to_state: nextPos.stateIndex,
+            from_label: pos.stateLabel,
+            to_label: nextPos.stateLabel,
+            spot_price_at_transition: nextPos.currentLtp,
+            new_trailing_sl: nextPos.activeTrailingSl,
+            pnl_locked: (nextPos.activeTrailingSl - pos.entryPrice) * pos.quantity,
+            timestamp_ist: timeStr,
+          });
+
+          if (nextPos.stateIndex === 4) {
+            const finalPnl = (nextPos.currentLtp - pos.entryPrice) * pos.quantity;
+            closeTradeOrderInCloud(pos.id, nextPos.currentLtp, finalPnl);
+          }
+
+          if (isSupabaseConfigured && supabase) {
+            supabase
+              .from('active_positions')
+              .update({
+                current_ltp: nextPos.currentLtp,
+                active_trailing_sl: nextPos.activeTrailingSl,
+                state_index: nextPos.stateIndex,
+                state_label: nextPos.stateLabel,
+              })
+              .eq('id', pos.id)
+              .then();
+          }
+        }
+        return nextPos;
+      })
     );
   }, [clockSeconds, idempotencyLocks, positions, runAutoScan, showToast]);
 
@@ -539,7 +596,41 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             }
 
             const updatedPos = { ...pos, currentLtp: updatedLtp };
-            return autoUpdatePositionFromTick(updatedPos);
+            const nextPos = autoUpdatePositionFromTick(updatedPos);
+
+            if (nextPos.stateIndex !== pos.stateIndex) {
+              logTslTransitionToCloud({
+                position_id: pos.id,
+                symbol: pos.symbol,
+                from_state: pos.stateIndex,
+                to_state: nextPos.stateIndex,
+                from_label: pos.stateLabel,
+                to_label: nextPos.stateLabel,
+                spot_price_at_transition: nextPos.currentLtp,
+                new_trailing_sl: nextPos.activeTrailingSl,
+                pnl_locked: (nextPos.activeTrailingSl - pos.entryPrice) * pos.quantity,
+                timestamp_ist: new Date().toLocaleTimeString('en-IN'),
+              });
+
+              if (nextPos.stateIndex === 4) {
+                const finalPnl = (nextPos.currentLtp - pos.entryPrice) * pos.quantity;
+                closeTradeOrderInCloud(pos.id, nextPos.currentLtp, finalPnl);
+              }
+
+              if (isSupabaseConfigured && supabase) {
+                supabase
+                  .from('active_positions')
+                  .update({
+                    current_ltp: nextPos.currentLtp,
+                    active_trailing_sl: nextPos.activeTrailingSl,
+                    state_index: nextPos.stateIndex,
+                    state_label: nextPos.stateLabel,
+                  })
+                  .eq('id', pos.id)
+                  .then();
+              }
+            }
+            return nextPos;
           })
         );
 
@@ -667,6 +758,18 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       prev.map((p) => {
         if (p.stateIndex < 4) {
           closed++;
+          const finalPnl = (p.currentLtp - p.entryPrice) * p.quantity;
+          closeTradeOrderInCloud(p.id, p.currentLtp, finalPnl);
+          if (isSupabaseConfigured && supabase) {
+            supabase
+              .from('active_positions')
+              .update({
+                state_index: 4,
+                state_label: 'State 4: Kill-Switch Square Off',
+              })
+              .eq('id', p.id)
+              .then();
+          }
           return {
             ...p,
             stateIndex: 4,
@@ -681,6 +784,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
   const advancePositionState = useCallback(
     (posId: string, milestone: TslMilestone) => {
+      const nowTime = formatClockIST(clockSeconds);
       setPositions((prev) =>
         prev.map((pos) => {
           if (pos.id !== posId) return pos;
@@ -692,11 +796,44 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           } else if (milestone === 'EXIT') {
             showToast(`Closed ${pos.symbol} @ ₹${updated.currentLtp.toFixed(2)}`, 'amber');
           }
+
+          // Telemetry audit logging to Supabase
+          logTslTransitionToCloud({
+            position_id: pos.id,
+            symbol: pos.symbol,
+            from_state: pos.stateIndex,
+            to_state: updated.stateIndex,
+            from_label: pos.stateLabel,
+            to_label: updated.stateLabel,
+            spot_price_at_transition: updated.currentLtp,
+            new_trailing_sl: updated.activeTrailingSl,
+            pnl_locked: (updated.activeTrailingSl - pos.entryPrice) * pos.quantity,
+            timestamp_ist: nowTime,
+          });
+
+          if (updated.stateIndex === 4) {
+            const finalPnl = (updated.currentLtp - pos.entryPrice) * pos.quantity;
+            closeTradeOrderInCloud(pos.id, updated.currentLtp, finalPnl);
+          }
+
+          if (isSupabaseConfigured && supabase) {
+            supabase
+              .from('active_positions')
+              .update({
+                current_ltp: updated.currentLtp,
+                active_trailing_sl: updated.activeTrailingSl,
+                state_index: updated.stateIndex,
+                state_label: updated.stateLabel,
+              })
+              .eq('id', pos.id)
+              .then();
+          }
+
           return updated;
         })
       );
     },
-    [showToast]
+    [clockSeconds, showToast]
   );
 
   const addCustomStock = useCallback(

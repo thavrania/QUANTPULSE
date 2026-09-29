@@ -124,3 +124,65 @@ export interface NextActionPayload {
   stockBuyDetails: StockBuyDetails;
   optionBuyDetails: OptionBuyDetails | null;
 }
+
+export interface TradeLog {
+  id?: string;
+  order_id: string;
+  ticker: string;
+  symbol: string;
+  action: 'BUY' | 'SELL';
+  instrument_type: string;
+  routing_mode: 'PAPER' | 'LIVE_DHAN';
+  quantity: number;
+  lots?: number | null;
+  entry_price: number;
+  exit_price?: number | null;
+  stop_loss: number;
+  target_price: number;
+  realized_pnl?: number;
+  crossover_ref_time: string;
+  status: 'OPEN' | 'CLOSED' | 'CANCELLED';
+  closed_at?: string | null;
+  created_at?: string;
+}
+
+export interface TslAuditTrailEntry {
+  id?: string;
+  position_id: string;
+  symbol: string;
+  from_state: number;
+  to_state: number;
+  from_label: string;
+  to_label: string;
+  spot_price_at_transition: number;
+  option_ltp_at_transition?: number;
+  new_trailing_sl: number;
+  pnl_locked: number;
+  timestamp_ist: string;
+  created_at?: string;
+}
+
+export interface DailyPnlJournal {
+  trading_date: string;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate_pct: number;
+  gross_realized_pnl: number;
+  max_drawdown: number;
+  symbols_traded: string[];
+  notes?: string;
+  created_at?: string;
+}
+
+export interface LiveTickSnapshot {
+  id?: string;
+  ticker: string;
+  timestamp_ist: string;
+  spot_ltp: number;
+  today_vol_m: number;
+  avg_vol_20d_m: number;
+  rvol_ratio: number;
+  created_at?: string;
+}
+
