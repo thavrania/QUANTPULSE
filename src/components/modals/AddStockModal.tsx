@@ -16,7 +16,7 @@ export function AddStockModal() {
   const [lotSize, setLotSize] = useState('250');
   const [detectedMaster, setDetectedMaster] = useState<any>(null);
 
-  // Auto-detect & auto-fill official stock metadata when user enters a symbol (e.g. ZOMATO, TATAMOTORS)
+  // Auto-detect & auto-fill official stock metadata when user enters a symbol (e.g. ETERNAL, TMCV)
   useEffect(() => {
     if (!ticker.trim()) {
       setDetectedMaster(null);

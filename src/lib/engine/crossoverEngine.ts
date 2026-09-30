@@ -107,7 +107,7 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     indices: ['NIFTY 50', 'SENSEX'],
   },
   {
-    ticker: 'TATAMOTORS',
+    ticker: 'TMCV',
     shortName: 'TMCV',
     name: 'TMCV',
     isFnO: true,
@@ -134,7 +134,7 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     indices: ['NIFTY 50', 'SENSEX'],
   },
   {
-    ticker: 'ZOMATO',
+    ticker: 'ETERNAL',
     shortName: 'ETERNAL',
     name: 'ETERNAL',
     isFnO: true,

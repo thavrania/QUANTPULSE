@@ -96,7 +96,6 @@ VALUES
     ('SHRIRAMFIN', 'Shriram Finance', 'Shriram Finance Limited', 'INE721A01013', 'NSE_FNO', 'NSE', 'Non-Banking Financial Services (NBFC)', '4306', 150, 50, 1.800, 3350.00, true, ARRAY['NIFTY 50'], false),
     ('SUNPHARMA', 'Sun Pharma', 'Sun Pharmaceutical Industries Limited', 'INE044A01036', 'NSE_FNO', 'NSE', 'Pharmaceuticals', '3351', 350, 20, 2.800, 1860.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('TATACONSUM', 'Tata Consumer', 'Tata Consumer Products Limited', 'INE192A01025', 'NSE_FNO', 'NSE', 'FMCG / Beverages & Food', '3432', 900, 10, 2.200, 1180.00, true, ARRAY['NIFTY 50'], false),
-    ('TATAMOTORS', 'TMCV', 'TMCV', 'INE155A01022', 'NSE_FNO', 'NSE', 'Automobile Manufacturers (Commercial Vehicles)', '3456', 550, 20, 8.900, 984.40, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('TMCV', 'TMCV', 'TMCV', 'INE155A01022', 'NSE_FNO', 'NSE', 'Automobile Manufacturers (Commercial Vehicles)', '3456', 550, 20, 8.900, 984.40, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('TATASTEEL', 'Tata Steel', 'Tata Steel Limited', 'INE081A01020', 'NSE_FNO', 'NSE', 'Iron & Steel / Metals', '3499', 5500, 2.5, 32.000, 154.50, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('TCS', 'TCS', 'Tata Consultancy Services Limited', 'INE467B01029', 'NSE_FNO', 'NSE', 'Information Technology', '11536', 175, 50, 1.500, 4126.00, true, ARRAY['NIFTY 50', 'SENSEX'], true),
@@ -106,7 +105,6 @@ VALUES
     ('ULTRACEMCO', 'UltraTech', 'UltraTech Cement Limited', 'INE481G01011', 'NSE_FNO', 'NSE', 'Cement & Building Materials', '11532', 100, 100, 0.400, 11500.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('UPL', 'UPL', 'UPL Limited', 'INE628A01036', 'NSE_FNO', 'NSE', 'Agrochemicals & Crop Protection', '11287', 1300, 5, 4.200, 570.00, true, ARRAY['NIFTY 50'], false),
     ('WIPRO', 'Wipro', 'Wipro Limited', 'INE075A01022', 'NSE_FNO', 'NSE', 'Information Technology', '3787', 1500, 10, 8.500, 535.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
-    ('ZOMATO', 'ETERNAL', 'ETERNAL', 'INE758T01015', 'NSE_FNO', 'NSE', 'Online Food Delivery & Quick Commerce', '5097', 2500, 5, 19.000, 264.80, true, ARRAY['NIFTY 50'], false),
     ('ETERNAL', 'ETERNAL', 'ETERNAL', 'INE758T01015', 'NSE_FNO', 'NSE', 'Online Food Delivery & Quick Commerce', '5097', 2500, 5, 19.000, 264.80, true, ARRAY['NIFTY 50'], false)
 ON CONFLICT (ticker) DO UPDATE SET
     short_name = EXCLUDED.short_name,

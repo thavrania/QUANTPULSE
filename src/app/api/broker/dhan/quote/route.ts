@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const tickerList: string[] =
       Array.isArray(tickers) && tickers.length > 0
         ? tickers
-        : ['RELIANCE', 'TATAMOTORS', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'ZOMATO'];
+        : ['RELIANCE', 'TMCV', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'ETERNAL'];
 
     // 1. If no Dhan credentials provided, serve from 100% Free Live NSE Feed
     if (!cid || !token) {

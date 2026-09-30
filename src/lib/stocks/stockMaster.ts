@@ -746,22 +746,6 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
     indices: ['NIFTY 50', 'SENSEX'],
   },
   {
-    ticker: 'TMCV',
-    shortName: 'TMCV',
-    name: 'TMCV',
-    isin: 'INE155A01022',
-    segment: 'NSE_FNO',
-    exchange: 'NSE',
-    sector: 'Automobile Manufacturers (Commercial Vehicles)',
-    securityId: '3456',
-    lotSize: 550,
-    strikeStep: 20,
-    avgVol20DM: 8.90,
-    approxLtp: 984.40,
-    isFnO: true,
-    indices: ['NIFTY 50', 'SENSEX'],
-  },
-  {
     ticker: 'TATASTEEL',
     shortName: 'Tata Steel',
     name: 'Tata Steel Limited',
@@ -905,22 +889,6 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
     isFnO: true,
     indices: ['NIFTY 50'],
   },
-  {
-    ticker: 'ETERNAL',
-    shortName: 'ETERNAL',
-    name: 'ETERNAL',
-    isin: 'INE758T01015',
-    segment: 'NSE_FNO',
-    exchange: 'NSE',
-    sector: 'Online Food Delivery & Quick Commerce',
-    securityId: '5097',
-    lotSize: 2500,
-    strikeStep: 5,
-    avgVol20DM: 19.00,
-    approxLtp: 264.80,
-    isFnO: true,
-    indices: ['NIFTY 50'],
-  },
 ];
 
 /**
@@ -932,7 +900,10 @@ export function normalizeTicker(ticker: string): string {
   let clean = ticker.trim().toUpperCase();
   clean = clean.replace(/\.(NS|BO|BSE|NSE)$/i, '');
   clean = clean.replace(/-(EQ|BE|SM)$/i, '');
-  return clean.trim();
+  clean = clean.trim();
+  if (clean === 'TATAMOTORS') return 'TMCV';
+  if (clean === 'ZOMATO') return 'ETERNAL';
+  return clean;
 }
 
 /**
@@ -942,21 +913,17 @@ export function getStockMasterByTicker(ticker: string): StockMasterItem | undefi
   if (!ticker) return undefined;
   const clean = normalizeTicker(ticker);
 
-  // 1. Direct match on clean ticker
+  // 1. Direct match on clean ticker (handles TMCV & ETERNAL directly via normalizeTicker)
   let found = STOCK_MASTER_CATALOG.find((s) => s.ticker === clean);
   if (found) return found;
 
-  // 1b. Direct alias support for TMCV / TMCV and ETERNAL / ETERNAL
-  if (clean === 'TMCV' || clean === 'TMCV') {
-    found =
-      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TMCV') ||
-      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TMCV');
+  // 1b. Direct alias support for TMCV / TATAMOTORS and ETERNAL / ZOMATO
+  if (clean === 'TMCV' || clean === 'TATAMOTORS') {
+    found = STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TMCV');
     if (found) return found;
   }
-  if (clean === 'ETERNAL' || clean === 'ETERNAL') {
-    found =
-      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ETERNAL') ||
-      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ETERNAL');
+  if (clean === 'ETERNAL' || clean === 'ZOMATO') {
+    found = STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ETERNAL');
     if (found) return found;
   }
 
@@ -1040,9 +1007,9 @@ export function resolveStockMetadata(
   const cleanTicker = normalizeTicker(rawTicker);
 
   // Explicit corporate restructuring & rebranding overrides
-  if (cleanTicker === 'TMCV' || cleanTicker === 'TMCV') {
+  if (cleanTicker === 'TMCV' || cleanTicker === 'TATAMOTORS') {
     return {
-      ticker: cleanTicker,
+      ticker: 'TMCV',
       shortName: 'TMCV',
       name: 'TMCV',
       isin: 'INE155A01022',
@@ -1057,9 +1024,9 @@ export function resolveStockMetadata(
       indices: ['NIFTY 50', 'SENSEX'],
     };
   }
-  if (cleanTicker === 'ETERNAL' || cleanTicker === 'ETERNAL') {
+  if (cleanTicker === 'ETERNAL' || cleanTicker === 'ZOMATO') {
     return {
-      ticker: cleanTicker,
+      ticker: 'ETERNAL',
       shortName: 'ETERNAL',
       name: 'ETERNAL',
       isin: 'INE758T01015',

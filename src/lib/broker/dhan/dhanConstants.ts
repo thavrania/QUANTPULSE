@@ -75,7 +75,7 @@ export const DHAN_SECURITY_MAP: Record<
 
 export function getDhanSecurityId(ticker: string): string {
   const normalized = ticker.trim().toUpperCase();
-  if (normalized === 'TMCV') return DHAN_SECURITY_MAP['TATAMOTORS']?.securityId || '3456';
-  if (normalized === 'ETERNAL') return DHAN_SECURITY_MAP['ZOMATO']?.securityId || '5097';
+  if (normalized === 'TMCV' || normalized === 'TATAMOTORS') return DHAN_SECURITY_MAP['TMCV']?.securityId || '3456';
+  if (normalized === 'ETERNAL' || normalized === 'ZOMATO') return DHAN_SECURITY_MAP['ETERNAL']?.securityId || '5097';
   return DHAN_SECURITY_MAP[normalized]?.securityId || '1330';
 }

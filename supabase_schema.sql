@@ -89,9 +89,9 @@ CREATE TABLE IF NOT EXISTS public.system_config (
 INSERT INTO public.watchlist (ticker, short_name, name, isin, segment, sector, security_id, is_fno, lot_size, strike_step, spot_ltp, today_vol_m, avg_vol_20d_m, has_crossed_20d, crossover_time, crossover_spot_price, iv_pct, is_active_watchlist)
 VALUES
     ('RELIANCE', 'Reliance', 'Reliance Industries Limited', 'INE002A01018', 'NSE_FNO', 'Oil & Gas / Conglomerate', '1330', true, 250, 50, 2968.50, 5.82, 5.20, true, '09:48:12', 2954.00, 18.4, true),
-    ('TATAMOTORS', 'TMCV', 'TMCV', 'INE155A01022', 'NSE_FNO', 'Automobile Manufacturers (Commercial Vehicles)', '3456', true, 550, 20, 984.40, 9.45, 8.90, true, '10:19:05', 976.50, 23.8, true),
+    ('TMCV', 'TMCV', 'TMCV', 'INE155A01022', 'NSE_FNO', 'Automobile Manufacturers (Commercial Vehicles)', '3456', true, 550, 20, 984.40, 9.45, 8.90, true, '10:19:05', 976.50, 23.8, true),
     ('TCS', 'TCS', 'Tata Consultancy Services Limited', 'INE467B01029', 'NSE_FNO', 'Information Technology', '11536', true, 175, 50, 4126.00, 1.45, 1.50, false, NULL, NULL, 16.2, true),
-    ('ZOMATO', 'ETERNAL', 'ETERNAL', 'INE758T01015', 'NSE_FNO', 'Online Food Delivery & Quick Commerce', '5097', true, 2500, 5, 264.80, 18.47, 19.00, false, NULL, NULL, 28.5, true),
+    ('ETERNAL', 'ETERNAL', 'ETERNAL', 'INE758T01015', 'NSE_FNO', 'Online Food Delivery & Quick Commerce', '5097', true, 2500, 5, 264.80, 18.47, 19.00, false, NULL, NULL, 28.5, true),
     ('ICICIBANK', 'ICICI Bank', 'ICICI Bank Limited', 'INE090A01021', 'NSE_FNO', 'Private Banking & Financials', '4963', true, 700, 20, 1258.00, 6.44, 7.00, false, NULL, NULL, 15.6, true),
     ('HDFCBANK', 'HDFC Bank', 'HDFC Bank Limited', 'INE040A01034', 'NSE_FNO', 'Private Banking & Financials', '1333', true, 550, 20, 1644.20, 4.70, 6.00, false, NULL, NULL, 14.9, true)
 ON CONFLICT (ticker) DO UPDATE SET
@@ -104,7 +104,7 @@ ON CONFLICT (ticker) DO UPDATE SET
 
 INSERT INTO public.crossover_events (ticker, time_ist, avg_vol_20d_m, cross_price, is_fno)
 VALUES
-    ('TATAMOTORS', '10:19:05', 8.90, 976.50, true),
+    ('TMCV', '10:19:05', 8.90, 976.50, true),
     ('RELIANCE', '09:48:12', 5.20, 2954.00, true)
 ON CONFLICT DO NOTHING;
 
