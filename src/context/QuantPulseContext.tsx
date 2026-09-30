@@ -359,8 +359,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           }
           if (isSupabaseConfigured && supabase && !sessionStarted) {
             markSelfUpdating();
+            const client = supabase;
             watchlistRef.current.forEach((stock) => {
-              supabase
+              client
                 .from('watchlist')
                 .update({
                   today_vol_m: 0.0,
