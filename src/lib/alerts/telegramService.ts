@@ -79,3 +79,38 @@ export function formatOrderAlert(symbol: string, action: string, qty: number, pr
 ──────────────────────
 _QuantPulse Order Management System (OMS)_`;
 }
+
+export function formatTslAlert(
+  symbol: string,
+  stateIndex: number,
+  stateLabel: string,
+  newTslPrice: number,
+  lockedPnl: number,
+  timeIST: string
+): string {
+  let milestoneHeader = '🛡️ *QUANTPULSE — TSL STATE PROGRESSION*';
+  let badge = 'STATE UPDATE';
+  if (stateIndex === 2) {
+    milestoneHeader = '🛡️ *QUANTPULSE — BREAKEVEN (+1R) ACHIEVED!*';
+    badge = 'RISK FREE (0R)';
+  } else if (stateIndex === 3) {
+    milestoneHeader = '💰 *QUANTPULSE — PROFIT LOCKED (+2R) ACHIEVED!*';
+    badge = 'PROFIT LOCKED (+1R)';
+  } else if (stateIndex === 4) {
+    milestoneHeader = '🎯 *QUANTPULSE — TRADE CLOSED (TARGET / SL)*';
+    badge = 'POSITION CLOSED';
+  }
+
+  const pnlSign = lockedPnl >= 0 ? '+' : '';
+  const pnlEmoji = lockedPnl >= 0 ? '🟢' : '🔴';
+
+  return `${milestoneHeader}
+──────────────────────
+• *Instrument:* \`${symbol}\`
+• *Milestone:* \`${stateLabel}\` [${badge}]
+• *Trailing SL Price:* \`₹${newTslPrice.toFixed(2)}\`
+• *Locked / Realized P&L:* ${pnlEmoji} \`₹${pnlSign}${lockedPnl.toFixed(2)}\`
+• *Timestamp:* \`${timeIST} IST\`
+──────────────────────
+_QuantPulse High-Frequency Trailing Stop-Loss Engine_`;
+}

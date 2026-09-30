@@ -3,6 +3,10 @@
     {
       "path": "/api/pipeline/sync-baselines",
       "schedule": "30 3 * * 1-5"
+    },
+    {
+      "path": "/api/pipeline/market-close-archive",
+      "schedule": "5 10 * * 1-5"
     }
   ]
 }

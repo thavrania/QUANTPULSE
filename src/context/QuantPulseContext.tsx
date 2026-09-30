@@ -34,6 +34,7 @@ import {
 import { MarketSessionInfo, getIndianMarketSession, getISTDate, hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 import { IngestionTelemetry } from '@/lib/services/liveIngestionEngine';
 import { requestQueueEngine } from '@/lib/engine/requestQueueEngine';
+import { formatTslAlert, formatOrderAlert } from '@/lib/alerts/telegramService';
 
 export interface ToastMessage {
   id: string;
@@ -831,7 +832,32 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         'emerald'
       );
 
-      // Persist to Supabase if available
+      const isLiveRouting = typeof window !== 'undefined' && localStorage.getItem('qp_order_routing_mode') === 'LIVE';
+
+      // 1. If Live Dhan routing mode is enabled, dispatch live market order to Dhan HQ API
+      if (isLiveRouting) {
+        const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
+        const accessToken = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_access_token') || '' : '';
+        fetch('/api/broker/dhan/place-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ticker: stock.ticker,
+            instrumentType: activeLeg.instrumentType,
+            symbol: activeLeg.symbol,
+            action: 'BUY',
+            quantity: activeLeg.quantity,
+            price: activeLeg.entryPrice,
+            stopLossPrice: activeLeg.stopLossPrice,
+            targetPrice: activeLeg.targetPrice,
+            isPaper: false,
+            clientId,
+            accessToken,
+          }),
+        }).catch((err) => console.warn('Dhan live order dispatch notification:', err));
+      }
+
+      // 2. Persist to Supabase immediately (public.active_positions & public.trade_logs)
       if (isSupabaseConfigured && supabase) {
         markSelfUpdating();
         const client = supabase;
@@ -861,7 +887,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           symbol: newPos.symbol,
           action: 'BUY',
           instrument_type: newPos.instrumentType,
-          routing_mode: typeof window !== 'undefined' && localStorage.getItem('qp_order_routing_mode') === 'LIVE' ? 'LIVE_DHAN' : 'PAPER',
+          routing_mode: isLiveRouting ? 'LIVE_DHAN' : 'PAPER',
           quantity: newPos.quantity,
           lots: newPos.lots,
           entry_price: newPos.entryPrice,
@@ -872,19 +898,27 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         });
       }
 
-      // Automated Telegram Order Alert
+      // 3. Automated Telegram Order Alert
       if (typeof window !== 'undefined') {
         const botToken = localStorage.getItem('qp_telegram_bot_token');
         const chatId = localStorage.getItem('qp_telegram_chat_id');
         const notifyOrder = localStorage.getItem('qp_notify_order') !== 'false';
         if (botToken && chatId && notifyOrder) {
+          const orderMsg = formatOrderAlert(
+            activeLeg.symbol,
+            `${triggeredBy} BUY`,
+            activeLeg.quantity,
+            activeLeg.entryPrice,
+            newPos.id,
+            isLiveRouting ? 'LIVE_DHAN' : 'PAPER'
+          );
           fetch('/api/alerts/telegram', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               botToken,
               chatId,
-              message: `⚡ *QUANTPULSE ORDER DISPATCHED!*\n• Instrument: \`${activeLeg.symbol}\`\n• Action: \`${triggeredBy} BUY\`\n• Quantity: \`${activeLeg.quantity} Units\`\n• Entry Price: \`₹${activeLeg.entryPrice.toFixed(2)}\`\n• Order ID: \`${newPos.id}\`\n• Cross Reference: \`${newPos.crossoverTime} IST\``,
+              message: orderMsg,
             }),
           }).catch(() => {});
         }
@@ -1025,7 +1059,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
           if (isSupabaseConfigured && supabase) {
             markSelfUpdating();
-            supabase
+            const client = supabase;
+            client
               .from('active_positions')
               .update({
                 current_ltp: nextPos.currentLtp,
@@ -1035,6 +1070,29 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               })
               .eq('id', pos.id)
               .then();
+          }
+
+          // Automated Telegram alert for real-time TSL progression (+1R, +2R, +3R/Exit)
+          if (typeof window !== 'undefined') {
+            const botToken = localStorage.getItem('qp_telegram_bot_token');
+            const chatId = localStorage.getItem('qp_telegram_chat_id');
+            const notifyTsl = localStorage.getItem('qp_notify_tsl') !== 'false';
+            if (botToken && chatId && notifyTsl) {
+              const lockedPnl = +((nextPos.activeTrailingSl - pos.entryPrice) * pos.quantity).toFixed(2);
+              const tslMsg = formatTslAlert(
+                pos.symbol,
+                nextPos.stateIndex,
+                nextPos.stateLabel,
+                nextPos.activeTrailingSl,
+                lockedPnl,
+                timeStr
+              );
+              fetch('/api/alerts/telegram', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ botToken, chatId, message: tslMsg }),
+              }).catch(() => {});
+            }
           }
         }
         return nextPos;
@@ -1233,7 +1291,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
               if (isSupabaseConfigured && supabase) {
                 markSelfUpdating();
-                supabase
+                const client = supabase;
+                client
                   .from('active_positions')
                   .update({
                     current_ltp: nextPos.currentLtp,
@@ -1243,6 +1302,30 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                   })
                   .eq('id', pos.id)
                   .then();
+              }
+
+              // Automated Telegram alert for live real-time TSL progression (+1R, +2R, +3R/Exit)
+              if (typeof window !== 'undefined') {
+                const botToken = localStorage.getItem('qp_telegram_bot_token');
+                const chatId = localStorage.getItem('qp_telegram_chat_id');
+                const notifyTsl = localStorage.getItem('qp_notify_tsl') !== 'false';
+                if (botToken && chatId && notifyTsl) {
+                  const lockedPnl = +((nextPos.activeTrailingSl - pos.entryPrice) * pos.quantity).toFixed(2);
+                  const nowIST = getISTDate().timeStr;
+                  const tslMsg = formatTslAlert(
+                    pos.symbol,
+                    nextPos.stateIndex,
+                    nextPos.stateLabel,
+                    nextPos.activeTrailingSl,
+                    lockedPnl,
+                    nowIST
+                  );
+                  fetch('/api/alerts/telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ botToken, chatId, message: tslMsg }),
+                  }).catch(() => {});
+                }
               }
             }
             return nextPos;
@@ -1489,7 +1572,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           const finalPnl = (p.currentLtp - p.entryPrice) * p.quantity;
           closeTradeOrderInCloud(p.id, p.currentLtp, finalPnl);
           if (isSupabaseConfigured && supabase) {
-            supabase
+            const client = supabase;
+            client
               .from('active_positions')
               .update({
                 state_index: 4,
@@ -1546,7 +1630,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
           if (isSupabaseConfigured && supabase) {
             markSelfUpdating();
-            supabase
+            const client = supabase;
+            client
               .from('active_positions')
               .update({
                 current_ltp: updated.currentLtp,
@@ -1556,6 +1641,29 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               })
               .eq('id', pos.id)
               .then();
+          }
+
+          // Automated Telegram alert for manual / simulated TSL milestone progression
+          if (typeof window !== 'undefined') {
+            const botToken = localStorage.getItem('qp_telegram_bot_token');
+            const chatId = localStorage.getItem('qp_telegram_chat_id');
+            const notifyTsl = localStorage.getItem('qp_notify_tsl') !== 'false';
+            if (botToken && chatId && notifyTsl) {
+              const lockedPnl = +((updated.activeTrailingSl - pos.entryPrice) * pos.quantity).toFixed(2);
+              const tslMsg = formatTslAlert(
+                pos.symbol,
+                updated.stateIndex,
+                updated.stateLabel,
+                updated.activeTrailingSl,
+                lockedPnl,
+                nowTime
+              );
+              fetch('/api/alerts/telegram', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ botToken, chatId, message: tslMsg }),
+              }).catch(() => {});
+            }
           }
 
           return updated;
