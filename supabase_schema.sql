@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS public.crossover_events (
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crossover_events_ticker_day 
+ON public.crossover_events (ticker, ((created_at AT TIME ZONE 'UTC')::date));
+
 -- 3. ACTIVE_POSITIONS TABLE (Zone E executed trades & trailing stop-loss state machine)
 CREATE TABLE IF NOT EXISTS public.active_positions (
     id VARCHAR(50) PRIMARY KEY,

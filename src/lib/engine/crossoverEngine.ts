@@ -168,10 +168,26 @@ export function checkAndLatchVolumeCrossover(
   // Volume condition: Today volume must meet or exceed 20D average (> 0)
   const volumeCrossed = stock.todayVolM >= stock.avgVol20DM && stock.todayVolM > 0;
 
-  // Rule 1: Price must be bullish (LTP >= Day Open or changePct >= 0)
+  // Rule 5: If volume has not crossed (e.g. Day Start or 0.0M before session start), clear any stale crossover latch
+  if (stock.todayVolM < stock.avgVol20DM || stock.todayVolM === 0) {
+    stock.hasCrossed20D = false;
+    stock.crossoverTime = null;
+    stock.crossoverSpotPrice = null;
+    stock.justCrossedHighlight = false;
+    return { newlyCrossed: false, event: null };
+  }
+
+  // Idempotency: Once a stock has already triggered/latched crossover, NEVER generate a duplicate event!
+  if (stock.hasCrossed20D || Boolean(stock.crossoverTime)) {
+    // Preserve latched status as volume is still >= 20D average
+    stock.hasCrossed20D = true;
+    return { newlyCrossed: false, event: null };
+  }
+
+  // Rule 1: Price must be bullish at crossover trigger moment (LTP >= Day Open or changePct >= 0)
   const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
 
-  if (!stock.hasCrossed20D && volumeCrossed && isBullish) {
+  if (volumeCrossed && isBullish) {
     stock.hasCrossed20D = true;
     stock.crossoverTime = currentTimeStr;
     stock.crossoverSpotPrice = stock.spotLtp;
@@ -186,14 +202,6 @@ export function checkAndLatchVolumeCrossover(
     };
 
     return { newlyCrossed: true, event };
-  }
-
-  // Rule 5: If volume has not crossed (e.g. Day Start or 0.0M), clear any stale crossover latch
-  if (stock.todayVolM < stock.avgVol20DM) {
-    stock.hasCrossed20D = false;
-    stock.crossoverTime = null;
-    stock.crossoverSpotPrice = null;
-    stock.justCrossedHighlight = false;
   }
 
   return { newlyCrossed: false, event: null };

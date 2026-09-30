@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
 import { STOCK_MASTER_CATALOG } from '@/lib/stocks/stockMaster';
 
@@ -24,6 +24,19 @@ export function ZoneB_Watchlist() {
   const [directorySearch, setDirectorySearch] = useState('');
   const [indexFilter, setIndexFilter] = useState<'ALL' | 'NIFTY50' | 'SENSEX' | 'FNO'>('ALL');
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // Strictly enforce single entry per stock in the Exact Crossover Timestamp Feed
+  const uniqueCrossoverEvents = useMemo(() => {
+    const seen = new Set<string>();
+    const list: typeof crossoverEvents = [];
+    for (const ev of crossoverEvents) {
+      if (!seen.has(ev.ticker)) {
+        seen.add(ev.ticker);
+        list.push(ev);
+      }
+    }
+    return list;
+  }, [crossoverEvents]);
 
   // Form states
   const [tickerInput, setTickerInput] = useState('');
@@ -330,7 +343,7 @@ export function ZoneB_Watchlist() {
             </span>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-slate-400 font-mono">Live Latch</span>
-              {crossoverEvents.length > 0 && (
+              {uniqueCrossoverEvents.length > 0 && (
                 <button
                   type="button"
                   onClick={() => clearCrossoverEvents?.()}
@@ -345,14 +358,14 @@ export function ZoneB_Watchlist() {
 
           {/* Crossover Event Stream Container */}
           <div className="p-2.5 flex-1 overflow-y-auto space-y-2 max-h-[220px]">
-            {crossoverEvents.length === 0 ? (
+            {uniqueCrossoverEvents.length === 0 ? (
               <div className="p-4 text-center text-xs text-slate-500">
                 No active watchlist stocks have crossed their 20-Day Average Traded Shares yet.
               </div>
             ) : (
-              crossoverEvents.map((ev, idx) => (
+              uniqueCrossoverEvents.map((ev) => (
                 <div
-                  key={`${ev.ticker}-${ev.time}-${idx}`}
+                  key={ev.ticker}
                   onClick={() => setSelectedTicker(ev.ticker)}
                   className={`p-2.5 rounded-lg bg-obsidian/90 border transition cursor-pointer space-y-1 ${
                     selectedTicker === ev.ticker

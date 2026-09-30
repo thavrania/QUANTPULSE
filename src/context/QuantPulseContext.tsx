@@ -527,14 +527,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             const chgPct = d.change_pct !== undefined ? Number(d.change_pct) : 0;
             const isBullish = spot >= dayOpen || chgPct >= 0;
 
-            // Rule 1 & Rule 5: Volume must genuinely meet/exceed 20D average (>0) AND price must be bullish
+            // Rule 5: Volume must genuinely meet/exceed 20D average (>0) and DB must flag it crossed
             const hasCrossed =
               sessionStarted &&
               isUpdatedToday &&
               Boolean(d.has_crossed_20d) &&
               todayVol >= avgVol &&
-              todayVol > 0 &&
-              isBullish;
+              todayVol > 0;
 
             const existingLocal = (watchlistRef.current || []).find((s) => s.ticker === d.ticker);
             const localVol = existingLocal?.todayVolM || 0;
@@ -564,6 +563,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               isLiveStreamingRef.current ||
               (existingLocal !== undefined && existingLocal.todayVolM > todayVol);
 
+            // Once latched, a stock must stay latched unless volume drops below 20D baseline (Day Start)
+            const finalHasCrossed = (existingLocal?.hasCrossed20D && localVol >= avgVol) || hasCrossed;
+            const finalCrossoverTime =
+              existingLocal?.crossoverTime ||
+              (finalHasCrossed ? (d.crossover_time || getISTDate().timeStr) : null);
+            const finalCrossoverSpot =
+              existingLocal?.crossoverSpotPrice ??
+              (finalHasCrossed ? Number(d.crossover_spot_price || spot) : null);
+
             return {
               ticker: d.ticker,
               shortName: d.short_name || master?.shortName || d.ticker,
@@ -578,19 +586,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               spotLtp: preferLocal && existingLocal ? existingLocal.spotLtp : spot,
               todayVolM: preferLocal && existingLocal ? existingLocal.todayVolM : todayVol,
               avgVol20DM: avgVol,
-              hasCrossed20D: preferLocal && existingLocal ? existingLocal.hasCrossed20D : hasCrossed,
-              crossoverTime:
-                preferLocal && existingLocal && existingLocal.crossoverTime
-                  ? existingLocal.crossoverTime
-                  : hasCrossed
-                  ? (d.crossover_time || getISTDate().timeStr)
-                  : null,
-              crossoverSpotPrice:
-                preferLocal && existingLocal && existingLocal.crossoverSpotPrice !== null
-                  ? existingLocal.crossoverSpotPrice
-                  : hasCrossed
-                  ? Number(d.crossover_spot_price || spot)
-                  : null,
+              hasCrossed20D: finalHasCrossed,
+              crossoverTime: finalCrossoverTime,
+              crossoverSpotPrice: finalCrossoverSpot,
               ivPct: Number(d.iv_pct || (master?.isFnO ? 16.5 : 0)),
               dayHigh:
                 preferLocal && existingLocal?.dayHigh !== undefined
@@ -646,47 +644,80 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           .from('crossover_events')
           .select('*')
           .gte('created_at', `${todayDateStr}T00:00:00`)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: true }); // Earliest first to capture the true initial crossover timestamp
+
+        const activeCrossedTickers = new Set(
+          (watchlistRef.current || [])
+            .filter((s) => s.hasCrossed20D && s.todayVolM >= s.avgVol20DM && s.todayVolM > 0)
+            .map((s) => s.ticker)
+        );
+
+        // Deduplicate: Enforce strictly at most one entry per stock in the Exact Crossover Timestamp Feed
+        const dedupedMap = new Map<string, CrossoverEvent>();
 
         if (evData && evData.length > 0) {
-          // Rule 5: Only load crossover events if the stock is actively crossed today with volume >= 20D average
-          const activeCrossedTickers = new Set(
-            (watchlistRef.current || [])
-              .filter((s) => s.hasCrossed20D && s.todayVolM >= s.avgVol20DM && s.todayVolM > 0)
-              .map((s) => s.ticker)
-          );
+          evData.forEach((e: any) => {
+            if (!activeCrossedTickers.has(e.ticker)) return;
+            // Only keep the earliest crossover entry for each stock
+            if (dedupedMap.has(e.ticker)) return;
 
-          const mappedEv: CrossoverEvent[] = evData
-            .filter((e: any) => activeCrossedTickers.has(e.ticker))
-            .map((e: any) => {
-              let eventTime = e.time_ist;
-              if (e.created_at) {
-                const dt = new Date(e.created_at);
-                if (!isNaN(dt.getTime())) {
-                  eventTime = getISTDate(dt).timeStr;
-                }
+            let eventTime = e.time_ist;
+            if (e.created_at) {
+              const dt = new Date(e.created_at);
+              if (!isNaN(dt.getTime())) {
+                eventTime = getISTDate(dt).timeStr;
               }
-              return {
-                id: e.id,
-                ticker: e.ticker,
-                time: eventTime || getISTDate().timeStr,
-                avgVol20DM: Number(e.avg_vol_20d_m),
-                crossPrice: Number(e.cross_price) || 0,
-                isFnO: Boolean(e.is_fno),
-              };
-            });
-
-          setCrossoverEvents((prevEv) => {
-            if (isLiveStreamingRef.current && prevEv.length > 0) {
-              const dbIds = new Set(mappedEv.map((x) => x.ticker + x.time));
-              const uniqueLocal = prevEv.filter((x) => !dbIds.has(x.ticker + x.time));
-              return [...uniqueLocal, ...mappedEv];
             }
-            return mappedEv;
+
+            dedupedMap.set(e.ticker, {
+              id: e.id,
+              ticker: e.ticker,
+              time: eventTime || getISTDate().timeStr,
+              avgVol20DM: Number(e.avg_vol_20d_m),
+              crossPrice: Number(e.cross_price) || 0,
+              isFnO: Boolean(e.is_fno),
+            });
           });
-        } else if (!isLiveStreamingRef.current) {
-          setCrossoverEvents([]);
         }
+
+        // Also check active watchlist in memory: If a stock has crossed with crossoverTime, guarantee it has an entry
+        (watchlistRef.current || []).forEach((stock) => {
+          if (
+            stock.hasCrossed20D &&
+            stock.crossoverTime &&
+            stock.todayVolM >= stock.avgVol20DM &&
+            stock.todayVolM > 0 &&
+            !dedupedMap.has(stock.ticker)
+          ) {
+            dedupedMap.set(stock.ticker, {
+              ticker: stock.ticker,
+              time: stock.crossoverTime,
+              avgVol20DM: stock.avgVol20DM,
+              crossPrice: stock.crossoverSpotPrice || stock.spotLtp,
+              isFnO: stock.isFnO,
+            });
+          }
+        });
+
+        const uniqueEvents = Array.from(dedupedMap.values());
+
+        setCrossoverEvents((prevEv) => {
+          // Merge preserving existing timestamps, strictly 1 entry per stock
+          const finalMap = new Map<string, CrossoverEvent>();
+          // Existing in-memory events have precedence for active stocks
+          prevEv.forEach((ev) => {
+            if (activeCrossedTickers.has(ev.ticker) && !finalMap.has(ev.ticker)) {
+              finalMap.set(ev.ticker, ev);
+            }
+          });
+          // Add any missing from uniqueEvents
+          uniqueEvents.forEach((ev) => {
+            if (!finalMap.has(ev.ticker)) {
+              finalMap.set(ev.ticker, ev);
+            }
+          });
+          return Array.from(finalMap.values());
+        });
 
         const { data: posData } = await supabase!.from('active_positions').select('*').order('created_at', { ascending: false });
         if (posData && posData.length > 0) {
@@ -899,7 +930,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, timeStr);
         if (newlyCrossed && event) {
-          setCrossoverEvents((prevEv) => [event, ...prevEv]);
+          setCrossoverEvents((prevEv) => {
+            if (prevEv.some((e) => e.ticker === event.ticker)) {
+              return prevEv;
+            }
+            return [event, ...prevEv];
+          });
           showToast(
             `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${newSpotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
             'emerald'
@@ -907,13 +943,24 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
           if (isSupabaseConfigured && supabase) {
             markSelfUpdating();
-            supabase.from('crossover_events').insert({
-              ticker: event.ticker,
-              time_ist: event.time,
-              avg_vol_20d_m: event.avgVol20DM,
-              cross_price: event.crossPrice,
-              is_fno: event.isFnO,
-            }).then();
+            const todayStr = getISTDate().dateStr;
+            supabase
+              .from('crossover_events')
+              .select('id')
+              .eq('ticker', event.ticker)
+              .gte('created_at', `${todayStr}T00:00:00`)
+              .then(({ data: existingRows }) => {
+                if (!existingRows || existingRows.length === 0) {
+                  supabase.from('crossover_events').insert({
+                    ticker: event.ticker,
+                    time_ist: event.time,
+                    avg_vol_20d_m: event.avgVol20DM,
+                    cross_price: event.crossPrice,
+                    is_fno: event.isFnO,
+                  }).then();
+                }
+              });
+
             supabase.from('watchlist').update({
               has_crossed_20d: true,
               crossover_time: event.time,
@@ -1060,7 +1107,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             if (sessionStarted && safeTodayVol > 0) {
               const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, nowTime);
               if (newlyCrossed && event) {
-                setCrossoverEvents((prevEv) => [event, ...prevEv]);
+                setCrossoverEvents((prevEv) => {
+                  if (prevEv.some((e) => e.ticker === event.ticker)) {
+                    return prevEv;
+                  }
+                  return [event, ...prevEv];
+                });
                 showToast(
                   `🚀 [LIVE MARKET] ${stock.ticker} Crossed 20D Volume (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)}!`,
                   'emerald'
@@ -1068,16 +1120,27 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
                 if (isSupabaseConfigured && supabase) {
                   markSelfUpdating();
+                  const todayStr = getISTDate().dateStr;
                   supabase
                     .from('crossover_events')
-                    .insert({
-                      ticker: event.ticker,
-                      time_ist: event.time,
-                      avg_vol_20d_m: event.avgVol20DM,
-                      cross_price: event.crossPrice,
-                      is_fno: event.isFnO,
-                    })
-                    .then();
+                    .select('id')
+                    .eq('ticker', event.ticker)
+                    .gte('created_at', `${todayStr}T00:00:00`)
+                    .then(({ data: existingRows }) => {
+                      if (!existingRows || existingRows.length === 0) {
+                        supabase
+                          .from('crossover_events')
+                          .insert({
+                            ticker: event.ticker,
+                            time_ist: event.time,
+                            avg_vol_20d_m: event.avgVol20DM,
+                            cross_price: event.crossPrice,
+                            is_fno: event.isFnO,
+                          })
+                          .then();
+                      }
+                    });
+
                   supabase
                     .from('watchlist')
                     .update({
@@ -1344,7 +1407,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             };
             const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, timeStr);
             if (newlyCrossed && event) {
-              setCrossoverEvents((prevEv) => [event, ...prevEv]);
+              setCrossoverEvents((prevEv) => {
+                if (prevEv.some((e) => e.ticker === event.ticker)) {
+                  return prevEv;
+                }
+                return [event, ...prevEv];
+              });
               showToast(
                 `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)}!`,
                 'emerald'
@@ -1352,13 +1420,24 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
               if (isSupabaseConfigured && supabase) {
                 markSelfUpdating();
-                supabase.from('crossover_events').insert({
-                  ticker: event.ticker,
-                  time_ist: event.time,
-                  avg_vol_20d_m: event.avgVol20DM,
-                  cross_price: event.crossPrice,
-                  is_fno: event.isFnO,
-                }).then();
+                const todayStr = getISTDate().dateStr;
+                supabase
+                  .from('crossover_events')
+                  .select('id')
+                  .eq('ticker', event.ticker)
+                  .gte('created_at', `${todayStr}T00:00:00`)
+                  .then(({ data: existingRows }) => {
+                    if (!existingRows || existingRows.length === 0) {
+                      supabase.from('crossover_events').insert({
+                        ticker: event.ticker,
+                        time_ist: event.time,
+                        avg_vol_20d_m: event.avgVol20DM,
+                        cross_price: event.crossPrice,
+                        is_fno: event.isFnO,
+                      }).then();
+                    }
+                  });
+
                 supabase.from('watchlist').update({
                   has_crossed_20d: true,
                   crossover_time: event.time,
@@ -1495,16 +1574,21 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       };
 
       if (alreadyCrossed) {
-        setCrossoverEvents((prev) => [
-          {
-            ticker: newStock.ticker,
-            time: nowStr,
-            avgVol20DM: newStock.avgVol20DM,
-            crossPrice: newStock.spotLtp,
-            isFnO: newStock.isFnO,
-          },
-          ...prev,
-        ]);
+        setCrossoverEvents((prev) => {
+          if (prev.some((e) => e.ticker === newStock.ticker)) {
+            return prev;
+          }
+          return [
+            {
+              ticker: newStock.ticker,
+              time: nowStr,
+              avgVol20DM: newStock.avgVol20DM,
+              crossPrice: newStock.spotLtp,
+              isFnO: newStock.isFnO,
+            },
+            ...prev,
+          ];
+        });
       }
 
       setWatchlist((prev) => {

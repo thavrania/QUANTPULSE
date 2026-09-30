@@ -195,3 +195,24 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     -- Table might already be added
 END $$;
+
+-- ---------------------------------------------------------------------
+-- 6. PREVENT DUPLICATE CROSSOVER EVENTS PER STOCK PER DAY
+-- ---------------------------------------------------------------------
+-- Clean up historical duplicates in crossover_events, keeping the earliest timestamp per stock per day
+DELETE FROM public.crossover_events
+WHERE id IN (
+    SELECT id FROM (
+        SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY ticker, (created_at AT TIME ZONE 'UTC')::date 
+            ORDER BY created_at ASC
+        ) as rnum
+        FROM public.crossover_events
+    ) t
+    WHERE t.rnum > 1
+);
+
+-- Ensure a stock can never have duplicate crossover event rows on the same calendar date
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crossover_events_ticker_day 
+ON public.crossover_events (ticker, ((created_at AT TIME ZONE 'UTC')::date));
+
