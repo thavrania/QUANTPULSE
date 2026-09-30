@@ -34,13 +34,13 @@ export interface Stock {
 
 export interface StockMasterItem {
   ticker: string; // Official NSE Trading Symbol (e.g. RELIANCE, TCS)
-  shortName: string; // Real Market Short Name (e.g. Reliance, TCS, HDFC Bank, ICICI Bank)
+  shortName?: string; // Real Market Short Name (e.g. Reliance, TCS, HDFC Bank, ICICI Bank)
   name: string; // Exact Legal Registered Name (e.g. Reliance Industries Limited)
   segment: 'NSE_FNO' | 'NSE_EQ';
   exchange: 'NSE';
   sector: string;
   securityId: string;
-  isin: string;
+  isin?: string;
   lotSize: number;
   strikeStep: number;
   avgVol20DM: number;

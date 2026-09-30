@@ -5,7 +5,7 @@ import { useQuantPulse } from '@/context/QuantPulseContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { TradeLog, TslAuditTrailEntry, CrossoverEvent, BrokerVaultEntry, LiveTickSnapshot, StockMasterItem } from '@/lib/types/quant';
 import { formatTokenCountdown, maskToken } from '@/lib/services/brokerVaultService';
-import { STOCK_MASTER_CATALOG } from '@/lib/stocks/stockMaster';
+import { STOCK_MASTER_CATALOG, getStockMasterByTicker } from '@/lib/stocks/stockMaster';
 
 export function CloudAuditLogsModal() {
   const { showToast, isCloudLogsModalOpen, setIsCloudLogsModalOpen } = useQuantPulse();
@@ -101,19 +101,24 @@ export function CloudAuditLogsModal() {
           .order('ticker');
 
         if (!masterErr && masterData && masterData.length > 0) {
-          const mappedMaster: StockMasterItem[] = masterData.map((d: any) => ({
-            ticker: d.ticker,
-            name: d.name,
-            segment: d.segment,
-            exchange: d.exchange || 'NSE',
-            sector: d.sector,
-            securityId: d.security_id,
-            lotSize: d.lot_size,
-            strikeStep: Number(d.strike_step),
-            avgVol20DM: Number(d.avg_vol_20d_m),
-            approxLtp: d.approx_ltp ? Number(d.approx_ltp) : undefined,
-            isFnO: Boolean(d.is_fno),
-          }));
+          const mappedMaster: StockMasterItem[] = masterData.map((d: any) => {
+            const fallback = getStockMasterByTicker(d.ticker);
+            return {
+              ticker: d.ticker,
+              shortName: d.short_name || fallback?.shortName || d.ticker,
+              name: d.name || fallback?.name || d.ticker,
+              isin: d.isin || fallback?.isin || '',
+              segment: d.segment || fallback?.segment || 'NSE_FNO',
+              exchange: d.exchange || fallback?.exchange || 'NSE',
+              sector: d.sector || fallback?.sector || 'General',
+              securityId: d.security_id || fallback?.securityId || '1330',
+              lotSize: d.lot_size || fallback?.lotSize || 1,
+              strikeStep: Number(d.strike_step) || fallback?.strikeStep || 50,
+              avgVol20DM: Number(d.avg_vol_20d_m) || fallback?.avgVol20DM || 1.0,
+              approxLtp: d.approx_ltp ? Number(d.approx_ltp) : fallback?.approxLtp,
+              isFnO: d.is_fno !== undefined ? Boolean(d.is_fno) : (fallback?.isFnO ?? true),
+            };
+          });
           setStockMasterList(mappedMaster);
         } else {
           setStockMasterList(STOCK_MASTER_CATALOG);
