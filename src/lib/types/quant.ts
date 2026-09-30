@@ -83,12 +83,14 @@ export interface SystemConfig {
   maxOpenPositions: number;
 }
 
+export type VolumeStatusCode = 'ELIGIBLE_FOR_BUY' | 'TRACKING_VOLUME' | 'HIGH_VOL_BEARISH';
+
 export interface VolumeMetrics {
   progressPct: number;
   rvolRatio: number;
   deficitM: number;
   isEligibleForBuy: boolean;
-  statusCode: 'ELIGIBLE_FOR_BUY' | 'TRACKING_VOLUME' | 'HIGH_VOL_BEARISH';
+  statusCode: VolumeStatusCode;
   statusBadge: string;
 }
 

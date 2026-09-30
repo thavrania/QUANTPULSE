@@ -1,4 +1,4 @@
-import { Stock, CrossoverEvent, VolumeMetrics } from '../types/quant';
+import { Stock, CrossoverEvent, VolumeMetrics, VolumeStatusCode } from '../types/quant';
 
 export const INITIAL_WATCHLIST_DATA: Stock[] = [
   {
@@ -134,7 +134,7 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
   // Fully Eligible: Volume Crossover + Bullish Price Action
   const isEligibleForBuy = hasVolumeCrossed && isBullish;
 
-  let statusCode = 'TRACKING_VOLUME';
+  let statusCode: VolumeStatusCode = 'TRACKING_VOLUME';
   let statusBadge = 'TRACKING VOL (< 20D)';
 
   if (hasVolumeCrossed) {
