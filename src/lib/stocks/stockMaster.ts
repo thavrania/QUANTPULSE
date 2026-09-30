@@ -732,7 +732,7 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   {
     ticker: 'TATAMOTORS',
     shortName: 'TMCV',
-    name: 'Tata Motors Limited (TMCV)',
+    name: 'TMCV',
     isin: 'INE155A01022',
     segment: 'NSE_FNO',
     exchange: 'NSE',
@@ -748,7 +748,7 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   {
     ticker: 'TMCV',
     shortName: 'TMCV',
-    name: 'Tata Motors Limited (TMCV)',
+    name: 'TMCV',
     isin: 'INE155A01022',
     segment: 'NSE_FNO',
     exchange: 'NSE',
@@ -891,8 +891,8 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'ZOMATO',
-    shortName: 'Eternal',
-    name: 'Eternal Limited (formerly Zomato Limited)',
+    shortName: 'ETERNAL',
+    name: 'ETERNAL',
     isin: 'INE758T01015',
     segment: 'NSE_FNO',
     exchange: 'NSE',
@@ -907,8 +907,8 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'ETERNAL',
-    shortName: 'Eternal',
-    name: 'Eternal Limited (formerly Zomato Limited)',
+    shortName: 'ETERNAL',
+    name: 'ETERNAL',
     isin: 'INE758T01015',
     segment: 'NSE_FNO',
     exchange: 'NSE',
@@ -1038,6 +1038,43 @@ export function resolveStockMetadata(
 ): ResolvedStockMetadata {
   const rawTicker = input.ticker || dbMasterItem?.ticker || '';
   const cleanTicker = normalizeTicker(rawTicker);
+
+  // Explicit corporate restructuring & rebranding overrides
+  if (cleanTicker === 'TATAMOTORS' || cleanTicker === 'TMCV') {
+    return {
+      ticker: cleanTicker,
+      shortName: 'TMCV',
+      name: 'TMCV',
+      isin: 'INE155A01022',
+      isFnO: true,
+      segment: 'NSE_FNO',
+      sector: 'Automobile Manufacturers (Commercial Vehicles)',
+      securityId: '3456',
+      lotSize: 550,
+      strikeStep: 20,
+      avgVol20DM: input.avgVol20DM || input.avg_vol_20d_m || 8.90,
+      approxLtp: input.spotLtp || input.spot_ltp || input.approxLtp || 984.40,
+      indices: ['NIFTY 50', 'SENSEX'],
+    };
+  }
+  if (cleanTicker === 'ZOMATO' || cleanTicker === 'ETERNAL') {
+    return {
+      ticker: cleanTicker,
+      shortName: 'ETERNAL',
+      name: 'ETERNAL',
+      isin: 'INE758T01015',
+      isFnO: true,
+      segment: 'NSE_FNO',
+      sector: 'Online Food Delivery & Quick Commerce',
+      securityId: '5097',
+      lotSize: 2500,
+      strikeStep: 5,
+      avgVol20DM: input.avgVol20DM || input.avg_vol_20d_m || 19.00,
+      approxLtp: input.spotLtp || input.spot_ltp || input.approxLtp || 264.80,
+      indices: ['NIFTY 50'],
+    };
+  }
+
   const catalogItem = getStockMasterByTicker(cleanTicker);
   const master = catalogItem || (dbMasterItem as StockMasterItem | undefined);
 

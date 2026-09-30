@@ -84,6 +84,7 @@ export function ZoneB_Watchlist() {
     if (!q) return true;
     return (
       stock.ticker.toLowerCase().includes(q) ||
+      stock.shortName?.toLowerCase().includes(q) ||
       stock.name.toLowerCase().includes(q) ||
       stock.sector.toLowerCase().includes(q) ||
       stock.securityId.includes(q) ||

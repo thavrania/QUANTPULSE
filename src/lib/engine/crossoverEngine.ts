@@ -109,7 +109,7 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
   {
     ticker: 'TATAMOTORS',
     shortName: 'TMCV',
-    name: 'Tata Motors Limited (TMCV)',
+    name: 'TMCV',
     isFnO: true,
     segment: 'NSE_FNO',
     sector: 'Automobile Manufacturers (Commercial Vehicles)',
@@ -135,8 +135,8 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
   },
   {
     ticker: 'ZOMATO',
-    shortName: 'Eternal',
-    name: 'Eternal Limited (formerly Zomato Limited)',
+    shortName: 'ETERNAL',
+    name: 'ETERNAL',
     isFnO: true,
     segment: 'NSE_FNO',
     sector: 'Online Food Delivery & Quick Commerce',
