@@ -1927,7 +1927,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   );
 
   const addCustomStock = useCallback(
-    (stockData: Omit<Stock, 'hasCrossed20D' | 'crossoverTime' | 'crossoverSpotPrice'>) => {
+    async (stockData: Omit<Stock, 'hasCrossed20D' | 'crossoverTime' | 'crossoverSpotPrice'>) => {
       const meta = resolveStockMetadata(stockData);
       const nowStr = formatClockIST(clockSeconds);
       const targetAvg = stockData.avgVol20DM || meta.avgVol20DM;
