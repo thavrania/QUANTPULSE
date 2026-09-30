@@ -83,7 +83,7 @@ VALUES
     ('JSWSTEEL', 'JSW Steel', 'JSW Steel Limited', 'INE019A01038', 'NSE_FNO', 'NSE', 'Iron & Steel / Metals', '11723', 675, 10, 2.700, 995.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('KOTAKBANK', 'Kotak Bank', 'Kotak Mahindra Bank Limited', 'INE237A01028', 'NSE_FNO', 'NSE', 'Private Banking', '1922', 400, 20, 4.800, 1820.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('LT', 'L&T', 'Larsen & Toubro Limited', 'INE018A01030', 'NSE_FNO', 'NSE', 'Infrastructure & Engineering', '11483', 150, 50, 2.100, 3560.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
-    ('LTIM', 'LTIMindtree', 'LTIMindtree Limited', 'INE214T01019', 'NSE_FNO', 'NSE', 'Information Technology', '17818', 150, 50, 0.650, 6150.00, true, ARRAY['NIFTY 50'], false),
+    ('LTM', 'LTM', 'LTIMindtree Limited', 'INE214T01019', 'NSE_FNO', 'NSE', 'Information Technology', '17818', 150, 50, 0.650, 6150.00, true, ARRAY['NIFTY 50'], false),
     ('M&M', 'Mahindra & Mahindra', 'Mahindra & Mahindra Limited', 'INE101A01026', 'NSE_FNO', 'NSE', 'Automobile Manufacturers (SUVs & Tractors)', '2031', 350, 20, 3.800, 3120.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('MARUTI', 'Maruti Suzuki', 'Maruti Suzuki India Limited', 'INE585B01010', 'NSE_FNO', 'NSE', 'Automobile Manufacturers', '10999', 50, 200, 0.650, 12450.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
     ('NESTLEIND', 'Nestle', 'Nestle India Limited', 'INE239A01024', 'NSE_FNO', 'NSE', 'FMCG & Food Processing', '17963', 250, 20, 0.850, 2650.00, true, ARRAY['NIFTY 50', 'SENSEX'], false),
@@ -215,4 +215,12 @@ WHERE id IN (
 -- Ensure a stock can never have duplicate crossover event rows on the same calendar date
 CREATE UNIQUE INDEX IF NOT EXISTS idx_crossover_events_ticker_day 
 ON public.crossover_events (ticker, ((created_at AT TIME ZONE 'UTC')::date));
+
+-- ---------------------------------------------------------------------
+-- 7. SYMBOL REBRANDING: MIGRATE LEGACY SYMBOL LTIM TO LTM
+-- ---------------------------------------------------------------------
+UPDATE public.watchlist SET ticker = 'LTM', short_name = 'LTM' WHERE ticker = 'LTIM';
+UPDATE public.stock_master SET ticker = 'LTM', short_name = 'LTM' WHERE ticker = 'LTIM';
+UPDATE public.crossover_events SET ticker = 'LTM' WHERE ticker = 'LTIM';
+UPDATE public.active_positions SET ticker = 'LTM' WHERE ticker = 'LTIM';
 

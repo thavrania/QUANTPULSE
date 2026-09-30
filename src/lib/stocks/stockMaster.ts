@@ -522,8 +522,8 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
     indices: ['NIFTY 50', 'SENSEX'],
   },
   {
-    ticker: 'LTIM',
-    shortName: 'LTIMindtree',
+    ticker: 'LTM',
+    shortName: 'LTM',
     name: 'LTIMindtree Limited',
     isin: 'INE214T01019',
     segment: 'NSE_FNO',
@@ -903,6 +903,7 @@ export function normalizeTicker(ticker: string): string {
   clean = clean.trim();
   if (clean === 'TATAMOTORS') return 'TMCV';
   if (clean === 'ZOMATO') return 'ETERNAL';
+  if (clean === 'LTIM') return 'LTM';
   return clean;
 }
 
@@ -917,13 +918,17 @@ export function getStockMasterByTicker(ticker: string): StockMasterItem | undefi
   let found = STOCK_MASTER_CATALOG.find((s) => s.ticker === clean);
   if (found) return found;
 
-  // 1b. Direct alias support for TMCV / TATAMOTORS and ETERNAL / ZOMATO
+  // 1b. Direct alias support for TMCV / TATAMOTORS, ETERNAL / ZOMATO, and LTM / LTIM
   if (clean === 'TMCV' || clean === 'TATAMOTORS') {
     found = STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TMCV');
     if (found) return found;
   }
   if (clean === 'ETERNAL' || clean === 'ZOMATO') {
     found = STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ETERNAL');
+    if (found) return found;
+  }
+  if (clean === 'LTM' || clean === 'LTIM') {
+    found = STOCK_MASTER_CATALOG.find((s) => s.ticker === 'LTM');
     if (found) return found;
   }
 
@@ -1038,6 +1043,23 @@ export function resolveStockMetadata(
       strikeStep: 5,
       avgVol20DM: input.avgVol20DM || input.avg_vol_20d_m || 19.00,
       approxLtp: input.spotLtp || input.spot_ltp || input.approxLtp || 264.80,
+      indices: ['NIFTY 50'],
+    };
+  }
+  if (cleanTicker === 'LTM' || cleanTicker === 'LTIM') {
+    return {
+      ticker: 'LTM',
+      shortName: 'LTM',
+      name: 'LTIMindtree Limited',
+      isin: 'INE214T01019',
+      isFnO: true,
+      segment: 'NSE_FNO',
+      sector: 'Information Technology',
+      securityId: '17818',
+      lotSize: 150,
+      strikeStep: 50,
+      avgVol20DM: input.avgVol20DM || input.avg_vol_20d_m || 0.65,
+      approxLtp: input.spotLtp || input.spot_ltp || input.approxLtp || 6150.00,
       indices: ['NIFTY 50'],
     };
   }

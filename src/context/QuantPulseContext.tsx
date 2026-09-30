@@ -720,6 +720,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           const sessionStarted = hasTodayMarketSessionStarted();
           const mapped: Stock[] = activeRecords.map((d: any) => {
             const cleanTicker = normalizeTicker(d.ticker);
+            if (d.ticker === 'LTIM' && isSupabaseConfigured && supabase) {
+              supabase.from('watchlist').delete().eq('ticker', 'LTIM').catch(() => {});
+              supabase.from('stock_master').delete().eq('ticker', 'LTIM').catch(() => {});
+            }
             const dbMaster = smMap.get(cleanTicker);
             const meta = resolveStockMetadata(d, dbMaster);
 

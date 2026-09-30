@@ -46,7 +46,7 @@ export const DHAN_SECURITY_MAP: Record<
   JSWSTEEL: { securityId: '11723', segment: 'NSE_EQ', lotSize: 675, strikeStep: 10 },
   KOTAKBANK: { securityId: '1922', segment: 'NSE_EQ', lotSize: 400, strikeStep: 20 },
   LT: { securityId: '11483', segment: 'NSE_EQ', lotSize: 150, strikeStep: 50 },
-  LTIM: { securityId: '17818', segment: 'NSE_EQ', lotSize: 150, strikeStep: 50 },
+  LTM: { securityId: '17818', segment: 'NSE_EQ', lotSize: 150, strikeStep: 50 },  
   'M&M': { securityId: '2031', segment: 'NSE_EQ', lotSize: 350, strikeStep: 20 },
   MARUTI: { securityId: '10999', segment: 'NSE_EQ', lotSize: 50, strikeStep: 200 },
   NESTLEIND: { securityId: '17963', segment: 'NSE_EQ', lotSize: 250, strikeStep: 20 },
