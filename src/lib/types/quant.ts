@@ -32,6 +32,7 @@ export interface Stock {
   dayClose?: number;
   changePct?: number;
   feedSource?: 'LIVE_DHAN' | 'SIMULATED';
+  indices?: string[];
 }
 
 export interface StockMasterItem {
@@ -48,6 +49,7 @@ export interface StockMasterItem {
   avgVol20DM: number;
   approxLtp?: number;
   isFnO: boolean;
+  indices?: string[];
 }
 
 export interface CrossoverEvent {

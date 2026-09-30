@@ -22,6 +22,7 @@ export function ZoneB_Watchlist() {
 
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'MASTER_DIRECTORY'>('ACTIVE');
   const [directorySearch, setDirectorySearch] = useState('');
+  const [indexFilter, setIndexFilter] = useState<'ALL' | 'NIFTY50' | 'SENSEX' | 'FNO'>('ALL');
   const [showAddForm, setShowAddForm] = useState(false);
 
   // Form states
@@ -62,13 +63,18 @@ export function ZoneB_Watchlist() {
   const activeTickers = new Set(watchlist.map((s) => s.ticker));
 
   const filteredMasterStocks = STOCK_MASTER_CATALOG.filter((stock) => {
+    if (indexFilter === 'NIFTY50' && !stock.indices?.includes('NIFTY 50')) return false;
+    if (indexFilter === 'SENSEX' && !stock.indices?.includes('SENSEX')) return false;
+    if (indexFilter === 'FNO' && !stock.isFnO) return false;
+
     const q = directorySearch.trim().toLowerCase();
     if (!q) return true;
     return (
       stock.ticker.toLowerCase().includes(q) ||
       stock.name.toLowerCase().includes(q) ||
       stock.sector.toLowerCase().includes(q) ||
-      stock.securityId.includes(q)
+      stock.securityId.includes(q) ||
+      stock.indices?.some((idx) => idx.toLowerCase().includes(q))
     );
   });
 
@@ -388,25 +394,76 @@ export function ZoneB_Watchlist() {
       {/* Tab 2: Master Directory of All Stocks */}
       {activeTab === 'MASTER_DIRECTORY' && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Search bar */}
-          <div className="p-2.5 bg-obsidian/80 border-b border-slate-800 flex items-center gap-2">
-            <span className="text-xs text-slate-400">🔍</span>
-            <input
-              type="text"
-              placeholder="Search by Symbol, Company Name, Sector, or Security ID..."
-              value={directorySearch}
-              onChange={(e) => setDirectorySearch(e.target.value)}
-              className="w-full bg-slate-900 text-xs text-white px-2.5 py-1.5 rounded border border-slate-700 focus:outline-none focus:border-amber-400 font-mono"
-            />
-            {directorySearch && (
+          {/* Search & Index Filter bar */}
+          <div className="p-2.5 bg-obsidian/80 border-b border-slate-800 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">🔍</span>
+              <input
+                type="text"
+                placeholder="Search NIFTY 50, SENSEX, Symbol, Company Name, or Security ID..."
+                value={directorySearch}
+                onChange={(e) => setDirectorySearch(e.target.value)}
+                className="w-full bg-slate-900 text-xs text-white px-2.5 py-1.5 rounded border border-slate-700 focus:outline-none focus:border-amber-400 font-mono"
+              />
+              {directorySearch && (
+                <button
+                  type="button"
+                  onClick={() => setDirectorySearch('')}
+                  className="text-xs text-slate-400 hover:text-white px-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Quick Index Filter Pills */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+              <span className="text-slate-500 font-semibold uppercase text-[9px] mr-1">Filter Index:</span>
               <button
                 type="button"
-                onClick={() => setDirectorySearch('')}
-                className="text-xs text-slate-400 hover:text-white px-1"
+                onClick={() => setIndexFilter('ALL')}
+                className={`px-2 py-0.5 rounded font-mono font-semibold transition ${
+                  indexFilter === 'ALL'
+                    ? 'bg-amber-500 text-black font-bold'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                }`}
               >
-                ✕
+                All Universe ({STOCK_MASTER_CATALOG.length})
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => setIndexFilter('NIFTY50')}
+                className={`px-2 py-0.5 rounded font-mono font-semibold transition ${
+                  indexFilter === 'NIFTY50'
+                    ? 'bg-cyan-500 text-black font-bold'
+                    : 'bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 border border-cyan-500/30'
+                }`}
+              >
+                🇮🇳 NIFTY 50 ({STOCK_MASTER_CATALOG.filter((s) => s.indices?.includes('NIFTY 50')).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setIndexFilter('SENSEX')}
+                className={`px-2 py-0.5 rounded font-mono font-semibold transition ${
+                  indexFilter === 'SENSEX'
+                    ? 'bg-purple-500 text-white font-bold'
+                    : 'bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 border border-purple-500/30'
+                }`}
+              >
+                🏛️ SENSEX 30 ({STOCK_MASTER_CATALOG.filter((s) => s.indices?.includes('SENSEX')).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setIndexFilter('FNO')}
+                className={`px-2 py-0.5 rounded font-mono font-semibold transition ${
+                  indexFilter === 'FNO'
+                    ? 'bg-emerald-500 text-black font-bold'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'
+                }`}
+              >
+                F&amp;O Only ({STOCK_MASTER_CATALOG.filter((s) => s.isFnO).length})
+              </button>
+            </div>
           </div>
 
           {/* Master Stocks Table */}
@@ -417,7 +474,7 @@ export function ZoneB_Watchlist() {
                   <th className="py-2 px-2.5">Stock &amp; Segment</th>
                   <th className="py-2 px-2.5">Sector</th>
                   <th className="py-2 px-2.5">Specs (Lot/Step)</th>
-                  <th className="py-2 px-2.5">20D Avg Vol</th>
+                  <th className="py-2 px-2.5">20D Avg Shares &amp; LTP</th>
                   <th className="py-2 px-2.5 text-right">Action</th>
                 </tr>
               </thead>
@@ -446,6 +503,16 @@ export function ZoneB_Watchlist() {
                           >
                             {stock.segment}
                           </span>
+                          {stock.indices?.includes('NIFTY 50') && (
+                            <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold">
+                              NIFTY 50
+                            </span>
+                          )}
+                          {stock.indices?.includes('SENSEX') && (
+                            <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold">
+                              SENSEX
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-slate-200 font-sans truncate max-w-[200px]" title={stock.name}>
                           {stock.name}
@@ -466,8 +533,15 @@ export function ZoneB_Watchlist() {
                         <div className="text-slate-400">Step: ₹{stock.strikeStep}</div>
                       </td>
 
-                      <td className="py-2 px-2.5 text-slate-200 font-bold">
-                        {stock.avgVol20DM.toFixed(2)}M
+                      <td className="py-2 px-2.5">
+                        <div className="text-slate-100 font-bold">
+                          {Math.round(stock.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares
+                        </div>
+                        {stock.approxLtp && (
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            ~₹{stock.approxLtp.toFixed(2)}
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-2 px-2.5 text-right">
