@@ -88,7 +88,7 @@ export interface VolumeMetrics {
   rvolRatio: number;
   deficitM: number;
   isEligibleForBuy: boolean;
-  statusCode: 'ELIGIBLE_FOR_BUY' | 'TRACKING_VOLUME';
+  statusCode: 'ELIGIBLE_FOR_BUY' | 'TRACKING_VOLUME' | 'HIGH_VOL_BEARISH';
   statusBadge: string;
 }
 
