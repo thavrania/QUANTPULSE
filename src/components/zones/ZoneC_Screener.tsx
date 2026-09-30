@@ -83,18 +83,13 @@ export function ZoneC_Screener() {
                     stock.justCrossedHighlight ? 'animate-crossover-pulse bg-emerald-950/30' : ''
                   } ${isSelectedRow ? 'bg-slate-800/85' : 'hover:bg-slate-900/70'}`}
                 >
-                  {/* Stock, Sector & Contract Specs */}
+                  {/* Stock Identification */}
                   <td className="py-2.5 px-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-bold text-sm text-white font-mono">{stock.ticker}</span>
                       {stock.shortName && stock.shortName !== stock.ticker && (
                         <span className="text-[11px] font-semibold text-cyan-300">
                           ({stock.shortName})
-                        </span>
-                      )}
-                      {stock.sector && (
-                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                          {stock.sector}
                         </span>
                       )}
                       {stock.feedSource === 'LIVE_DHAN' && (
@@ -107,14 +102,6 @@ export function ZoneC_Screener() {
                     <div className="text-[11px] text-slate-200 font-medium mt-0.5">{stock.name}</div>
                     <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
                       <span>Dhan ID: <strong className="text-slate-300">{stock.securityId || '1330'}</strong></span>
-                      {stock.isin && (
-                        <>
-                          <span>•</span>
-                          <span>ISIN: <strong className="text-slate-400">{stock.isin}</strong></span>
-                        </>
-                      )}
-                      <span>•</span>
-                      <span>Lot: <strong className="text-cyan-300">{stock.lotSize}</strong></span>
                     </div>
                   </td>
 
