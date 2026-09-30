@@ -160,6 +160,42 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const packetCountRef = useRef<number>(0);
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const isLiveStreamingRef = useRef<boolean>(false);
+  useEffect(() => {
+    isLiveStreamingRef.current = isLiveStreaming;
+  }, [isLiveStreaming]);
+
+  const positionsRef = useRef<Position[]>(positions);
+  useEffect(() => {
+    positionsRef.current = positions;
+  }, [positions]);
+
+  const idempotencyLocksRef = useRef<string[]>(idempotencyLocks);
+  useEffect(() => {
+    idempotencyLocksRef.current = idempotencyLocks;
+  }, [idempotencyLocks]);
+
+  const clockSecondsRef = useRef<number>(clockSeconds);
+  useEffect(() => {
+    clockSecondsRef.current = clockSeconds;
+  }, [clockSeconds]);
+
+  const marketSessionRef = useRef<MarketSessionInfo>(marketSession);
+  useEffect(() => {
+    marketSessionRef.current = marketSession;
+  }, [marketSession]);
+
+  const isSelfUpdatingRef = useRef<boolean>(false);
+  const selfUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const markSelfUpdating = useCallback(() => {
+    isSelfUpdatingRef.current = true;
+    if (selfUpdateTimeoutRef.current) clearTimeout(selfUpdateTimeoutRef.current);
+    selfUpdateTimeoutRef.current = setTimeout(() => {
+      isSelfUpdatingRef.current = false;
+    }, 1500);
+  }, []);
+
   const refreshBrokerVaultStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/broker/vault');
@@ -350,10 +386,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const clearCrossoverEvents = useCallback(() => {
     setCrossoverEvents([]);
     if (isSupabaseConfigured && supabase) {
+      markSelfUpdating();
       supabase.from('crossover_events').delete().neq('ticker', 'DUMMY_NEVER_MATCH').then();
     }
     showToast('Exact Crossover Timestamp Feed cleared.', 'info');
-  }, [showToast]);
+  }, [markSelfUpdating, showToast]);
 
   const clockTime = formatClockIST(clockSeconds);
 
@@ -403,7 +440,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         if (wlData && wlData.length > 0) {
           const mapped: Stock[] = wlData.map((d: any) => {
             const master = getStockMasterByTicker(d.ticker);
-            const isUpdatedToday = d.updated_at ? d.updated_at.startsWith(todayDateStr) : false;
+            let isUpdatedToday = false;
+            if (d.updated_at) {
+              const dt = new Date(d.updated_at);
+              if (!isNaN(dt.getTime())) {
+                isUpdatedToday = getISTDate(dt).dateStr === todayDateStr;
+              }
+            }
             const todayVol = isUpdatedToday ? (Number(d.today_vol_m) || 0) : 0;
             const avgVol = Number(d.avg_vol_20d_m) || master?.avgVol20DM || 1.0;
             const spot = Number(d.spot_ltp) || master?.approxLtp || 1000;
@@ -419,8 +462,18 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               todayVol > 0 &&
               isBullish;
 
+            const existingLocal = (watchlistRef.current || []).find((s) => s.ticker === d.ticker);
+            const localVol = existingLocal?.todayVolM || 0;
+
             // Rule 5: Auto-clean stale DB records if volume is below 20D average
-            if (d.has_crossed_20d && (todayVol < avgVol || todayVol === 0)) {
+            // Guard: Only clean if NOT streaming live and in-memory volume is also below avgVol
+            if (
+              !isLiveStreamingRef.current &&
+              d.has_crossed_20d &&
+              (todayVol < avgVol || todayVol === 0) &&
+              localVol < avgVol
+            ) {
+              markSelfUpdating();
               supabase!
                 .from('watchlist')
                 .update({
@@ -431,6 +484,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 .eq('ticker', d.ticker)
                 .then();
             }
+
+            // If local state already has newer/active live streaming data, preserve it!
+            const preferLocal =
+              isLiveStreamingRef.current ||
+              (existingLocal !== undefined && existingLocal.todayVolM > todayVol);
 
             return {
               ticker: d.ticker,
@@ -443,19 +501,54 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               securityId: d.security_id || master?.securityId || '1330',
               lotSize: d.lot_size || master?.lotSize || 250,
               strikeStep: d.strike_step || master?.strikeStep || 50,
-              spotLtp: spot,
-              todayVolM: todayVol,
+              spotLtp: preferLocal && existingLocal ? existingLocal.spotLtp : spot,
+              todayVolM: preferLocal && existingLocal ? existingLocal.todayVolM : todayVol,
               avgVol20DM: avgVol,
-              hasCrossed20D: hasCrossed,
-              crossoverTime: hasCrossed ? (d.crossover_time || getISTDate().timeStr) : null,
-              crossoverSpotPrice: hasCrossed ? Number(d.crossover_spot_price || spot) : null,
+              hasCrossed20D: preferLocal && existingLocal ? existingLocal.hasCrossed20D : hasCrossed,
+              crossoverTime:
+                preferLocal && existingLocal && existingLocal.crossoverTime
+                  ? existingLocal.crossoverTime
+                  : hasCrossed
+                  ? (d.crossover_time || getISTDate().timeStr)
+                  : null,
+              crossoverSpotPrice:
+                preferLocal && existingLocal && existingLocal.crossoverSpotPrice !== null
+                  ? existingLocal.crossoverSpotPrice
+                  : hasCrossed
+                  ? Number(d.crossover_spot_price || spot)
+                  : null,
               ivPct: Number(d.iv_pct || (master?.isFnO ? 16.5 : 0)),
-              dayHigh: d.day_high ? Number(d.day_high) : undefined,
-              dayLow: d.day_low ? Number(d.day_low) : undefined,
-              dayOpen: d.day_open ? Number(d.day_open) : undefined,
-              dayClose: d.day_close ? Number(d.day_close) : undefined,
-              changePct: d.change_pct !== undefined ? Number(d.change_pct) : undefined,
-              feedSource: d.feed_source || 'LIVE_DHAN',
+              dayHigh:
+                preferLocal && existingLocal?.dayHigh !== undefined
+                  ? existingLocal.dayHigh
+                  : d.day_high
+                  ? Number(d.day_high)
+                  : undefined,
+              dayLow:
+                preferLocal && existingLocal?.dayLow !== undefined
+                  ? existingLocal.dayLow
+                  : d.day_low
+                  ? Number(d.day_low)
+                  : undefined,
+              dayOpen:
+                preferLocal && existingLocal?.dayOpen !== undefined
+                  ? existingLocal.dayOpen
+                  : d.day_open
+                  ? Number(d.day_open)
+                  : undefined,
+              dayClose:
+                preferLocal && existingLocal?.dayClose !== undefined
+                  ? existingLocal.dayClose
+                  : d.day_close
+                  ? Number(d.day_close)
+                  : undefined,
+              changePct:
+                preferLocal && existingLocal?.changePct !== undefined
+                  ? existingLocal.changePct
+                  : d.change_pct !== undefined
+                  ? Number(d.change_pct)
+                  : undefined,
+              feedSource: preferLocal && existingLocal ? existingLocal.feedSource : (d.feed_source || 'LIVE_DHAN'),
             };
           });
 
@@ -464,7 +557,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           const filteredMapped = mapped.filter((s) => TARGET_FOUR.includes(s.ticker));
           const existingTickers = new Set(filteredMapped.map((s) => s.ticker));
           const missingStocks = INITIAL_WATCHLIST_DATA.filter((s) => !existingTickers.has(s.ticker));
-          setWatchlist([...filteredMapped, ...missingStocks]);
+
+          // If currently live streaming, do not overwrite the in-memory active stream
+          setWatchlist((prevWl) => {
+            if (isLiveStreamingRef.current) {
+              return prevWl;
+            }
+            return [...filteredMapped, ...missingStocks];
+          });
         }
 
         const { data: evData } = await supabase!
@@ -500,8 +600,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 isFnO: Boolean(e.is_fno),
               };
             });
-          setCrossoverEvents(mappedEv);
-        } else {
+
+          setCrossoverEvents((prevEv) => {
+            if (isLiveStreamingRef.current && prevEv.length > 0) {
+              const dbIds = new Set(mappedEv.map((x) => x.ticker + x.time));
+              const uniqueLocal = prevEv.filter((x) => !dbIds.has(x.ticker + x.time));
+              return [...uniqueLocal, ...mappedEv];
+            }
+            return mappedEv;
+          });
+        } else if (!isLiveStreamingRef.current) {
           setCrossoverEvents([]);
         }
 
@@ -535,16 +643,19 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
     loadFromSupabase();
 
-    // Subscribe to realtime changes
+    // Subscribe to realtime changes with self-update echo suppression and live stream lock
     const channel = supabase
       .channel('quantpulse-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlist' }, () => {
+        if (isSelfUpdatingRef.current || isLiveStreamingRef.current) return;
         loadFromSupabase();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crossover_events' }, () => {
+        if (isSelfUpdatingRef.current) return;
         loadFromSupabase();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'active_positions' }, () => {
+        if (isSelfUpdatingRef.current) return;
         loadFromSupabase();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'broker_vault' }, () => {
@@ -615,6 +726,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
       // Persist to Supabase if available
       if (isSupabaseConfigured && supabase) {
+        markSelfUpdating();
         supabase.from('active_positions').insert({
           id: newPos.id,
           order_time: newPos.orderTime,
@@ -719,6 +831,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           );
 
           if (isSupabaseConfigured && supabase) {
+            markSelfUpdating();
             supabase.from('crossover_events').insert({
               ticker: event.ticker,
               time_ist: event.time,
@@ -733,6 +846,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               spot_ltp: updated.spotLtp,
               today_vol_m: updated.todayVolM,
               change_pct: updated.changePct,
+              updated_at: new Date().toISOString(),
             }).eq('ticker', event.ticker).then();
           }
 
@@ -758,7 +872,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       });
 
       // Check auto-mode dispatch
-      runAutoScan(updatedWl, idempotencyLocks, positions);
+      runAutoScan(updatedWl, idempotencyLocksRef.current, positionsRef.current);
       return updatedWl;
     });
 
@@ -785,6 +899,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           }
 
           if (isSupabaseConfigured && supabase) {
+            markSelfUpdating();
             supabase
               .from('active_positions')
               .update({
@@ -800,7 +915,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         return nextPos;
       })
     );
-  }, [clockSeconds, idempotencyLocks, positions, runAutoScan, showToast]);
+  }, [runAutoScan, showToast, markSelfUpdating]);
 
   const fetchLiveDhanQuotes = useCallback(
     async (isManualTrigger = false): Promise<boolean> => {
@@ -811,7 +926,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
           const accessToken = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_access_token') || '' : '';
 
-          const tickers = watchlist.map((s) => s.ticker);
+          const tickers = (watchlistRef.current.length > 0 ? watchlistRef.current : watchlist).map((s) => s.ticker);
           const res = await fetch('/api/broker/dhan/quote', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -838,7 +953,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         }
 
         const quotesMap = data.quotes;
-        const nowTime = formatClockIST(clockSeconds);
+        const nowTime = formatClockIST(clockSecondsRef.current);
 
         setWatchlist((prevWl) => {
           const updatedWl = prevWl.map((stock) => {
@@ -866,6 +981,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               );
 
               if (isSupabaseConfigured && supabase) {
+                markSelfUpdating();
                 supabase
                   .from('crossover_events')
                   .insert({
@@ -882,6 +998,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                     has_crossed_20d: true,
                     crossover_time: event.time,
                     crossover_spot_price: event.crossPrice,
+                    spot_ltp: updated.spotLtp,
+                    today_vol_m: updated.todayVolM,
+                    day_high: updated.dayHigh,
+                    day_low: updated.dayLow,
+                    day_open: updated.dayOpen,
+                    day_close: updated.dayClose,
+                    change_pct: updated.changePct,
+                    updated_at: new Date().toISOString(),
                   })
                   .eq('ticker', event.ticker)
                   .then();
@@ -910,7 +1034,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           });
 
           // Run auto-mode scan
-          runAutoScan(updatedWl, idempotencyLocks, positions);
+          runAutoScan(updatedWl, idempotencyLocksRef.current, positionsRef.current);
           return updatedWl;
         });
 
@@ -952,6 +1076,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               }
 
               if (isSupabaseConfigured && supabase) {
+                markSelfUpdating();
                 supabase
                   .from('active_positions')
                   .update({
@@ -977,14 +1102,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           lastLatencyMs: latencyMs,
           lastSyncTimestamp: syncTime,
           errorCount: 0,
-          streamActive: isLiveStreaming,
-          pulseIntervalMs: marketSession.recommendedIntervalMs,
+          streamActive: isLiveStreamingRef.current,
+          pulseIntervalMs: marketSessionRef.current.recommendedIntervalMs,
         }));
 
         // Periodic cloud snapshot logging (every 10 packets to optimize DB writes)
         if (packetCountRef.current % 10 === 0 && isSupabaseConfigured && supabase) {
+          const currentWl = watchlistRef.current || [];
           const snapshots = Object.entries(quotesMap).map(([ticker, q]: [string, any]) => {
-            const stock = watchlist.find((s) => s.ticker === ticker);
+            const stock = currentWl.find((s) => s.ticker === ticker);
             const avgVol = stock?.avgVol20DM || 1.0;
             const vol = q.volumeM !== undefined ? Number(q.volumeM) : 0;
             return {
@@ -997,6 +1123,27 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             };
           });
           logBatchTickSnapshotsToCloud(snapshots).catch(() => {});
+        }
+
+        // Periodic sync of live quotes to public.watchlist in Supabase (every 5 packets)
+        if (packetCountRef.current % 5 === 0 && isSupabaseConfigured && supabase) {
+          markSelfUpdating();
+          Object.entries(quotesMap).forEach(([ticker, q]: [string, any]) => {
+            supabase
+              .from('watchlist')
+              .update({
+                spot_ltp: Number(q.ltp) || 0,
+                today_vol_m: q.volumeM !== undefined ? Number(q.volumeM) : 0,
+                day_high: q.high ? Number(q.high) : undefined,
+                day_low: q.low ? Number(q.low) : undefined,
+                day_open: q.open ? Number(q.open) : undefined,
+                day_close: q.close ? Number(q.close) : undefined,
+                change_pct: q.changePct !== undefined ? Number(q.changePct) : 0,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('ticker', ticker)
+              .then();
+          });
         }
 
         if (isManualTrigger) {
@@ -1022,7 +1169,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
     return res ?? false;
   },
-  [watchlist, clockSeconds, idempotencyLocks, positions, runAutoScan, showToast, isLiveStreaming, marketSession]
+  [runAutoScan, showToast, markSelfUpdating]
 );
 
   const refreshLiveQuotesNow = useCallback(async () => {
@@ -1104,6 +1251,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               );
 
               if (isSupabaseConfigured && supabase) {
+                markSelfUpdating();
                 supabase.from('crossover_events').insert({
                   ticker: event.ticker,
                   time_ist: event.time,
@@ -1118,6 +1266,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                   spot_ltp: updated.spotLtp,
                   today_vol_m: updated.todayVolM,
                   change_pct: updated.changePct,
+                  updated_at: new Date().toISOString(),
                 }).eq('ticker', event.ticker).then();
               }
             }
@@ -1212,6 +1361,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           }
 
           if (isSupabaseConfigured && supabase) {
+            markSelfUpdating();
             supabase
               .from('active_positions')
               .update({
@@ -1303,6 +1453,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         };
 
         if (isSupabaseConfigured && supabase) {
+          markSelfUpdating();
           supabase
             .from('watchlist')
             .upsert({
@@ -1327,7 +1478,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         return [...prev, newStock];
       });
     },
-    [showToast]
+    [markSelfUpdating, showToast]
   );
 
   const removeStockFromWatchlist = useCallback(
@@ -1342,6 +1493,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           setSelectedTicker(updated[0].ticker);
         }
         if (isSupabaseConfigured && supabase) {
+          markSelfUpdating();
           supabase.from('watchlist').delete().eq('ticker', ticker).then();
         }
         showToast(`Removed ${ticker} from Active Watchlist.`, 'info');
