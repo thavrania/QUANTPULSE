@@ -5,7 +5,7 @@ import { useQuantPulse } from '@/context/QuantPulseContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { TradeLog, TslAuditTrailEntry, CrossoverEvent, BrokerVaultEntry, LiveTickSnapshot, StockMasterItem } from '@/lib/types/quant';
 import { formatTokenCountdown, maskToken } from '@/lib/services/brokerVaultService';
-import { STOCK_MASTER_CATALOG, getStockMasterByTicker } from '@/lib/stocks/stockMaster';
+import { STOCK_MASTER_CATALOG, getStockMasterByTicker, resolveStockMetadata } from '@/lib/stocks/stockMaster';
 
 export function CloudAuditLogsModal() {
   const { showToast, isCloudLogsModalOpen, setIsCloudLogsModalOpen } = useQuantPulse();
@@ -102,21 +102,22 @@ export function CloudAuditLogsModal() {
 
         if (!masterErr && masterData && masterData.length > 0) {
           const mappedMaster: StockMasterItem[] = masterData.map((d: any) => {
-            const fallback = getStockMasterByTicker(d.ticker);
+            const meta = resolveStockMetadata(d);
             return {
-              ticker: d.ticker,
-              shortName: d.short_name || fallback?.shortName || d.ticker,
-              name: d.name || fallback?.name || d.ticker,
-              isin: d.isin || fallback?.isin || '',
-              segment: d.segment || fallback?.segment || 'NSE_FNO',
-              exchange: d.exchange || fallback?.exchange || 'NSE',
-              sector: d.sector || fallback?.sector || 'General',
-              securityId: d.security_id || fallback?.securityId || '1330',
-              lotSize: d.lot_size || fallback?.lotSize || 1,
-              strikeStep: Number(d.strike_step) || fallback?.strikeStep || 50,
-              avgVol20DM: Number(d.avg_vol_20d_m) || fallback?.avgVol20DM || 1.0,
-              approxLtp: d.approx_ltp ? Number(d.approx_ltp) : fallback?.approxLtp,
-              isFnO: d.is_fno !== undefined ? Boolean(d.is_fno) : (fallback?.isFnO ?? true),
+              ticker: meta.ticker,
+              shortName: meta.shortName,
+              name: meta.name,
+              isin: meta.isin,
+              segment: meta.segment,
+              exchange: 'NSE',
+              sector: meta.sector,
+              securityId: meta.securityId,
+              lotSize: meta.lotSize,
+              strikeStep: meta.strikeStep,
+              avgVol20DM: meta.avgVol20DM,
+              approxLtp: meta.approxLtp,
+              isFnO: meta.isFnO,
+              indices: meta.indices,
             };
           });
           setStockMasterList(mappedMaster);
@@ -625,7 +626,7 @@ export function CloudAuditLogsModal() {
                       <td className="py-2 px-2.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold text-white font-mono">{stock.ticker}</span>
-                          {stock.shortName && stock.shortName !== stock.ticker && (
+                          {stock.shortName && stock.shortName.trim().toUpperCase() !== stock.ticker.trim().toUpperCase() && (
                             <span className="text-[10px] text-cyan-300 font-semibold font-sans">
                               ({stock.shortName})
                             </span>

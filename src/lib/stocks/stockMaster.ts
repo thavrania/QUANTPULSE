@@ -892,37 +892,201 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
 ];
 
 /**
- * Converts a StockMasterItem into a live tracking Stock object with exact real market names
+ * Normalizes any ticker symbol by removing exchange suffixes (.NS, .BO, .BSE, .NSE),
+ * segment tags (-EQ, -BE, -SM), and extraneous whitespace.
  */
-export function convertMasterToStock(master: StockMasterItem): Stock {
+export function normalizeTicker(ticker: string): string {
+  if (!ticker) return '';
+  let clean = ticker.trim().toUpperCase();
+  clean = clean.replace(/\.(NS|BO|BSE|NSE)$/i, '');
+  clean = clean.replace(/-(EQ|BE|SM)$/i, '');
+  return clean.trim();
+}
+
+/**
+ * Finds master stock info by ticker with fuzzy, alphanumeric, ISIN, and securityId resolution
+ */
+export function getStockMasterByTicker(ticker: string): StockMasterItem | undefined {
+  if (!ticker) return undefined;
+  const clean = normalizeTicker(ticker);
+
+  // 1. Direct match on clean ticker
+  let found = STOCK_MASTER_CATALOG.find((s) => s.ticker === clean);
+  if (found) return found;
+
+  // 2. Direct match ignoring dashes/underscores/special chars (e.g. BAJAJ-AUTO vs BAJAJAUTO, M&M vs MM)
+  const stripped = clean.replace(/[^A-Z0-9]/g, '');
+  if (stripped) {
+    found = STOCK_MASTER_CATALOG.find((s) => s.ticker.replace(/[^A-Z0-9]/g, '') === stripped);
+    if (found) return found;
+  }
+
+  // 3. Match by ISIN if ticker happens to be an ISIN (e.g. INE155A01022 -> TATAMOTORS, INE758T01015 -> ZOMATO)
+  found = STOCK_MASTER_CATALOG.find((s) => s.isin && s.isin.toUpperCase() === clean);
+  if (found) return found;
+
+  // 4. Match by Dhan security ID (e.g. 3456 -> TATAMOTORS, 5097 -> ZOMATO)
+  found = STOCK_MASTER_CATALOG.find((s) => s.securityId === clean);
+  if (found) return found;
+
+  // 5. Match by exact shortName or full name (case-insensitive)
+  found = STOCK_MASTER_CATALOG.find(
+    (s) =>
+      (s.shortName && s.shortName.toUpperCase() === clean) ||
+      (s.name && s.name.toUpperCase() === clean)
+  );
+  if (found) return found;
+
+  return undefined;
+}
+
+export interface ResolvedStockMetadata {
+  ticker: string;
+  shortName: string;
+  name: string;
+  isin: string;
+  segment: 'NSE_FNO' | 'NSE_EQ';
+  sector: string;
+  securityId: string;
+  lotSize: number;
+  strikeStep: number;
+  avgVol20DM: number;
+  approxLtp: number;
+  isFnO: boolean;
+  indices: string[];
+}
+
+/**
+ * Resolves authoritative stock metadata, ensuring the true corporate name and friendly short name
+ * are never overridden by raw tickers or placeholder strings (e.g. "(Cash Only)", "(Stock Only)").
+ */
+export function resolveStockMetadata(
+  input: {
+    ticker?: string;
+    shortName?: string;
+    short_name?: string;
+    name?: string;
+    isin?: string;
+    segment?: string;
+    sector?: string;
+    securityId?: string;
+    security_id?: string;
+    lotSize?: number;
+    lot_size?: number;
+    strikeStep?: number;
+    strike_step?: number;
+    isFnO?: boolean;
+    is_fno?: boolean;
+    avgVol20DM?: number;
+    avg_vol_20d_m?: number;
+    spotLtp?: number;
+    spot_ltp?: number;
+    approxLtp?: number;
+    approx_ltp?: number;
+    indices?: string[];
+  },
+  dbMasterItem?: Partial<StockMasterItem>
+): ResolvedStockMetadata {
+  const rawTicker = input.ticker || dbMasterItem?.ticker || '';
+  const cleanTicker = normalizeTicker(rawTicker);
+  const master = dbMasterItem?.name
+    ? (dbMasterItem as StockMasterItem)
+    : getStockMasterByTicker(cleanTicker);
+
+  // 1. Authoritative Corporate Name
+  // Master catalog is authoritative. If not found in catalog, sanitize input name.
+  let officialName = master?.name;
+  if (!officialName) {
+    const rawName = (input.name || '').trim();
+    if (rawName && rawName.toUpperCase() !== cleanTicker && !rawName.includes('(Cash Only)')) {
+      officialName = rawName;
+    } else {
+      officialName = `${cleanTicker} Limited`;
+    }
+  }
+
+  // 2. Authoritative Friendly Short Name
+  // Priority: Master catalog shortName -> input shortName (if distinct from ticker) -> cleanTicker
+  const candidateShort = (input.shortName || input.short_name || '').trim();
+  let officialShortName = master?.shortName;
+  if (!officialShortName) {
+    if (candidateShort && candidateShort.toUpperCase() !== cleanTicker) {
+      officialShortName = candidateShort;
+    } else {
+      officialShortName = cleanTicker;
+    }
+  }
+
+  const isFnO =
+    master?.isFnO ??
+    (input.isFnO !== undefined
+      ? Boolean(input.isFnO)
+      : input.is_fno !== undefined
+      ? Boolean(input.is_fno)
+      : true);
+
+  const segment = (master?.segment ||
+    input.segment ||
+    (isFnO ? 'NSE_FNO' : 'NSE_EQ')) as 'NSE_FNO' | 'NSE_EQ';
+
+  const isin = master?.isin || input.isin || '';
+  const sector = master?.sector || input.sector || 'General';
+  const securityId = master?.securityId || input.securityId || input.security_id || '1330';
+  const lotSize = Number(master?.lotSize ?? input.lotSize ?? input.lot_size ?? 1);
+  const strikeStep = Number(master?.strikeStep ?? input.strikeStep ?? input.strike_step ?? 50);
+  const avgVol20DM = Number(master?.avgVol20DM ?? input.avgVol20DM ?? input.avg_vol_20d_m ?? 1.0);
+  const approxLtp = Number(
+    master?.approxLtp ??
+      input.approxLtp ??
+      input.approx_ltp ??
+      input.spotLtp ??
+      input.spot_ltp ??
+      1000.0
+  );
+  const indices = master?.indices || input.indices || [];
+
   return {
-    ticker: master.ticker,
-    shortName: master.shortName,
-    name: master.name,
-    isFnO: master.isFnO,
-    segment: master.segment,
-    sector: master.sector,
-    securityId: master.securityId,
-    isin: master.isin,
-    lotSize: master.lotSize,
-    strikeStep: master.strikeStep,
-    spotLtp: master.approxLtp || 1000,
-    todayVolM: 0.0,
-    avgVol20DM: master.avgVol20DM,
-    hasCrossed20D: false,
-    crossoverTime: null,
-    crossoverSpotPrice: null,
-    ivPct: master.isFnO ? 16.5 : 0,
-    justCrossedHighlight: false,
-    feedSource: 'LIVE_DHAN',
-    indices: master.indices,
+    ticker: cleanTicker,
+    shortName: officialShortName,
+    name: officialName,
+    isin,
+    segment,
+    sector,
+    securityId,
+    lotSize,
+    strikeStep,
+    avgVol20DM,
+    approxLtp,
+    isFnO,
+    indices,
   };
 }
 
 /**
- * Finds master stock info by ticker
+ * Converts a StockMasterItem or metadata object into a live tracking Stock object with exact real market names
  */
-export function getStockMasterByTicker(ticker: string): StockMasterItem | undefined {
-  const norm = ticker.trim().toUpperCase();
-  return STOCK_MASTER_CATALOG.find((s) => s.ticker === norm);
+export function convertMasterToStock(master: StockMasterItem | Partial<StockMasterItem>): Stock {
+  const meta = resolveStockMetadata(master);
+  return {
+    ticker: meta.ticker,
+    shortName: meta.shortName,
+    name: meta.name,
+    isFnO: meta.isFnO,
+    segment: meta.segment,
+    sector: meta.sector,
+    securityId: meta.securityId,
+    isin: meta.isin,
+    lotSize: meta.lotSize,
+    strikeStep: meta.strikeStep,
+    spotLtp: meta.approxLtp,
+    todayVolM: 0.0,
+    avgVol20DM: meta.avgVol20DM,
+    hasCrossed20D: false,
+    crossoverTime: null,
+    crossoverSpotPrice: null,
+    ivPct: meta.isFnO ? 16.5 : 0,
+    justCrossedHighlight: false,
+    feedSource: 'LIVE_DHAN',
+    indices: meta.indices,
+  };
 }

@@ -87,7 +87,7 @@ export function ZoneC_Screener() {
                   <td className="py-2.5 px-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-bold text-sm text-white font-mono">{stock.ticker}</span>
-                      {stock.shortName && stock.shortName !== stock.ticker && (
+                      {stock.shortName && stock.shortName.trim().toUpperCase() !== stock.ticker.trim().toUpperCase() && (
                         <span className="text-[11px] font-semibold text-cyan-300">
                           ({stock.shortName})
                         </span>

@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
+import { getStockMasterByTicker, resolveStockMetadata } from '@/lib/stocks/stockMaster';
 
 export function AddStockModal() {
   const { isAddStockModalOpen, setIsAddStockModalOpen, addCustomStock } = useQuantPulse();
@@ -13,6 +14,28 @@ export function AddStockModal() {
   const [avgVol, setAvgVol] = useState('8.5');
   const [todayVol, setTodayVol] = useState('7.8');
   const [lotSize, setLotSize] = useState('250');
+  const [detectedMaster, setDetectedMaster] = useState<any>(null);
+
+  // Auto-detect & auto-fill official stock metadata when user enters a symbol (e.g. ZOMATO, TATAMOTORS)
+  useEffect(() => {
+    if (!ticker.trim()) {
+      setDetectedMaster(null);
+      return;
+    }
+    const master = getStockMasterByTicker(ticker);
+    if (master) {
+      setDetectedMaster(master);
+      setName(master.name);
+      setSegment(master.isFnO ? 'FNO' : 'CASH');
+      setLotSize(String(master.lotSize));
+      setAvgVol(String(master.avgVol20DM));
+      if (master.approxLtp) {
+        setSpotLtp(String(master.approxLtp));
+      }
+    } else {
+      setDetectedMaster(null);
+    }
+  }, [ticker]);
 
   if (!isAddStockModalOpen) return null;
 
@@ -25,20 +48,37 @@ export function AddStockModal() {
     const avg = parseFloat(avgVol) || 10;
     const today = parseFloat(todayVol) || 0;
 
-    addCustomStock({
+    const meta = resolveStockMetadata({
       ticker: sym,
-      name: name.trim() || `${sym} Limited`,
-      isFnO: segment === 'FNO',
+      name: name.trim(),
+      segment: segment === 'FNO' ? 'NSE_FNO' : 'NSE_EQ',
       lotSize: segment === 'FNO' ? parseInt(lotSize, 10) || 250 : 1,
       strikeStep: spot > 1500 ? 50 : 20,
       spotLtp: spot,
       avgVol20DM: avg,
       todayVolM: today,
-      ivPct: segment === 'FNO' ? 19.5 : 0,
+    });
+
+    addCustomStock({
+      ticker: meta.ticker,
+      shortName: meta.shortName,
+      name: meta.name,
+      isin: meta.isin,
+      isFnO: meta.isFnO,
+      segment: meta.segment,
+      sector: meta.sector,
+      securityId: meta.securityId,
+      lotSize: meta.lotSize,
+      strikeStep: meta.strikeStep,
+      spotLtp: spot,
+      avgVol20DM: avg,
+      todayVolM: today,
+      ivPct: meta.isFnO ? 19.5 : 0,
     });
 
     setTicker('');
     setName('');
+    setDetectedMaster(null);
     setIsAddStockModalOpen(false);
   };
 
@@ -74,6 +114,18 @@ export function AddStockModal() {
               required
               className="w-full bg-slate-900 text-xs font-mono uppercase text-white px-3 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-400"
             />
+            {detectedMaster && (
+              <div className="mt-1.5 p-2 rounded-lg bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="text-cyan-400 font-bold font-mono">{detectedMaster.ticker}</span>
+                  <span className="text-white font-medium truncate">({detectedMaster.shortName})</span>
+                  <span className="text-slate-400 text-[10px] truncate">— {detectedMaster.name}</span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold font-mono">
+                  VERIFIED
+                </span>
+              </div>
+            )}
           </div>
 
           <div>

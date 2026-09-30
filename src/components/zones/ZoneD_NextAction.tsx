@@ -66,7 +66,7 @@ export function ZoneD_NextAction() {
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-base font-bold text-white font-mono">{stock.ticker}</span>
-                {stock.shortName && stock.shortName !== stock.ticker && (
+                {stock.shortName && stock.shortName.trim().toUpperCase() !== stock.ticker.trim().toUpperCase() && (
                   <span className="text-xs font-semibold text-cyan-300">
                     ({stock.shortName})
                   </span>

@@ -246,7 +246,7 @@ export function ZoneB_Watchlist() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold text-xs text-white">{stock.ticker}</span>
-                      {stock.shortName && stock.shortName !== stock.ticker && (
+                      {stock.shortName && stock.shortName.trim().toUpperCase() !== stock.ticker.trim().toUpperCase() && (
                         <span className="text-[10px] text-cyan-300 font-semibold font-sans">
                           ({stock.shortName})
                         </span>
@@ -498,7 +498,7 @@ export function ZoneB_Watchlist() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-white text-xs font-mono">{stock.ticker}</span>
-                        {stock.shortName && stock.shortName !== stock.ticker && (
+                        {stock.shortName && stock.shortName.trim().toUpperCase() !== stock.ticker.trim().toUpperCase() && (
                           <span className="text-[10px] text-cyan-300 font-semibold font-sans">
                             ({stock.shortName})
                           </span>

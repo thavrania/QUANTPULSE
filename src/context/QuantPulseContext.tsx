@@ -11,7 +11,12 @@ import {
   BrokerVaultStatus,
   StockMasterItem,
 } from '@/lib/types/quant';
-import { getStockMasterByTicker, convertMasterToStock } from '@/lib/stocks/stockMaster';
+import {
+  getStockMasterByTicker,
+  convertMasterToStock,
+  resolveStockMetadata,
+  normalizeTicker,
+} from '@/lib/stocks/stockMaster';
 import {
   INITIAL_WATCHLIST_DATA,
   INITIAL_CROSSOVER_LOGS,
@@ -495,24 +500,35 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     async function loadFromSupabase() {
       try {
         const todayDateStr = getISTDate().dateStr;
-        const { data: wlData } = await supabase!.from('watchlist').select('*');
-        let activeRecords: any[] = wlData || [];
+        // 1. Fetch both watchlist and dedicated stock_master table concurrently
+        const [wlRes, smRes] = await Promise.all([
+          supabase!.from('watchlist').select('*'),
+          supabase!.from('stock_master').select('*'),
+        ]);
+
+        const smMap = new Map<string, any>();
+        if (smRes.data && Array.isArray(smRes.data)) {
+          smRes.data.forEach((item: any) => {
+            if (item.ticker) {
+              smMap.set(normalizeTicker(item.ticker), item);
+            }
+          });
+        }
+
+        let activeRecords: any[] = wlRes.data || [];
 
         // If active watchlist table is currently empty in DB, load stocks flagged with is_active_watchlist = true from stock_master
-        if (activeRecords.length === 0) {
-          const { data: smActive } = await supabase!
-            .from('stock_master')
-            .select('*')
-            .eq('is_active_watchlist', true);
-          if (smActive && smActive.length > 0) {
-            activeRecords = smActive;
-          }
+        if (activeRecords.length === 0 && smRes.data) {
+          activeRecords = smRes.data.filter((s: any) => Boolean(s.is_active_watchlist));
         }
 
         if (activeRecords && activeRecords.length > 0) {
           const sessionStarted = hasTodayMarketSessionStarted();
           const mapped: Stock[] = activeRecords.map((d: any) => {
-            const master = getStockMasterByTicker(d.ticker);
+            const cleanTicker = normalizeTicker(d.ticker);
+            const dbMaster = smMap.get(cleanTicker);
+            const meta = resolveStockMetadata(d, dbMaster);
+
             let isUpdatedToday = false;
             if (d.updated_at) {
               const dt = new Date(d.updated_at);
@@ -523,8 +539,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             // Before 09:15 IST on trading days or on weekends, today's regular session has not traded.
             // Today's traded volume must remain 0.00M, and crossover cannot trigger!
             const todayVol = (sessionStarted && isUpdatedToday) ? (Number(d.today_vol_m) || 0) : 0;
-            const avgVol = Number(d.avg_vol_20d_m) || master?.avgVol20DM || 1.0;
-            const spot = Number(d.spot_ltp) || master?.approxLtp || 1000;
+            const avgVol = Number(d.avg_vol_20d_m) || meta.avgVol20DM || 1.0;
+            const spot = Number(d.spot_ltp) || meta.approxLtp || 1000;
             const dayOpen = d.day_open ? Number(d.day_open) : spot;
             const chgPct = d.change_pct !== undefined ? Number(d.change_pct) : 0;
             const isBullish = spot >= dayOpen || chgPct >= 0;
@@ -537,7 +553,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               todayVol >= avgVol &&
               todayVol > 0;
 
-            const existingLocal = (watchlistRef.current || []).find((s) => s.ticker === d.ticker);
+            const existingLocal = (watchlistRef.current || []).find((s) => normalizeTicker(s.ticker) === cleanTicker);
             const localVol = existingLocal?.todayVolM || 0;
 
             // Rule 5: Auto-clean stale DB records if volume is below 20D average
@@ -549,7 +565,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               localVol < avgVol
             ) {
               markSelfUpdating();
-              supabase!
+              const client = supabase;
+              client!
                 .from('watchlist')
                 .update({
                   has_crossed_20d: false,
@@ -558,6 +575,33 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 })
                 .eq('ticker', d.ticker)
                 .then();
+            }
+
+            // Auto-heal missing or outdated stock names / metadata in Supabase watchlist table
+            if (isSupabaseConfigured && supabase) {
+              const needsHealing =
+                !d.short_name ||
+                d.short_name.toUpperCase() === cleanTicker ||
+                d.name !== meta.name ||
+                !d.isin ||
+                !d.sector;
+              if (needsHealing) {
+                const client = supabase;
+                client
+                  .from('watchlist')
+                  .update({
+                    short_name: meta.shortName,
+                    name: meta.name,
+                    isin: meta.isin,
+                    segment: meta.segment,
+                    sector: meta.sector,
+                    security_id: meta.securityId,
+                    lot_size: meta.lotSize,
+                    strike_step: meta.strikeStep,
+                  })
+                  .eq('ticker', d.ticker)
+                  .then();
+              }
             }
 
             // If local state already has newer/active live streaming data, preserve it!
@@ -575,23 +619,23 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               (finalHasCrossed ? Number(d.crossover_spot_price || spot) : null);
 
             return {
-              ticker: d.ticker,
-              shortName: d.short_name || master?.shortName || d.ticker,
-              name: master?.name || d.name || d.ticker,
-              isin: d.isin || master?.isin || '',
-              isFnO: d.is_fno !== undefined ? Boolean(d.is_fno) : (master?.isFnO ?? true),
-              segment: d.segment || master?.segment || (d.is_fno ? 'NSE_FNO' : 'NSE_EQ'),
-              sector: d.sector || master?.sector || '',
-              securityId: d.security_id || master?.securityId || '1330',
-              lotSize: d.lot_size || master?.lotSize || 250,
-              strikeStep: d.strike_step || master?.strikeStep || 50,
+              ticker: meta.ticker,
+              shortName: meta.shortName,
+              name: meta.name,
+              isin: meta.isin,
+              isFnO: meta.isFnO,
+              segment: meta.segment,
+              sector: meta.sector,
+              securityId: meta.securityId,
+              lotSize: meta.lotSize,
+              strikeStep: meta.strikeStep,
               spotLtp: preferLocal && existingLocal ? existingLocal.spotLtp : spot,
               todayVolM: preferLocal && existingLocal ? existingLocal.todayVolM : todayVol,
               avgVol20DM: avgVol,
               hasCrossed20D: finalHasCrossed,
               crossoverTime: finalCrossoverTime,
               crossoverSpotPrice: finalCrossoverSpot,
-              ivPct: Number(d.iv_pct || (master?.isFnO ? 16.5 : 0)),
+              ivPct: Number(d.iv_pct || (meta.isFnO ? 16.5 : 0)),
               dayHigh:
                 preferLocal && existingLocal?.dayHigh !== undefined
                   ? existingLocal.dayHigh
@@ -623,6 +667,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                   ? Number(d.change_pct)
                   : undefined,
               feedSource: preferLocal && existingLocal ? existingLocal.feedSource : (d.feed_source || 'LIVE_DHAN'),
+              indices: meta.indices,
             };
           });
 
@@ -1675,11 +1720,25 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
   const addCustomStock = useCallback(
     (stockData: Omit<Stock, 'hasCrossed20D' | 'crossoverTime' | 'crossoverSpotPrice'>) => {
+      const meta = resolveStockMetadata(stockData);
       const nowStr = formatClockIST(clockSeconds);
-      const alreadyCrossed = stockData.todayVolM >= stockData.avgVol20DM;
+      const targetAvg = stockData.avgVol20DM || meta.avgVol20DM;
+      const alreadyCrossed = stockData.todayVolM >= targetAvg;
 
       const newStock: Stock = {
         ...stockData,
+        ticker: meta.ticker,
+        shortName: meta.shortName,
+        name: meta.name,
+        isin: meta.isin,
+        isFnO: meta.isFnO,
+        segment: meta.segment,
+        sector: meta.sector,
+        securityId: meta.securityId,
+        lotSize: meta.lotSize,
+        strikeStep: meta.strikeStep,
+        avgVol20DM: targetAvg,
+        indices: meta.indices,
         hasCrossed20D: alreadyCrossed,
         crossoverTime: alreadyCrossed ? nowStr : null,
         crossoverSpotPrice: alreadyCrossed ? stockData.spotLtp : null,
@@ -1688,7 +1747,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
       if (alreadyCrossed) {
         setCrossoverEvents((prev) => {
-          if (prev.some((e) => e.ticker === newStock.ticker)) {
+          if (prev.some((e) => normalizeTicker(e.ticker) === meta.ticker)) {
             return prev;
           }
           return [
@@ -1705,7 +1764,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       }
 
       setWatchlist((prev) => {
-        const filtered = prev.filter((s) => s.ticker !== newStock.ticker);
+        const filtered = prev.filter((s) => normalizeTicker(s.ticker) !== meta.ticker);
         const updated = [newStock, ...filtered];
         if (typeof window !== 'undefined') {
           localStorage.setItem(
@@ -1723,7 +1782,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           .from('watchlist')
           .upsert({
             ticker: newStock.ticker,
-            short_name: newStock.shortName || newStock.ticker,
+            short_name: newStock.shortName,
             name: newStock.name,
             isin: newStock.isin,
             is_fno: newStock.isFnO,
@@ -1747,8 +1806,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       setSelectedTicker(newStock.ticker);
       showToast(
         alreadyCrossed
-          ? `Added ${newStock.ticker} — Already above 20D Avg Vol! Latched at ${nowStr}.`
-          : `Added ${newStock.ticker} — Monitoring Today Vol vs 20D Avg.`,
+          ? `Added ${newStock.ticker} (${newStock.shortName}) — Already above 20D Avg Vol! Latched at ${nowStr}.`
+          : `Added ${newStock.ticker} (${newStock.shortName}) — Monitoring Today Vol vs 20D Avg.`,
         alreadyCrossed ? 'emerald' : 'info'
       );
     },
@@ -1758,8 +1817,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const addStockFromMaster = useCallback(
     (master: StockMasterItem) => {
       setWatchlist((prev) => {
-        if (prev.some((s) => s.ticker === master.ticker)) {
-          showToast(`${master.ticker} is already in the active Watchlist.`, 'info');
+        const cleanTicker = normalizeTicker(master.ticker);
+        if (prev.some((s) => normalizeTicker(s.ticker) === cleanTicker)) {
+          showToast(`${cleanTicker} is already in the active Watchlist.`, 'info');
           return prev;
         }
         const newStock: Stock = convertMasterToStock(master);
