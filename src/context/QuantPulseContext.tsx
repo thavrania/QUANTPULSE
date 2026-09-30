@@ -78,6 +78,7 @@ interface QuantPulseContextType {
   setFeedMode: (mode: 'DHAN_LIVE' | 'SIMULATION') => void;
   syncDailyBaselines: (isDateChange?: boolean, forceRefresh?: boolean) => Promise<void>;
   resetToDayStart: () => Promise<void>;
+  clearCrossoverEvents: () => void;
   forceCrossover: (ticker: string) => void;
   executeBuy: (ticker: string, triggeredBy?: ExecutionMode) => void;
   panicKillSwitch: () => void;
@@ -346,6 +347,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     showToast('🔄 Watchlist reset to fresh Day Start baseline state.', 'info');
   }, [syncDailyBaselines, showToast]);
 
+  const clearCrossoverEvents = useCallback(() => {
+    setCrossoverEvents([]);
+    if (isSupabaseConfigured && supabase) {
+      supabase.from('crossover_events').delete().neq('ticker', 'DUMMY_NEVER_MATCH').then();
+    }
+    showToast('Exact Crossover Timestamp Feed cleared.', 'info');
+  }, [showToast]);
+
   const clockTime = formatClockIST(clockSeconds);
 
   // 1. Live IST Clock & Date Rollover Monitor (every 1000ms)
@@ -438,8 +447,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               todayVolM: todayVol,
               avgVol20DM: avgVol,
               hasCrossed20D: hasCrossed,
-              crossoverTime: hasCrossed ? d.crossover_time : null,
-              crossoverSpotPrice: hasCrossed && d.crossover_spot_price ? Number(d.crossover_spot_price) : null,
+              crossoverTime: hasCrossed ? (d.crossover_time || getISTDate().timeStr) : null,
+              crossoverSpotPrice: hasCrossed ? Number(d.crossover_spot_price || spot) : null,
               ivPct: Number(d.iv_pct || (master?.isFnO ? 16.5 : 0)),
               dayHigh: d.day_high ? Number(d.day_high) : undefined,
               dayLow: d.day_low ? Number(d.day_low) : undefined,
@@ -465,15 +474,35 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           .order('created_at', { ascending: false });
 
         if (evData && evData.length > 0) {
-          const mappedEv: CrossoverEvent[] = evData.map((e: any) => ({
-            id: e.id,
-            ticker: e.ticker,
-            time: e.time_ist,
-            avgVol20DM: Number(e.avg_vol_20d_m),
-            crossPrice: Number(e.cross_price),
-            isFnO: Boolean(e.is_fno),
-          }));
+          // Rule 5: Only load crossover events if the stock is actively crossed today with volume >= 20D average
+          const activeCrossedTickers = new Set(
+            (watchlistRef.current || [])
+              .filter((s) => s.hasCrossed20D && s.todayVolM >= s.avgVol20DM && s.todayVolM > 0)
+              .map((s) => s.ticker)
+          );
+
+          const mappedEv: CrossoverEvent[] = evData
+            .filter((e: any) => activeCrossedTickers.has(e.ticker))
+            .map((e: any) => {
+              let eventTime = e.time_ist;
+              if (e.created_at) {
+                const dt = new Date(e.created_at);
+                if (!isNaN(dt.getTime())) {
+                  eventTime = getISTDate(dt).timeStr;
+                }
+              }
+              return {
+                id: e.id,
+                ticker: e.ticker,
+                time: eventTime || getISTDate().timeStr,
+                avgVol20DM: Number(e.avg_vol_20d_m),
+                crossPrice: Number(e.cross_price) || 0,
+                isFnO: Boolean(e.is_fno),
+              };
+            });
           setCrossoverEvents(mappedEv);
+        } else {
+          setCrossoverEvents([]);
         }
 
         const { data: posData } = await supabase!.from('active_positions').select('*').order('created_at', { ascending: false });
@@ -663,7 +692,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
   // 4. Tick Simulation
   const simulateSingleTick = useCallback(() => {
-    const timeStr = formatClockIST(clockSeconds);
+    const timeStr = getISTDate().timeStr;
 
     setWatchlist((prevWl) => {
       const updatedWl = prevWl.map((stock) => {
@@ -671,11 +700,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         const newTodayVol = +(stock.todayVolM + volStep).toFixed(3);
         const priceDeltaPct = (Math.random() - 0.42) * 0.006;
         const newSpotLtp = Math.max(10, +(stock.spotLtp * (1 + priceDeltaPct)).toFixed(2));
+        const dayOpen = stock.dayOpen || stock.spotLtp;
+        const newChangePct = +(((newSpotLtp - dayOpen) / dayOpen) * 100).toFixed(2);
 
         const updated = {
           ...stock,
           todayVolM: newTodayVol,
           spotLtp: newSpotLtp,
+          changePct: newChangePct,
         };
 
         const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, timeStr);
@@ -698,6 +730,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               has_crossed_20d: true,
               crossover_time: event.time,
               crossover_spot_price: event.crossPrice,
+              spot_ltp: updated.spotLtp,
+              today_vol_m: updated.todayVolM,
+              change_pct: updated.changePct,
             }).eq('ticker', event.ticker).then();
           }
 
@@ -1045,16 +1080,20 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const forceCrossover = useCallback(
     (tickerSymbol: string) => {
       setSelectedTicker(tickerSymbol);
-      const timeStr = formatClockIST(clockSeconds);
+      const timeStr = getISTDate().timeStr;
 
       setWatchlist((prevWl) => {
         return prevWl.map((stock) => {
           if (stock.ticker !== tickerSymbol) return stock;
           if (!stock.hasCrossed20D) {
+            const newSpot = +(stock.spotLtp * 1.008).toFixed(2);
+            const dayOpen = stock.dayOpen || stock.spotLtp;
+            const newChangePct = +(((newSpot - dayOpen) / dayOpen) * 100).toFixed(2);
             const updated = {
               ...stock,
               todayVolM: +(stock.avgVol20DM * 1.035).toFixed(2),
-              spotLtp: +(stock.spotLtp * 1.008).toFixed(2),
+              spotLtp: newSpot,
+              changePct: newChangePct,
             };
             const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, timeStr);
             if (newlyCrossed && event) {
@@ -1063,6 +1102,24 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)}!`,
                 'emerald'
               );
+
+              if (isSupabaseConfigured && supabase) {
+                supabase.from('crossover_events').insert({
+                  ticker: event.ticker,
+                  time_ist: event.time,
+                  avg_vol_20d_m: event.avgVol20DM,
+                  cross_price: event.crossPrice,
+                  is_fno: event.isFnO,
+                }).then();
+                supabase.from('watchlist').update({
+                  has_crossed_20d: true,
+                  crossover_time: event.time,
+                  crossover_spot_price: event.crossPrice,
+                  spot_ltp: updated.spotLtp,
+                  today_vol_m: updated.todayVolM,
+                  change_pct: updated.changePct,
+                }).eq('ticker', event.ticker).then();
+              }
             }
             return updated;
           } else {
@@ -1081,7 +1138,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         }, 100);
       }
     },
-    [clockSeconds, config.executionMode, executeBuy, showToast]
+    [config.executionMode, executeBuy, showToast]
   );
 
   const panicKillSwitch = useCallback(() => {
@@ -1342,6 +1399,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setCapitalPerTrade: (val) => setConfig((prev) => ({ ...prev, capitalPerTrade: val })),
         syncDailyBaselines,
         resetToDayStart,
+        clearCrossoverEvents,
         forceCrossover,
         executeBuy,
         panicKillSwitch,

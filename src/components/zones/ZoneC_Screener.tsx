@@ -181,18 +181,16 @@ export function ZoneC_Screener() {
                     {stock.hasCrossed20D && stock.crossoverTime && stock.todayVolM >= stock.avgVol20DM ? (
                       <div>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-[11px]">
-                          ⏱️ {stock.crossoverTime}
+                          ⏱️ {stock.crossoverTime} IST
                         </span>
-                        <div className="text-[10px] text-slate-400 mt-0.5">
-                          {stock.crossoverSpotPrice ? `At ₹${stock.crossoverSpotPrice.toFixed(2)}` : 'Latched IST'}
-                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">Latched IST</div>
                       </div>
                     ) : (
                       <span className="text-[11px] text-slate-500">⏳ Waiting...</span>
                     )}
                   </td>
 
-                  {/* Spot LTP & OHLC */}
+                  {/* Spot LTP & Cross Price */}
                   <td className="py-2.5 px-3 font-mono">
                     <div className="flex items-center gap-1.5 font-bold text-white">
                       <span>₹{stock.spotLtp.toFixed(2)}</span>
@@ -207,11 +205,17 @@ export function ZoneC_Screener() {
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      {stock.dayHigh && stock.dayLow ? (
-                        <span>H: ₹{stock.dayHigh.toFixed(2)} • L: ₹{stock.dayLow.toFixed(2)}</span>
+                    <div className="text-[10px] mt-0.5">
+                      {stock.hasCrossed20D && stock.crossoverSpotPrice && stock.todayVolM >= stock.avgVol20DM ? (
+                        <span className="text-amber-300 font-bold font-mono bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20">
+                          Crossed @ ₹{stock.crossoverSpotPrice.toFixed(2)}
+                        </span>
                       ) : (
-                        <span>Open: ₹{(stock.dayOpen || stock.spotLtp * 0.995).toFixed(2)}</span>
+                        <span className="text-slate-400">
+                          {stock.dayHigh && stock.dayLow
+                            ? `H: ₹${stock.dayHigh.toFixed(2)} • L: ₹${stock.dayLow.toFixed(2)}`
+                            : `Open: ₹${(stock.dayOpen || stock.spotLtp).toFixed(2)}`}
+                        </span>
                       )}
                     </div>
                   </td>

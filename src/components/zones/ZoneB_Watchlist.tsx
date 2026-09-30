@@ -17,6 +17,7 @@ export function ZoneB_Watchlist() {
     isBaselineSyncing,
     syncDailyBaselines,
     resetToDayStart,
+    clearCrossoverEvents,
   } = useQuantPulse();
 
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'MASTER_DIRECTORY'>('ACTIVE');
@@ -302,7 +303,19 @@ export function ZoneB_Watchlist() {
             <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
               <span>⏱️ Exact Crossover Timestamp Feed</span>
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">Immutable Latch</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 font-mono">Live Latch</span>
+              {crossoverEvents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => clearCrossoverEvents?.()}
+                  className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-300 border border-slate-700 transition"
+                  title="Clear crossover event log"
+                >
+                  Clear Feed
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Crossover Event Stream Container */}
