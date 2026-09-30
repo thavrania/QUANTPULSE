@@ -55,7 +55,7 @@ export function ZoneC_Screener() {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-400 bg-obsidian/60">
-              <th className="py-2.5 px-3">Stock &amp; Segment</th>
+              <th className="py-2.5 px-3">Stock</th>
               <th className="py-2.5 px-3">Today Traded Shares / 20D Avg Shares</th>
               <th className="py-2.5 px-3">Crossover Progress</th>
               <th className="py-2.5 px-3">Exact Crossover Time</th>
@@ -83,7 +83,7 @@ export function ZoneC_Screener() {
                     stock.justCrossedHighlight ? 'animate-crossover-pulse bg-emerald-950/30' : ''
                   } ${isSelectedRow ? 'bg-slate-800/85' : 'hover:bg-slate-900/70'}`}
                 >
-                  {/* Stock, Segment, Sector & Contract Specs */}
+                  {/* Stock, Sector & Contract Specs */}
                   <td className="py-2.5 px-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-bold text-sm text-white font-mono">{stock.ticker}</span>
@@ -92,15 +92,6 @@ export function ZoneC_Screener() {
                           ({stock.shortName})
                         </span>
                       )}
-                      <span
-                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${
-                          stock.isFnO
-                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/35'
-                            : 'bg-slate-800 text-slate-400 border border-slate-700'
-                        }`}
-                      >
-                        {stock.segment || (stock.isFnO ? 'NSE_FNO' : 'NSE_EQ')}
-                      </span>
                       {stock.sector && (
                         <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
                           {stock.sector}
@@ -124,8 +115,6 @@ export function ZoneC_Screener() {
                       )}
                       <span>•</span>
                       <span>Lot: <strong className="text-cyan-300">{stock.lotSize}</strong></span>
-                      <span>•</span>
-                      <span>Step: <strong className="text-slate-300">₹{stock.strikeStep}</strong></span>
                     </div>
                   </td>
 

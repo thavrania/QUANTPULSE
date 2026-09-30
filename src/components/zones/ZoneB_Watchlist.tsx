@@ -233,16 +233,35 @@ export function ZoneB_Watchlist() {
                         </span>
                       )}
                     </div>
-                    <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold">
-                      {stock.segment || 'NSE_FNO'}
+                    <span
+                      className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                        stock.isFnO || stock.segment === 'NSE_FNO'
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/35'
+                          : 'bg-slate-800 text-slate-300 border border-slate-700'
+                      }`}
+                    >
+                      {stock.segment || (stock.isFnO ? 'NSE_FNO' : 'NSE_EQ')}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-300 font-medium truncate mt-0.5" title={stock.name}>
                     {stock.name}
                   </div>
-                  <div className="flex items-center justify-between text-[10px] font-mono mt-2 text-slate-300">
+                  {/* Stock Segment Details */}
+                  <div className="text-[10px] font-mono text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                    <span className="text-slate-500">Segment:</span>
+                    <strong className={stock.isFnO || stock.segment === 'NSE_FNO' ? 'text-purple-300' : 'text-slate-300'}>
+                      {stock.segment || (stock.isFnO ? 'NSE_FNO' : 'NSE_EQ')}
+                    </strong>
+                    <span>•</span>
+                    <span>Lot: <strong className="text-cyan-300">{stock.lotSize}</strong></span>
+                    <span>•</span>
+                    <span>Step: <strong className="text-slate-300">₹{stock.strikeStep}</strong></span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] font-mono mt-1.5 text-slate-300">
                     <span>₹{stock.spotLtp.toFixed(1)}</span>
-                    <span className="text-cyan-300">{stock.avgVol20DM}M Shares</span>
+                    <span className="text-cyan-300">
+                      {Math.round(stock.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares
+                    </span>
                   </div>
                   <div className="mt-1 flex items-center justify-between text-[9px]">
                     <span className={stock.hasCrossed20D ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
@@ -338,6 +357,15 @@ export function ZoneB_Watchlist() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold text-xs text-white">{ev.ticker}</span>
+                      <span
+                        className={`text-[9px] font-mono px-1 py-0.2 rounded font-semibold ${
+                          ev.isFnO
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}
+                      >
+                        {ev.isFnO ? 'NSE_FNO' : 'NSE_EQ'}
+                      </span>
                       <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
                         ELIGIBLE FOR BUY
                       </span>
@@ -347,7 +375,7 @@ export function ZoneB_Watchlist() {
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-300 font-mono">
-                    Crossed 20D Avg (<span className="text-white">{ev.avgVol20DM.toFixed(2)}M shares</span>) @ Spot{' '}
+                    Crossed 20D Avg (<span className="text-white">{Math.round(ev.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares</span>) @ Spot{' '}
                     <span className="text-emerald-300 font-semibold">₹{ev.crossPrice.toFixed(2)}</span>
                   </div>
                 </div>
@@ -471,11 +499,11 @@ export function ZoneB_Watchlist() {
       <div className="p-3 bg-obsidian/90 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
         <div className="font-semibold text-slate-200">Core Eligibility Rule:</div>
         <div>
-          • Track <span className="text-cyan-300 font-mono">Today_Vol</span> vs{' '}
-          <span className="text-white font-mono">20D_Avg_Vol</span>
+          • Track <span className="text-cyan-300 font-mono">Today Traded Shares</span> vs{' '}
+          <span className="text-white font-mono">20D Avg Traded Shares</span>
         </div>
         <div>
-          • The instant <span className="text-emerald-400 font-mono">Today_Vol ≥ 20D_Avg_Vol</span>, latch exact{' '}
+          • The instant <span className="text-emerald-400 font-mono">Today Shares ≥ 20D Avg Shares</span>, latch exact{' '}
           <span className="text-amber-300 font-mono">HH:MM:SS</span> crossover time &amp; unlock{' '}
           <span className="text-emerald-300 font-semibold">ELIGIBLE FOR BUY</span>.
         </div>
