@@ -731,12 +731,28 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'TATAMOTORS',
-    shortName: 'Tata Motors',
-    name: 'Tata Motors Limited',
+    shortName: 'TMCV',
+    name: 'Tata Motors Limited (TMCV)',
     isin: 'INE155A01022',
     segment: 'NSE_FNO',
     exchange: 'NSE',
-    sector: 'Automobile Manufacturers',
+    sector: 'Automobile Manufacturers (Commercial Vehicles)',
+    securityId: '3456',
+    lotSize: 550,
+    strikeStep: 20,
+    avgVol20DM: 8.90,
+    approxLtp: 984.40,
+    isFnO: true,
+    indices: ['NIFTY 50', 'SENSEX'],
+  },
+  {
+    ticker: 'TMCV',
+    shortName: 'TMCV',
+    name: 'Tata Motors Limited (TMCV)',
+    isin: 'INE155A01022',
+    segment: 'NSE_FNO',
+    exchange: 'NSE',
+    sector: 'Automobile Manufacturers (Commercial Vehicles)',
     securityId: '3456',
     lotSize: 550,
     strikeStep: 20,
@@ -875,18 +891,34 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'ZOMATO',
-    shortName: 'Zomato',
-    name: 'Zomato Limited',
+    shortName: 'Eternal',
+    name: 'Eternal Limited (formerly Zomato Limited)',
     isin: 'INE758T01015',
-    segment: 'NSE_EQ',
+    segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Online Food Delivery & Quick Commerce',
     securityId: '5097',
-    lotSize: 1,
+    lotSize: 2500,
     strikeStep: 5,
     avgVol20DM: 19.00,
     approxLtp: 264.80,
-    isFnO: false,
+    isFnO: true,
+    indices: ['NIFTY 50'],
+  },
+  {
+    ticker: 'ETERNAL',
+    shortName: 'Eternal',
+    name: 'Eternal Limited (formerly Zomato Limited)',
+    isin: 'INE758T01015',
+    segment: 'NSE_FNO',
+    exchange: 'NSE',
+    sector: 'Online Food Delivery & Quick Commerce',
+    securityId: '5097',
+    lotSize: 2500,
+    strikeStep: 5,
+    avgVol20DM: 19.00,
+    approxLtp: 264.80,
+    isFnO: true,
     indices: ['NIFTY 50'],
   },
 ];
@@ -914,6 +946,20 @@ export function getStockMasterByTicker(ticker: string): StockMasterItem | undefi
   let found = STOCK_MASTER_CATALOG.find((s) => s.ticker === clean);
   if (found) return found;
 
+  // 1b. Direct alias support for TMCV / TATAMOTORS and ETERNAL / ZOMATO
+  if (clean === 'TMCV' || clean === 'TATAMOTORS') {
+    found =
+      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TMCV') ||
+      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TATAMOTORS');
+    if (found) return found;
+  }
+  if (clean === 'ETERNAL' || clean === 'ZOMATO') {
+    found =
+      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ETERNAL') ||
+      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ZOMATO');
+    if (found) return found;
+  }
+
   // 2. Direct match ignoring dashes/underscores/special chars (e.g. BAJAJ-AUTO vs BAJAJAUTO, M&M vs MM)
   const stripped = clean.replace(/[^A-Z0-9]/g, '');
   if (stripped) {
@@ -925,7 +971,7 @@ export function getStockMasterByTicker(ticker: string): StockMasterItem | undefi
   found = STOCK_MASTER_CATALOG.find((s) => s.isin && s.isin.toUpperCase() === clean);
   if (found) return found;
 
-  // 4. Match by Dhan security ID (e.g. 3456 -> TATAMOTORS, 5097 -> ZOMATO)
+  // 4. Match by Dhan security ID (e.g. 3456 -> TATAMOTORS/TMCV, 5097 -> ZOMATO/ETERNAL)
   found = STOCK_MASTER_CATALOG.find((s) => s.securityId === clean);
   if (found) return found;
 
@@ -979,23 +1025,25 @@ export function resolveStockMetadata(
     is_fno?: boolean;
     avgVol20DM?: number;
     avg_vol_20d_m?: number;
+    todayVolM?: number;
+    today_vol_m?: number;
     spotLtp?: number;
     spot_ltp?: number;
     approxLtp?: number;
     approx_ltp?: number;
     indices?: string[];
+    [key: string]: any;
   },
   dbMasterItem?: Partial<StockMasterItem>
 ): ResolvedStockMetadata {
   const rawTicker = input.ticker || dbMasterItem?.ticker || '';
   const cleanTicker = normalizeTicker(rawTicker);
-  const master = dbMasterItem?.name
-    ? (dbMasterItem as StockMasterItem)
-    : getStockMasterByTicker(cleanTicker);
+  const catalogItem = getStockMasterByTicker(cleanTicker);
+  const master = catalogItem || (dbMasterItem as StockMasterItem | undefined);
 
   // 1. Authoritative Corporate Name
-  // Master catalog is authoritative. If not found in catalog, sanitize input name.
-  let officialName = master?.name;
+  // Curated master catalog is authoritative. If not found in catalog, fallback to DB item, then sanitize input name.
+  let officialName = catalogItem?.name || dbMasterItem?.name;
   if (!officialName) {
     const rawName = (input.name || '').trim();
     if (rawName && rawName.toUpperCase() !== cleanTicker && !rawName.includes('(Cash Only)')) {
@@ -1006,9 +1054,9 @@ export function resolveStockMetadata(
   }
 
   // 2. Authoritative Friendly Short Name
-  // Priority: Master catalog shortName -> input shortName (if distinct from ticker) -> cleanTicker
+  // Priority: Curated catalog shortName -> DB master shortName -> input shortName (if distinct from ticker) -> cleanTicker
   const candidateShort = (input.shortName || input.short_name || '').trim();
-  let officialShortName = master?.shortName;
+  let officialShortName = catalogItem?.shortName || dbMasterItem?.shortName;
   if (!officialShortName) {
     if (candidateShort && candidateShort.toUpperCase() !== cleanTicker) {
       officialShortName = candidateShort;

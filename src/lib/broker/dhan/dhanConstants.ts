@@ -60,6 +60,7 @@ export const DHAN_SECURITY_MAP: Record<
   SUNPHARMA: { securityId: '3351', segment: 'NSE_EQ', lotSize: 350, strikeStep: 20 },
   TATACONSUM: { securityId: '3432', segment: 'NSE_EQ', lotSize: 900, strikeStep: 10 },
   TATAMOTORS: { securityId: '3456', segment: 'NSE_EQ', lotSize: 550, strikeStep: 20 },
+  TMCV: { securityId: '3456', segment: 'NSE_EQ', lotSize: 550, strikeStep: 20 },
   TATASTEEL: { securityId: '3499', segment: 'NSE_EQ', lotSize: 5500, strikeStep: 2.5 },
   TCS: { securityId: '11536', segment: 'NSE_EQ', lotSize: 175, strikeStep: 50 },
   TECHM: { securityId: '13538', segment: 'NSE_EQ', lotSize: 600, strikeStep: 20 },
@@ -68,10 +69,13 @@ export const DHAN_SECURITY_MAP: Record<
   ULTRACEMCO: { securityId: '11532', segment: 'NSE_EQ', lotSize: 100, strikeStep: 100 },
   UPL: { securityId: '11287', segment: 'NSE_EQ', lotSize: 1300, strikeStep: 5 },
   WIPRO: { securityId: '3787', segment: 'NSE_EQ', lotSize: 1500, strikeStep: 10 },
-  ZOMATO: { securityId: '5097', segment: 'NSE_EQ', lotSize: 1, strikeStep: 5 },
+  ZOMATO: { securityId: '5097', segment: 'NSE_EQ', lotSize: 2500, strikeStep: 5 },
+  ETERNAL: { securityId: '5097', segment: 'NSE_EQ', lotSize: 2500, strikeStep: 5 },
 };
 
 export function getDhanSecurityId(ticker: string): string {
   const normalized = ticker.trim().toUpperCase();
+  if (normalized === 'TMCV') return DHAN_SECURITY_MAP['TATAMOTORS']?.securityId || '3456';
+  if (normalized === 'ETERNAL') return DHAN_SECURITY_MAP['ZOMATO']?.securityId || '5097';
   return DHAN_SECURITY_MAP[normalized]?.securityId || '1330';
 }
