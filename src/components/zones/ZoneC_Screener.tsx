@@ -56,7 +56,7 @@ export function ZoneC_Screener() {
           <thead>
             <tr className="border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-400 bg-obsidian/60">
               <th className="py-2.5 px-3">Stock &amp; Segment</th>
-              <th className="py-2.5 px-3">Today Traded Shares vs 20D Avg</th>
+              <th className="py-2.5 px-3">Today Traded Shares / 20D Avg Shares</th>
               <th className="py-2.5 px-3">Crossover Progress</th>
               <th className="py-2.5 px-3">Exact Crossover Time</th>
               <th className="py-2.5 px-3">Spot LTP &amp; Cross Price</th>
@@ -70,6 +70,10 @@ export function ZoneC_Screener() {
               const isSelectedRow = stock.ticker === selectedTicker;
               const barWidth = Math.min(100, Math.round(m.progressPct));
               const isTraded = idempotencyLocks.includes(stock.ticker);
+              const todayShares = Math.round(stock.todayVolM * 1_000_000);
+              const avg20DShares = Math.round(stock.avgVol20DM * 1_000_000);
+              const deficitShares = Math.max(0, avg20DShares - todayShares);
+              const surplusShares = Math.max(0, todayShares - avg20DShares);
 
               return (
                 <tr
@@ -125,14 +129,14 @@ export function ZoneC_Screener() {
                     </div>
                   </td>
 
-                  {/* Today Traded Shares vs 20D Avg & RVOL Ratio */}
+                  {/* Today Traded Shares vs 20-Day Avg Traded Shares */}
                   <td className="py-2.5 px-3 font-mono">
-                    <div className={`font-bold ${m.isEligibleForBuy ? 'text-emerald-400' : 'text-slate-200'} flex items-center gap-1.5 flex-wrap`}>
-                      <span>{stock.todayVolM.toFixed(2)}M</span>
+                    <div className={`font-bold text-xs ${m.isEligibleForBuy ? 'text-emerald-400' : 'text-slate-100'} flex items-center gap-1.5 flex-wrap`}>
+                      <span>{todayShares.toLocaleString('en-IN')}</span>
                       <span className="text-slate-500 font-normal">/</span>
-                      <span>{stock.avgVol20DM.toFixed(2)}M</span>
+                      <span className="text-cyan-300 font-semibold">{avg20DShares.toLocaleString('en-IN')}</span>
                       <span className="text-[10px] text-slate-400 font-normal">shares</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold ${
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold ml-1 ${
                         m.rvolRatio >= 1.0
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : 'bg-slate-800 text-slate-400 border border-slate-700'
@@ -140,13 +144,10 @@ export function ZoneC_Screener() {
                         {m.rvolRatio}x RVOL
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                      {Math.round(stock.todayVolM * 1_000_000).toLocaleString('en-IN')} / {Math.round(stock.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares
-                    </div>
-                    <div className={`text-[10px] mt-0.5 ${m.isEligibleForBuy ? 'text-emerald-300/80 font-bold' : 'text-slate-400'}`}>
+                    <div className={`text-[10px] mt-1 font-mono ${m.isEligibleForBuy ? 'text-emerald-300/90 font-bold' : 'text-slate-400'}`}>
                       {m.isEligibleForBuy
-                        ? `🚀 Surplus: +${Math.round((stock.todayVolM - stock.avgVol20DM) * 1_000_000).toLocaleString('en-IN')} shares (+${(stock.todayVolM - stock.avgVol20DM).toFixed(2)}M)`
-                        : `Deficit: ${Math.round(m.deficitM * 1_000_000).toLocaleString('en-IN')} shares remaining (${m.deficitM.toFixed(2)}M)`}
+                        ? `🚀 Surplus: +${surplusShares.toLocaleString('en-IN')} shares`
+                        : `Deficit: ${deficitShares.toLocaleString('en-IN')} shares remaining`}
                     </div>
                   </td>
 
@@ -274,7 +275,7 @@ export function ZoneC_Screener() {
       {/* Interactive Guidance Footer */}
       <div className="px-3.5 py-2.5 bg-obsidian/80 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
         <div>
-          ⚡ <strong className="text-slate-200">Live Market Streaming:</strong> When connected to Dhan HQ, prices and cumulative volumes update every 2 seconds in real-time.
+          ⚡ <strong className="text-slate-200">Live Market Streaming:</strong> When connected to Dhan HQ, prices and cumulative traded shares update every 2 seconds in real-time.
         </div>
         <div className="font-mono text-slate-400">Tick Clock: <span suppressHydrationWarning>{clockTime}</span> IST</div>
       </div>
