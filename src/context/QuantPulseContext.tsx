@@ -31,7 +31,7 @@ import {
   closeTradeOrderInCloud,
   logBatchTickSnapshotsToCloud,
 } from '@/lib/services/supabaseTelemetryService';
-import { MarketSessionInfo, getIndianMarketSession } from '@/lib/services/marketHoursService';
+import { MarketSessionInfo, getIndianMarketSession, getISTDate } from '@/lib/services/marketHoursService';
 import { IngestionTelemetry } from '@/lib/services/liveIngestionEngine';
 import { requestQueueEngine } from '@/lib/engine/requestQueueEngine';
 
@@ -48,6 +48,8 @@ interface QuantPulseContextType {
   config: SystemConfig;
   selectedTicker: string;
   clockTime: string;
+  currentTradingDate: string;
+  isBaselineSyncing: boolean;
   isLiveStreaming: boolean;
   toasts: ToastMessage[];
   isJsonModalOpen: boolean;
@@ -74,6 +76,8 @@ interface QuantPulseContextType {
   setExecutionMode: (mode: ExecutionMode) => void;
   setCapitalPerTrade: (val: number) => void;
   setFeedMode: (mode: 'DHAN_LIVE' | 'SIMULATION') => void;
+  syncDailyBaselines: (isDateChange?: boolean, forceRefresh?: boolean) => Promise<void>;
+  resetToDayStart: () => Promise<void>;
   forceCrossover: (ticker: string) => void;
   executeBuy: (ticker: string, triggeredBy?: ExecutionMode) => void;
   panicKillSwitch: () => void;
@@ -110,7 +114,19 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     maxOpenPositions: 5,
   });
   const [selectedTicker, setSelectedTicker] = useState<string>('RELIANCE');
-  const [clockSeconds, setClockSeconds] = useState<number>(38530); // 10:42:10 IST
+
+  // Exact real-time Indian Standard Time (IST) initialization
+  const getNowIstSeconds = () => {
+    const { hours, minutes, seconds } = getISTDate();
+    return hours * 3600 + minutes * 60 + seconds;
+  };
+
+  const [clockSeconds, setClockSeconds] = useState<number>(getNowIstSeconds);
+  const [currentTradingDate, setCurrentTradingDate] = useState<string>(() => getISTDate().dateStr);
+  const [isBaselineSyncing, setIsBaselineSyncing] = useState<boolean>(false);
+  const currentTradingDateRef = useRef<string>(getISTDate().dateStr);
+  const hasCheckedInitialDateSyncRef = useRef<boolean>(false);
+
   const [isLiveStreaming, setIsLiveStreaming] = useState<boolean>(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isJsonModalOpen, setIsJsonModalOpen] = useState<boolean>(false);
@@ -137,14 +153,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
   const packetCountRef = useRef<number>(0);
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Keep Indian Market Session updated every second
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setMarketSession(getIndianMarketSession());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const refreshBrokerVaultStatus = useCallback(async () => {
     try {
@@ -226,15 +234,122 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const syncDailyBaselines = useCallback(
+    async (isDateChange = false, forceRefresh = false) => {
+      try {
+        setIsBaselineSyncing(true);
+        const todayDateStr = getISTDate().dateStr;
+        const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
+        const accessToken = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_access_token') || '' : '';
+
+        const res = await fetch('/api/pipeline/sync-baselines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId, accessToken }),
+        });
+
+        const data = await res.json();
+
+        if (data.success && data.baselines && data.baselines.length > 0) {
+          const baselineMap = new Map<string, number>();
+          data.baselines.forEach((b: any) => {
+            baselineMap.set(b.ticker, b.avgVolume20DM);
+          });
+
+          setWatchlist((prevWl) =>
+            prevWl.map((stock) => {
+              const newAvg20D = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
+              if (isDateChange) {
+                // New trading session / first day start: zero today's volume & reset crossover state
+                return {
+                  ...stock,
+                  avgVol20DM: newAvg20D,
+                  todayVolM: 0.0,
+                  hasCrossed20D: false,
+                  crossoverTime: null,
+                  crossoverSpotPrice: null,
+                  justCrossedHighlight: false,
+                };
+              } else {
+                // Mid-day refresh: keep today's traded volume and re-evaluate crossover eligibility against new 20D baseline
+                const hasCrossed = stock.todayVolM >= newAvg20D;
+                return {
+                  ...stock,
+                  avgVol20DM: newAvg20D,
+                  hasCrossed20D: hasCrossed || stock.hasCrossed20D,
+                };
+              }
+            })
+          );
+
+          if (isDateChange) {
+            setCrossoverEvents([]);
+            setIdempotencyLocks([]);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('qp_last_trading_date', todayDateStr);
+            }
+            showToast(
+              `📅 New Trading Day (${todayDateStr}): 20-Day Volume baselines updated & Intraday progress reset.`,
+              'emerald'
+            );
+          } else {
+            showToast(
+              `⚡ 20-Day Volume baselines refreshed for ${data.symbolsEvaluated} symbols (${data.dataSource}).`,
+              'info'
+            );
+          }
+        }
+      } catch (err: any) {
+        console.error('Failed to sync daily baselines:', err);
+        showToast(`Baseline Sync Notice: Local quantitative models active (${err.message})`, 'amber');
+      } finally {
+        setIsBaselineSyncing(false);
+      }
+    },
+    [showToast]
+  );
+
+  const resetToDayStart = useCallback(async () => {
+    await syncDailyBaselines(true, true);
+    showToast('🔄 Watchlist reset to fresh Day Start baseline state.', 'info');
+  }, [syncDailyBaselines, showToast]);
+
   const clockTime = formatClockIST(clockSeconds);
 
-  // 1. Clock increment timer
+  // 1. Live IST Clock & Date Rollover Monitor (every 1000ms)
   useEffect(() => {
-    const timer = setInterval(() => {
-      setClockSeconds((prev) => prev + 1);
-    }, 1000);
+    const updateClockAndDate = () => {
+      const ist = getISTDate();
+      const secs = ist.hours * 3600 + ist.minutes * 60 + ist.seconds;
+      setClockSeconds(secs);
+      setMarketSession(getIndianMarketSession());
+
+      // Midnight date change rollover detection
+      if (ist.dateStr !== currentTradingDateRef.current) {
+        currentTradingDateRef.current = ist.dateStr;
+        setCurrentTradingDate(ist.dateStr);
+        // Automatically sync baselines and reset intraday progress for the new calendar date
+        syncDailyBaselines(true);
+      }
+    };
+
+    updateClockAndDate();
+    const timer = setInterval(updateClockAndDate, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [syncDailyBaselines]);
+
+  // First Day Start check: if date has changed since last visit, run baseline calculation & session reset
+  useEffect(() => {
+    if (hasCheckedInitialDateSyncRef.current) return;
+    hasCheckedInitialDateSyncRef.current = true;
+
+    const todayDateStr = getISTDate().dateStr;
+    const storedDate = typeof window !== 'undefined' ? localStorage.getItem('qp_last_trading_date') : null;
+
+    if (!storedDate || storedDate !== todayDateStr) {
+      syncDailyBaselines(true);
+    }
+  }, [syncDailyBaselines]);
 
   // 2. Fetch from Supabase if configured
   useEffect(() => {
@@ -242,10 +357,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
     async function loadFromSupabase() {
       try {
+        const todayDateStr = getISTDate().dateStr;
         const { data: wlData } = await supabase!.from('watchlist').select('*');
         if (wlData && wlData.length > 0) {
           const mapped: Stock[] = wlData.map((d: any) => {
             const master = getStockMasterByTicker(d.ticker);
+            const isUpdatedToday = d.updated_at ? d.updated_at.startsWith(todayDateStr) : false;
             return {
               ticker: d.ticker,
               shortName: d.short_name || master?.shortName || d.ticker,
@@ -258,11 +375,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               lotSize: d.lot_size || master?.lotSize || 250,
               strikeStep: d.strike_step || master?.strikeStep || 50,
               spotLtp: Number(d.spot_ltp) || master?.approxLtp || 1000,
-              todayVolM: Number(d.today_vol_m) || 0,
+              todayVolM: isUpdatedToday ? (Number(d.today_vol_m) || 0) : 0,
               avgVol20DM: Number(d.avg_vol_20d_m) || master?.avgVol20DM || 1.0,
-              hasCrossed20D: Boolean(d.has_crossed_20d),
-              crossoverTime: d.crossover_time,
-              crossoverSpotPrice: d.crossover_spot_price ? Number(d.crossover_spot_price) : null,
+              hasCrossed20D: isUpdatedToday ? Boolean(d.has_crossed_20d) : false,
+              crossoverTime: isUpdatedToday ? d.crossover_time : null,
+              crossoverSpotPrice: isUpdatedToday && d.crossover_spot_price ? Number(d.crossover_spot_price) : null,
               ivPct: Number(d.iv_pct || (master?.isFnO ? 16.5 : 0)),
               dayHigh: d.day_high ? Number(d.day_high) : undefined,
               dayLow: d.day_low ? Number(d.day_low) : undefined,
@@ -281,7 +398,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           setWatchlist([...filteredMapped, ...missingStocks]);
         }
 
-        const { data: evData } = await supabase!.from('crossover_events').select('*').order('created_at', { ascending: false });
+        const { data: evData } = await supabase!
+          .from('crossover_events')
+          .select('*')
+          .gte('created_at', `${todayDateStr}T00:00:00`)
+          .order('created_at', { ascending: false });
+
         if (evData && evData.length > 0) {
           const mappedEv: CrossoverEvent[] = evData.map((e: any) => ({
             id: e.id,
@@ -1119,6 +1241,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       streamTimerRef.current = null;
       setIsLiveStreaming(false);
     }
+    setClockSeconds(getNowIstSeconds());
     setWatchlist(JSON.parse(JSON.stringify(INITIAL_WATCHLIST_DATA)));
     setCrossoverEvents(JSON.parse(JSON.stringify(INITIAL_CROSSOVER_LOGS)));
     setIdempotencyLocks([]);
@@ -1140,12 +1263,17 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         config,
         selectedTicker,
         clockTime,
+        currentTradingDate,
+        isBaselineSyncing,
         isLiveStreaming,
         toasts,
         isJsonModalOpen,
         isAddStockModalOpen,
         isBrokerModalOpen,
         isOptionChainModalOpen,
+        isAlertsModalOpen,
+        isAuthModalOpen,
+        isCloudLogsModalOpen,
         idempotencyLocks,
         totalMtmPnl,
         isSupabaseActive: isSupabaseConfigured,
@@ -1153,6 +1281,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setInstrumentMode: (mode) => setConfig((prev) => ({ ...prev, instrumentMode: mode })),
         setExecutionMode: (mode) => setConfig((prev) => ({ ...prev, executionMode: mode })),
         setCapitalPerTrade: (val) => setConfig((prev) => ({ ...prev, capitalPerTrade: val })),
+        syncDailyBaselines,
+        resetToDayStart,
         forceCrossover,
         executeBuy,
         panicKillSwitch,
@@ -1176,9 +1306,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setIsAlertsModalOpen,
         setIsAuthModalOpen,
         setIsCloudLogsModalOpen,
-        isAlertsModalOpen,
-        isAuthModalOpen,
-        isCloudLogsModalOpen,
         removeToast,
         showToast,
         brokerVaultStatus,

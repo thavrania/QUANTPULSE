@@ -13,11 +13,11 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     lotSize: 250,
     strikeStep: 50,
     spotLtp: 2968.50,
-    todayVolM: 5.82,
+    todayVolM: 0.0,
     avgVol20DM: 5.20,
-    hasCrossed20D: true,
-    crossoverTime: '09:48:12',
-    crossoverSpotPrice: 2954.00,
+    hasCrossed20D: false,
+    crossoverTime: null,
+    crossoverSpotPrice: null,
     ivPct: 18.4,
     justCrossedHighlight: false,
     dayHigh: 2985.00,
@@ -39,7 +39,7 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     lotSize: 175,
     strikeStep: 50,
     spotLtp: 4126.00,
-    todayVolM: 1.45,
+    todayVolM: 0.0,
     avgVol20DM: 1.50,
     hasCrossed20D: false,
     crossoverTime: null,
@@ -65,7 +65,7 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     lotSize: 550,
     strikeStep: 20,
     spotLtp: 1644.20,
-    todayVolM: 4.70,
+    todayVolM: 0.0,
     avgVol20DM: 6.00,
     hasCrossed20D: false,
     crossoverTime: null,
@@ -91,7 +91,7 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     lotSize: 700,
     strikeStep: 20,
     spotLtp: 1258.00,
-    todayVolM: 6.44,
+    todayVolM: 0.0,
     avgVol20DM: 7.00,
     hasCrossed20D: false,
     crossoverTime: null,
@@ -107,15 +107,7 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
   },
 ];
 
-export const INITIAL_CROSSOVER_LOGS: CrossoverEvent[] = [
-  {
-    ticker: 'RELIANCE',
-    time: '09:48:12',
-    avgVol20DM: 5.20,
-    crossPrice: 2954.00,
-    isFnO: true,
-  },
-];
+export const INITIAL_CROSSOVER_LOGS: CrossoverEvent[] = [];
 
 export function formatClockIST(totalSeconds: number): string {
   const secsInDay = totalSeconds % 86400;

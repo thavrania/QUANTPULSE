@@ -7,6 +7,7 @@ export function ZoneA_Header() {
   const {
     config,
     clockTime,
+    currentTradingDate,
     totalMtmPnl,
     isLiveStreaming,
     isSupabaseActive,
@@ -97,10 +98,14 @@ export function ZoneA_Header() {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+            <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5 flex-wrap">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span>Market Clock:</span>
               <span className="font-mono font-bold text-cyan-300">{clockTime} IST</span>
+              <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/70 flex items-center gap-1">
+                <span>📅</span>
+                <span>{currentTradingDate}</span>
+              </span>
               {lastLiveSyncTime && (
                 <span className="text-[10px] font-mono text-slate-500">
                   • Last Sync: {lastLiveSyncTime}

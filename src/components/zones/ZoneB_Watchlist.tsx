@@ -13,6 +13,10 @@ export function ZoneB_Watchlist() {
     addCustomStock,
     addStockFromMaster,
     removeStockFromWatchlist,
+    currentTradingDate,
+    isBaselineSyncing,
+    syncDailyBaselines,
+    resetToDayStart,
   } = useQuantPulse();
 
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'MASTER_DIRECTORY'>('ACTIVE');
@@ -263,43 +267,34 @@ export function ZoneB_Watchlist() {
           </div>
 
           {/* Pre-Market Automated 20D Baseline Sync Banner */}
-          <div className="px-3 py-2 bg-obsidian/90 border-b border-slate-800 flex items-center justify-between text-xs">
+          <div className="px-3 py-2 bg-obsidian/90 border-b border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
             <div>
-              <div className="font-semibold text-white flex items-center gap-1.5">
+              <div className="font-semibold text-white flex items-center gap-1.5 flex-wrap">
                 <span>🌅 09:00 AM Pre-Market Engine</span>
+                <span className="text-[10px] font-mono text-cyan-300">({currentTradingDate})</span>
               </div>
-              <div className="text-[10px] text-slate-400">Automated 20D Volume Baseline Job</div>
+              <div className="text-[10px] text-slate-400">Automated 20D Volume Baseline &amp; Session Engine</div>
             </div>
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const clientId = localStorage.getItem('qp_dhan_client_id') || '';
-                  const accessToken = localStorage.getItem('qp_dhan_access_token') || '';
-                  const res = await fetch('/api/pipeline/sync-baselines', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ clientId, accessToken }),
-                  });
-                  const data = await res.json();
-                  if (data.success) {
-                    if (data.baselines) {
-                      data.baselines.forEach((b: any) => {
-                        const st = watchlist.find((s) => s.ticker === b.ticker);
-                        if (st) st.avgVol20DM = b.avgVolume20DM;
-                      });
-                    }
-                    alert(`Pre-market baseline sync completed! ${data.symbolsEvaluated} symbols updated via ${data.dataSource}.`);
-                  }
-                } catch (err: any) {
-                  alert(`Sync failed: ${err.message}`);
-                }
-              }}
-              className="px-2 py-1 rounded text-[10px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition flex items-center gap-1"
-              title="Manually trigger the 09:00 AM IST 20D baseline calculation job"
-            >
-              <span>⚡ Run 09:00 AM Sync</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={isBaselineSyncing}
+                onClick={() => syncDailyBaselines(false, true)}
+                className="px-2 py-1 rounded text-[10px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 disabled:opacity-50"
+                title="Recalculate 20-Day volume baselines from the last 20 completed sessions"
+              >
+                <span>{isBaselineSyncing ? '⏳ Syncing...' : '⚡ 20D Sync'}</span>
+              </button>
+              <button
+                type="button"
+                disabled={isBaselineSyncing}
+                onClick={() => resetToDayStart()}
+                className="px-2 py-1 rounded text-[10px] font-mono font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1 disabled:opacity-50"
+                title="Reset session to Day Start: zero today's volume and evaluate fresh crossover progress"
+              >
+                <span>🔄 Day Start</span>
+              </button>
+            </div>
           </div>
 
           {/* Crossover Timestamp Event Log Title */}
