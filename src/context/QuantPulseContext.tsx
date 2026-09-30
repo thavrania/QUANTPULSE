@@ -12,6 +12,7 @@ import {
   StockMasterItem,
 } from '@/lib/types/quant';
 import {
+  STOCK_MASTER_CATALOG,
   getStockMasterByTicker,
   convertMasterToStock,
   resolveStockMetadata,
