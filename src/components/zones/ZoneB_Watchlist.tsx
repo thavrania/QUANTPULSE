@@ -12,18 +12,23 @@ export function ZoneB_Watchlist() {
     setSelectedTicker,
     addCustomStock,
     addStockFromMaster,
+    addAllStocksToWatchlist,
+    syncWatchlistToDb,
     removeStockFromWatchlist,
     currentTradingDate,
     isBaselineSyncing,
     syncDailyBaselines,
     resetToDayStart,
     clearCrossoverEvents,
+    isSupabaseActive,
   } = useQuantPulse();
 
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'MASTER_DIRECTORY'>('ACTIVE');
   const [directorySearch, setDirectorySearch] = useState('');
   const [indexFilter, setIndexFilter] = useState<'ALL' | 'NIFTY50' | 'SENSEX' | 'FNO'>('ALL');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [isAddingAll, setIsAddingAll] = useState(false);
+  const [isSyncingDb, setIsSyncingDb] = useState(false);
 
   // Strictly enforce single entry per stock in the Exact Crossover Timestamp Feed
   const uniqueCrossoverEvents = useMemo(() => {
@@ -73,24 +78,58 @@ export function ZoneB_Watchlist() {
     setShowAddForm(false);
   };
 
-  const activeTickers = new Set(watchlist.map((s) => s.ticker));
+  const activeTickers = useMemo(
+    () => new Set(watchlist.map((s) => s.ticker)),
+    [watchlist]
+  );
 
-  const filteredMasterStocks = STOCK_MASTER_CATALOG.filter((stock) => {
-    if (indexFilter === 'NIFTY50' && !stock.indices?.includes('NIFTY 50')) return false;
-    if (indexFilter === 'SENSEX' && !stock.indices?.includes('SENSEX')) return false;
-    if (indexFilter === 'FNO' && !stock.isFnO) return false;
+  const filteredMasterStocks = useMemo(() => {
+    return STOCK_MASTER_CATALOG.filter((stock) => {
+      if (indexFilter === 'NIFTY50' && !stock.indices?.includes('NIFTY 50')) return false;
+      if (indexFilter === 'SENSEX' && !stock.indices?.includes('SENSEX')) return false;
+      if (indexFilter === 'FNO' && !stock.isFnO) return false;
 
-    const q = directorySearch.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      stock.ticker.toLowerCase().includes(q) ||
-      stock.shortName?.toLowerCase().includes(q) ||
-      stock.name.toLowerCase().includes(q) ||
-      stock.sector.toLowerCase().includes(q) ||
-      stock.securityId.includes(q) ||
-      stock.indices?.some((idx) => idx.toLowerCase().includes(q))
-    );
-  });
+      const q = directorySearch.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        stock.ticker.toLowerCase().includes(q) ||
+        stock.shortName?.toLowerCase().includes(q) ||
+        stock.name.toLowerCase().includes(q) ||
+        stock.sector.toLowerCase().includes(q) ||
+        stock.securityId.includes(q) ||
+        stock.indices?.some((idx) => idx.toLowerCase().includes(q))
+      );
+    });
+  }, [indexFilter, directorySearch]);
+
+  const unaddedFilteredStocks = useMemo(
+    () => filteredMasterStocks.filter((s) => !activeTickers.has(s.ticker)),
+    [filteredMasterStocks, activeTickers]
+  );
+
+  const totalUniverseUnadded = useMemo(
+    () => STOCK_MASTER_CATALOG.filter((s) => !activeTickers.has(s.ticker)),
+    [activeTickers]
+  );
+
+  const handleBulkAdd = async (stocksToAdd = unaddedFilteredStocks) => {
+    if (stocksToAdd.length === 0) return;
+    setIsAddingAll(true);
+    try {
+      await addAllStocksToWatchlist(stocksToAdd);
+    } finally {
+      setIsAddingAll(false);
+    }
+  };
+
+  const handleSyncDb = async () => {
+    setIsSyncingDb(true);
+    try {
+      await syncWatchlistToDb();
+    } finally {
+      setIsSyncingDb(false);
+    }
+  };
 
   return (
     <section className="bg-panel rounded-xl border border-slate-800 flex flex-col overflow-hidden">
@@ -112,6 +151,18 @@ export function ZoneB_Watchlist() {
           <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
             {STOCK_MASTER_CATALOG.length} Universe
           </span>
+          {isSupabaseActive && (
+            <button
+              type="button"
+              onClick={handleSyncDb}
+              disabled={isSyncingDb}
+              className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition flex items-center gap-1 font-semibold"
+              title="Ensure all confirmed Watch List stocks are saved in Supabase Watch List DB table"
+            >
+              <span>{isSyncingDb ? '⏳' : '💾'}</span>
+              <span>{isSyncingDb ? 'Syncing...' : 'Sync DB'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -477,6 +528,62 @@ export function ZoneB_Watchlist() {
               >
                 F&amp;O Only ({STOCK_MASTER_CATALOG.filter((s) => s.isFnO).length})
               </button>
+            </div>
+          </div>
+
+          {/* Bulk Action Bar: Single-Action Bulk Addition to Watch List */}
+          <div className="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-semibold text-white">Directory View:</span>
+              <span className="font-mono text-cyan-300 font-bold">
+                {filteredMasterStocks.length} Stocks
+              </span>
+              <span className="text-slate-500">•</span>
+              <span className="text-slate-400 font-mono text-[11px]">
+                {filteredMasterStocks.length - unaddedFilteredStocks.length} in Watch List
+              </span>
+              {unaddedFilteredStocks.length > 0 && (
+                <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold">
+                  {unaddedFilteredStocks.length} not added
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isAddingAll || unaddedFilteredStocks.length === 0}
+                onClick={() => handleBulkAdd(unaddedFilteredStocks)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                  unaddedFilteredStocks.length === 0
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-bold shadow-amber-500/20'
+                }`}
+                title="Add all available stocks in this directory view to Watch List in a single action"
+              >
+                <span>⚡</span>
+                <span>
+                  {isAddingAll
+                    ? 'Adding to DB & Watch List...'
+                    : unaddedFilteredStocks.length === 0
+                    ? '✓ All in Watch List'
+                    : indexFilter === 'ALL' && !directorySearch
+                    ? `Add All Stocks to Watch List (${unaddedFilteredStocks.length})`
+                    : `Add All Filtered Stocks (${unaddedFilteredStocks.length})`}
+                </span>
+              </button>
+
+              {(indexFilter !== 'ALL' || directorySearch) && totalUniverseUnadded.length > 0 && (
+                <button
+                  type="button"
+                  disabled={isAddingAll}
+                  onClick={() => handleBulkAdd(totalUniverseUnadded)}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1 active:scale-95"
+                  title="Add all 55 stocks in the entire Universe to the Watch List in a single action"
+                >
+                  <span>⚡ Add All Universe ({totalUniverseUnadded.length})</span>
+                </button>
+              )}
             </div>
           </div>
 

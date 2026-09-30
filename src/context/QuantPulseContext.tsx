@@ -98,6 +98,8 @@ interface QuantPulseContextType {
   advancePositionState: (posId: string, milestone: TslMilestone) => void;
   addCustomStock: (stock: Omit<Stock, 'hasCrossed20D' | 'crossoverTime' | 'crossoverSpotPrice'>) => void;
   addStockFromMaster: (item: StockMasterItem) => void;
+  addAllStocksToWatchlist: (stocks?: StockMasterItem[]) => Promise<void>;
+  syncWatchlistToDb: () => Promise<boolean>;
   removeStockFromWatchlist: (ticker: string) => void;
   toggleLiveStream: () => void;
   simulateSingleTick: () => void;
@@ -245,6 +247,70 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       isSelfUpdatingRef.current = false;
     }, 1500);
   }, []);
+
+  const saveStocksToWatchlistDb = useCallback(
+    async (stocks: Stock[]): Promise<boolean> => {
+      if (!isSupabaseConfigured || !supabase || stocks.length === 0) return false;
+      markSelfUpdating();
+      try {
+        const rows = stocks.map((s) => ({
+          ticker: s.ticker,
+          short_name: s.shortName || s.ticker,
+          name: s.name,
+          isin: s.isin || null,
+          is_fno: s.isFnO ?? true,
+          segment: s.segment || 'NSE_FNO',
+          sector: s.sector || 'General',
+          security_id: s.securityId || '1330',
+          lot_size: s.lotSize || 1,
+          strike_step: s.strikeStep || 20,
+          spot_ltp: s.spotLtp || 1000,
+          today_vol_m: s.todayVolM || 0,
+          avg_vol_20d_m: s.avgVol20DM || 1,
+          has_crossed_20d: Boolean(s.hasCrossed20D),
+          crossover_time: s.crossoverTime || null,
+          crossover_spot_price: s.crossoverSpotPrice || null,
+          iv_pct: s.ivPct || 0,
+          is_active_watchlist: true,
+          updated_at: new Date().toISOString(),
+        }));
+
+        const { error: wlErr } = await supabase
+          .from('watchlist')
+          .upsert(rows, { onConflict: 'ticker' });
+
+        if (wlErr) {
+          console.warn('Watchlist upsert warning, retrying with fallback columns:', wlErr.message);
+          // Fallback: retry without optional columns in case schema differences exist
+          const fallbackRows = rows.map(({ is_active_watchlist, ...rest }) => rest);
+          const { error: retryErr } = await supabase
+            .from('watchlist')
+            .upsert(fallbackRows, { onConflict: 'ticker' });
+          if (retryErr) {
+            console.error('Failed to save stocks to public.watchlist DB:', retryErr.message);
+            return false;
+          }
+        }
+
+        // Also sync is_active_watchlist: true in stock_master directory table if present
+        const tickers = stocks.map((s) => s.ticker);
+        try {
+          await supabase
+            .from('stock_master')
+            .update({ is_active_watchlist: true, updated_at: new Date().toISOString() })
+            .in('ticker', tickers);
+        } catch (smErr) {
+          console.warn('Notice: stock_master table update optional:', smErr);
+        }
+
+        return true;
+      } catch (err: any) {
+        console.error('saveStocksToWatchlistDb exception:', err);
+        return false;
+      }
+    },
+    [isSupabaseConfigured, markSelfUpdating]
+  );
 
   const refreshBrokerVaultStatus = useCallback(async () => {
     try {
@@ -546,11 +612,17 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           });
         }
 
-        let activeRecords: any[] = wlRes.data || [];
+        let activeRecords: any[] = (wlRes.data || []).filter((s: any) => s.is_active_watchlist !== false);
 
         // If active watchlist table is currently empty in DB, load stocks flagged with is_active_watchlist = true from stock_master
-        if (activeRecords.length === 0 && smRes.data) {
+        if (activeRecords.length === 0 && smRes.data && smRes.data.length > 0) {
           activeRecords = smRes.data.filter((s: any) => Boolean(s.is_active_watchlist));
+        }
+
+        // If still empty (e.g. fresh DB instance), seed initial watchlist into DB table
+        if (activeRecords.length === 0) {
+          activeRecords = INITIAL_WATCHLIST_DATA;
+          saveStocksToWatchlistDb(INITIAL_WATCHLIST_DATA).catch(() => {});
         }
 
         if (activeRecords && activeRecords.length > 0) {
@@ -1911,142 +1983,153 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         return updated;
       });
 
+      let dbSaved = false;
       if (isSupabaseConfigured && supabase) {
-        markSelfUpdating();
-        const client = supabase;
-        client
-          .from('watchlist')
-          .upsert({
-            ticker: newStock.ticker,
-            short_name: newStock.shortName,
-            name: newStock.name,
-            isin: newStock.isin,
-            is_fno: newStock.isFnO,
-            segment: newStock.segment,
-            sector: newStock.sector,
-            security_id: newStock.securityId,
-            lot_size: newStock.lotSize,
-            strike_step: newStock.strikeStep,
-            spot_ltp: newStock.spotLtp,
-            today_vol_m: newStock.todayVolM,
-            avg_vol_20d_m: newStock.avgVol20DM,
-            has_crossed_20d: alreadyCrossed,
-            crossover_time: newStock.crossoverTime,
-            crossover_spot_price: newStock.crossoverSpotPrice,
-            is_active_watchlist: true,
-            updated_at: new Date().toISOString(),
-          })
-          .then();
+        dbSaved = await saveStocksToWatchlistDb([newStock]);
       }
 
       setSelectedTicker(newStock.ticker);
       showToast(
         alreadyCrossed
-          ? `Added ${newStock.ticker} (${newStock.shortName}) — Already above 20D Avg Vol! Latched at ${nowStr}.`
-          : `Added ${newStock.ticker} (${newStock.shortName}) — Monitoring Today Vol vs 20D Avg.`,
+          ? `Added ${newStock.ticker} (${newStock.shortName}) — Already above 20D Avg Vol! Latched at ${nowStr}.${dbSaved ? ' Saved to DB.' : ''}`
+          : `Added ${newStock.ticker} (${newStock.shortName}) — ${dbSaved ? 'Saved to DB & ' : ''}monitoring volume.`,
         alreadyCrossed ? 'emerald' : 'info'
       );
     },
-    [clockSeconds, markSelfUpdating, showToast]
+    [isSupabaseConfigured, saveStocksToWatchlistDb, showToast]
   );
 
   const addStockFromMaster = useCallback(
-    (master: StockMasterItem) => {
-      setWatchlist((prev) => {
-        const cleanTicker = normalizeTicker(master.ticker);
-        if (prev.some((s) => normalizeTicker(s.ticker) === cleanTicker)) {
-          showToast(`${cleanTicker} is already in the active Watchlist.`, 'info');
-          return prev;
-        }
-        const newStock: Stock = convertMasterToStock(master);
-        const updated = [...prev, newStock];
+    async (master: StockMasterItem) => {
+      const cleanTicker = normalizeTicker(master.ticker);
+      if (watchlistRef.current.some((s) => normalizeTicker(s.ticker) === cleanTicker)) {
+        showToast(`${cleanTicker} is already in the active Watchlist.`, 'info');
+        return;
+      }
+      const newStock: Stock = convertMasterToStock(master);
 
+      setWatchlist((prev) => {
+        const updated = [...prev, newStock];
         if (typeof window !== 'undefined') {
           localStorage.setItem(
             'qp_active_watchlist_tickers',
             JSON.stringify(updated.map((s) => s.ticker))
           );
         }
-
-        if (isSupabaseConfigured && supabase) {
-          markSelfUpdating();
-          const client = supabase;
-          // 1. Update status flag in stock_master directory table
-          client
-            .from('stock_master')
-            .update({ is_active_watchlist: true, updated_at: new Date().toISOString() })
-            .eq('ticker', master.ticker)
-            .then();
-
-          // 2. Upsert into active watchlist table
-          client
-            .from('watchlist')
-            .upsert({
-              ticker: newStock.ticker,
-              short_name: newStock.shortName,
-              name: newStock.name,
-              isin: newStock.isin,
-              is_fno: newStock.isFnO,
-              segment: newStock.segment,
-              sector: newStock.sector,
-              security_id: newStock.securityId,
-              lot_size: newStock.lotSize,
-              strike_step: newStock.strikeStep,
-              spot_ltp: newStock.spotLtp,
-              today_vol_m: newStock.todayVolM,
-              avg_vol_20d_m: newStock.avgVol20DM,
-              has_crossed_20d: false,
-              is_active_watchlist: true,
-              updated_at: new Date().toISOString(),
-            })
-            .then();
-        }
-
-        setSelectedTicker(master.ticker);
-        showToast(`✅ Added ${master.ticker} (${master.name}) to Active Watchlist!`, 'emerald');
         return updated;
       });
+
+      let dbSaved = false;
+      if (isSupabaseConfigured && supabase) {
+        dbSaved = await saveStocksToWatchlistDb([newStock]);
+      }
+
+      setSelectedTicker(master.ticker);
+      showToast(
+        dbSaved
+          ? `✅ Added ${master.ticker} (${master.name}) to Watch List & updated DB!`
+          : `✅ Added ${master.ticker} (${master.name}) to Active Watchlist!`,
+        'emerald'
+      );
     },
-    [markSelfUpdating, showToast]
+    [isSupabaseConfigured, saveStocksToWatchlistDb, showToast]
   );
 
-  const removeStockFromWatchlist = useCallback(
-    (ticker: string) => {
-      setWatchlist((prev) => {
-        if (prev.length <= 1) {
-          showToast('Cannot remove the last stock from watchlist.', 'amber');
-          return prev;
-        }
-        const updated = prev.filter((s) => s.ticker !== ticker);
-        if (selectedTicker === ticker) {
-          setSelectedTicker(updated[0].ticker);
-        }
+  const addAllStocksToWatchlist = useCallback(
+    async (targetStocks?: StockMasterItem[]) => {
+      const candidates = targetStocks && targetStocks.length > 0 ? targetStocks : STOCK_MASTER_CATALOG;
+      const currentTickers = new Set(watchlistRef.current.map((s) => normalizeTicker(s.ticker)));
+      const unadded = candidates.filter((m) => !currentTickers.has(normalizeTicker(m.ticker)));
 
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(
-            'qp_active_watchlist_tickers',
-            JSON.stringify(updated.map((s) => s.ticker))
-          );
-        }
+      if (unadded.length === 0) {
+        showToast('All available stocks are already in the Watch List.', 'info');
+        return;
+      }
 
-        if (isSupabaseConfigured && supabase) {
-          markSelfUpdating();
-          const client = supabase;
-          // 1. Update status flag in stock_master directory table
-          client
-            .from('stock_master')
-            .update({ is_active_watchlist: false, updated_at: new Date().toISOString() })
-            .eq('ticker', ticker)
-            .then();
+      const newStockObjects = unadded.map((m) => convertMasterToStock(m));
+      const nextWatchlist = [...watchlistRef.current, ...newStockObjects];
 
-          // 2. Delete from active watchlist table
-          client.from('watchlist').delete().eq('ticker', ticker).then();
-        }
-        showToast(`Removed ${ticker} from Active Watchlist.`, 'info');
-        return updated;
-      });
+      // 1. Update React state
+      setWatchlist(nextWatchlist);
+
+      // 2. Persist to localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'qp_active_watchlist_tickers',
+          JSON.stringify(nextWatchlist.map((s) => s.ticker))
+        );
+      }
+
+      // 3. Persist to Supabase Watch List DB table
+      let dbSaved = false;
+      if (isSupabaseConfigured && supabase) {
+        dbSaved = await saveStocksToWatchlistDb(newStockObjects);
+      }
+
+      showToast(
+        dbSaved
+          ? `✅ Added all ${unadded.length} stocks to Watch List & synchronized to DB!`
+          : `✅ Added all ${unadded.length} stocks to Watch List!`,
+        'emerald'
+      );
     },
-    [selectedTicker, markSelfUpdating, showToast]
+    [isSupabaseConfigured, saveStocksToWatchlistDb, showToast]
+  );
+
+  const syncWatchlistToDb = useCallback(async (): Promise<boolean> => {
+    if (!isSupabaseConfigured || !supabase) {
+      showToast('Supabase is not configured. Connect Supabase in Account modal.', 'amber');
+      return false;
+    }
+    const current = watchlistRef.current;
+    if (!current || current.length === 0) {
+      showToast('Watchlist is currently empty.', 'amber');
+      return false;
+    }
+    showToast(`💾 Syncing all ${current.length} Watch List stocks to Supabase DB...`, 'info');
+    const ok = await saveStocksToWatchlistDb(current);
+    if (ok) {
+      showToast(`✅ Successfully synced all ${current.length} stocks to Watch List DB!`, 'emerald');
+    } else {
+      showToast('⚠️ DB sync warning. Please check Supabase credentials or console.', 'rose');
+    }
+    return ok;
+  }, [isSupabaseConfigured, saveStocksToWatchlistDb, showToast]);
+
+  const removeStockFromWatchlist = useCallback(
+    async (ticker: string) => {
+      if (watchlistRef.current.length <= 1) {
+        showToast('Cannot remove the last stock from watchlist.', 'amber');
+        return;
+      }
+      const updated = watchlistRef.current.filter((s) => s.ticker !== ticker);
+      setWatchlist(updated);
+
+      if (selectedTicker === ticker && updated.length > 0) {
+        setSelectedTicker(updated[0].ticker);
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'qp_active_watchlist_tickers',
+          JSON.stringify(updated.map((s) => s.ticker))
+        );
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        markSelfUpdating();
+        try {
+          await Promise.allSettled([
+            supabase.from('watchlist').delete().eq('ticker', ticker),
+            supabase.from('stock_master').update({ is_active_watchlist: false, updated_at: new Date().toISOString() }).eq('ticker', ticker),
+          ]);
+        } catch (err) {
+          console.warn('Error removing stock from DB:', err);
+        }
+      }
+      showToast(`Removed ${ticker} from Active Watchlist & DB.`, 'info');
+    },
+    [selectedTicker, isSupabaseConfigured, markSelfUpdating, showToast]
   );
 
   const resetSimulation = useCallback(() => {
@@ -2104,6 +2187,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         advancePositionState,
         addCustomStock,
         addStockFromMaster,
+        addAllStocksToWatchlist,
+        syncWatchlistToDb,
         removeStockFromWatchlist,
         toggleLiveStream,
         simulateSingleTick,

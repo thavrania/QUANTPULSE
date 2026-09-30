@@ -5,7 +5,7 @@ import { useQuantPulse } from '@/context/QuantPulseContext';
 import { getStockMasterByTicker, resolveStockMetadata } from '@/lib/stocks/stockMaster';
 
 export function AddStockModal() {
-  const { isAddStockModalOpen, setIsAddStockModalOpen, addCustomStock } = useQuantPulse();
+  const { isAddStockModalOpen, setIsAddStockModalOpen, addCustomStock, addAllStocksToWatchlist } = useQuantPulse();
 
   const [ticker, setTicker] = useState('');
   const [name, setName] = useState('');
@@ -202,20 +202,33 @@ export function AddStockModal() {
             </div>
           </div>
 
-          <div className="pt-2 flex justify-end gap-2">
+          <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
             <button
               type="button"
-              onClick={() => setIsAddStockModalOpen(false)}
-              className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              onClick={async () => {
+                await addAllStocksToWatchlist();
+                setIsAddStockModalOpen(false);
+              }}
+              className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold underline flex items-center gap-1"
+              title="Add all 55 constituents from Master Directory in a single action"
             >
-              Cancel
+              <span>⚡ Add All Stocks to Watch List</span>
             </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition"
-            >
-              + Ingest Symbol
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAddStockModalOpen(false)}
+                className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition"
+              >
+                + Ingest Symbol
+              </button>
+            </div>
           </div>
         </form>
       </div>
