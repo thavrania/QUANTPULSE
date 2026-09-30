@@ -730,7 +730,7 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
     indices: ['NIFTY 50'],
   },
   {
-    ticker: 'TATAMOTORS',
+    ticker: 'TMCV',
     shortName: 'TMCV',
     name: 'TMCV',
     isin: 'INE155A01022',
@@ -890,7 +890,7 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
     indices: ['NIFTY 50', 'SENSEX'],
   },
   {
-    ticker: 'ZOMATO',
+    ticker: 'ETERNAL',
     shortName: 'ETERNAL',
     name: 'ETERNAL',
     isin: 'INE758T01015',
@@ -946,17 +946,17 @@ export function getStockMasterByTicker(ticker: string): StockMasterItem | undefi
   let found = STOCK_MASTER_CATALOG.find((s) => s.ticker === clean);
   if (found) return found;
 
-  // 1b. Direct alias support for TMCV / TATAMOTORS and ETERNAL / ZOMATO
-  if (clean === 'TMCV' || clean === 'TATAMOTORS') {
+  // 1b. Direct alias support for TMCV / TMCV and ETERNAL / ETERNAL
+  if (clean === 'TMCV' || clean === 'TMCV') {
     found =
       STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TMCV') ||
-      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TATAMOTORS');
+      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'TMCV');
     if (found) return found;
   }
-  if (clean === 'ETERNAL' || clean === 'ZOMATO') {
+  if (clean === 'ETERNAL' || clean === 'ETERNAL') {
     found =
       STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ETERNAL') ||
-      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ZOMATO');
+      STOCK_MASTER_CATALOG.find((s) => s.ticker === 'ETERNAL');
     if (found) return found;
   }
 
@@ -967,11 +967,11 @@ export function getStockMasterByTicker(ticker: string): StockMasterItem | undefi
     if (found) return found;
   }
 
-  // 3. Match by ISIN if ticker happens to be an ISIN (e.g. INE155A01022 -> TATAMOTORS, INE758T01015 -> ZOMATO)
+  // 3. Match by ISIN if ticker happens to be an ISIN (e.g. INE155A01022 -> TMCV, INE758T01015 -> ETERNAL)
   found = STOCK_MASTER_CATALOG.find((s) => s.isin && s.isin.toUpperCase() === clean);
   if (found) return found;
 
-  // 4. Match by Dhan security ID (e.g. 3456 -> TATAMOTORS/TMCV, 5097 -> ZOMATO/ETERNAL)
+  // 4. Match by Dhan security ID (e.g. 3456 -> TMCV/TMCV, 5097 -> ETERNAL/ETERNAL)
   found = STOCK_MASTER_CATALOG.find((s) => s.securityId === clean);
   if (found) return found;
 
@@ -1040,7 +1040,7 @@ export function resolveStockMetadata(
   const cleanTicker = normalizeTicker(rawTicker);
 
   // Explicit corporate restructuring & rebranding overrides
-  if (cleanTicker === 'TATAMOTORS' || cleanTicker === 'TMCV') {
+  if (cleanTicker === 'TMCV' || cleanTicker === 'TMCV') {
     return {
       ticker: cleanTicker,
       shortName: 'TMCV',
@@ -1057,7 +1057,7 @@ export function resolveStockMetadata(
       indices: ['NIFTY 50', 'SENSEX'],
     };
   }
-  if (cleanTicker === 'ZOMATO' || cleanTicker === 'ETERNAL') {
+  if (cleanTicker === 'ETERNAL' || cleanTicker === 'ETERNAL') {
     return {
       ticker: cleanTicker,
       shortName: 'ETERNAL',
