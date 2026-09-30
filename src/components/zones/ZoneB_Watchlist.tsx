@@ -466,105 +466,107 @@ export function ZoneB_Watchlist() {
             </div>
           </div>
 
-          {/* Master Stocks Table */}
-          <div className="flex-1 overflow-y-auto max-h-[420px]">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 bg-slate-900 border-b border-slate-800 text-[10px] uppercase text-slate-400">
-                <tr>
-                  <th className="py-2 px-2.5">Stock &amp; Segment</th>
-                  <th className="py-2 px-2.5">Sector</th>
-                  <th className="py-2 px-2.5">Specs (Lot/Step)</th>
-                  <th className="py-2 px-2.5">20D Avg Shares &amp; LTP</th>
-                  <th className="py-2 px-2.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/70 font-mono">
-                {filteredMasterStocks.map((stock) => {
-                  const isInWatchlist = activeTickers.has(stock.ticker);
-                  return (
-                    <tr
-                      key={stock.ticker}
-                      className={`hover:bg-slate-900/60 ${isInWatchlist ? 'bg-cyan-950/20' : ''}`}
-                    >
-                      <td className="py-2 px-2.5">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-white font-mono">{stock.ticker}</span>
-                          {stock.shortName && stock.shortName !== stock.ticker && (
-                            <span className="text-[10px] text-cyan-300 font-semibold font-sans">
-                              ({stock.shortName})
-                            </span>
-                          )}
-                          <span
-                            className={`text-[9px] px-1 py-0.2 rounded font-semibold ${
-                              stock.segment === 'NSE_FNO'
-                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                : 'bg-slate-800 text-slate-400 border border-slate-700'
-                            }`}
-                          >
-                            {stock.segment}
+          {/* Master Stocks Directory List (No Horizontal Scrollbar, Always Accessible Action Button) */}
+          <div className="flex-1 overflow-y-auto max-h-[440px] divide-y divide-slate-800/80 overflow-x-hidden">
+            {filteredMasterStocks.length === 0 ? (
+              <div className="p-4 text-center text-xs text-slate-500">
+                No stocks match your filter or search query.
+              </div>
+            ) : (
+              filteredMasterStocks.map((stock) => {
+                const isInWatchlist = activeTickers.has(stock.ticker);
+                return (
+                  <div
+                    key={stock.ticker}
+                    className={`p-2.5 transition flex items-center justify-between gap-2.5 ${
+                      isInWatchlist ? 'bg-cyan-950/20' : 'hover:bg-slate-900/60'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-white text-xs font-mono">{stock.ticker}</span>
+                        {stock.shortName && stock.shortName !== stock.ticker && (
+                          <span className="text-[10px] text-cyan-300 font-semibold font-sans">
+                            ({stock.shortName})
                           </span>
-                          {stock.indices?.includes('NIFTY 50') && (
-                            <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold">
-                              NIFTY 50
-                            </span>
-                          )}
-                          {stock.indices?.includes('SENSEX') && (
-                            <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold">
-                              SENSEX
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-200 font-sans truncate max-w-[200px]" title={stock.name}>
-                          {stock.name}
-                        </div>
-                        <div className="text-[9px] text-slate-500 flex items-center gap-1.5 font-mono">
-                          <span>ID: {stock.securityId}</span>
-                          <span>•</span>
-                          <span>{stock.isin}</span>
-                        </div>
-                      </td>
-
-                      <td className="py-2 px-2.5 text-[10px] font-sans text-slate-300">
-                        {stock.sector}
-                      </td>
-
-                      <td className="py-2 px-2.5 text-slate-300 text-[10px]">
-                        <div>Lot: <strong className="text-cyan-300">{stock.lotSize}</strong></div>
-                        <div className="text-slate-400">Step: ₹{stock.strikeStep}</div>
-                      </td>
-
-                      <td className="py-2 px-2.5">
-                        <div className="text-slate-100 font-bold">
-                          {Math.round(stock.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares
-                        </div>
-                        {stock.approxLtp && (
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            ~₹{stock.approxLtp.toFixed(2)}
-                          </div>
                         )}
-                      </td>
+                        <span
+                          className={`text-[8px] font-mono px-1 py-0.2 rounded font-semibold ${
+                            stock.segment === 'NSE_FNO'
+                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                              : 'bg-slate-800 text-slate-400 border border-slate-700'
+                          }`}
+                        >
+                          {stock.segment}
+                        </span>
+                        {stock.indices?.includes('NIFTY 50') && (
+                          <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold">
+                            NIFTY 50
+                          </span>
+                        )}
+                        {stock.indices?.includes('SENSEX') && (
+                          <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold">
+                            SENSEX
+                          </span>
+                        )}
+                      </div>
 
-                      <td className="py-2 px-2.5 text-right">
-                        {isInWatchlist ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                      <div className="text-[10px] text-slate-200 font-sans truncate mt-0.5" title={stock.name}>
+                        {stock.name}
+                      </div>
+
+                      <div className="text-[9px] text-slate-400 font-mono mt-1 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-slate-400 truncate max-w-[140px]">{stock.sector}</span>
+                        <span>•</span>
+                        <span>Lot: <strong className="text-cyan-300">{stock.lotSize}</strong></span>
+                        <span>•</span>
+                        <span>Step: <strong className="text-slate-300">₹{stock.strikeStep}</strong></span>
+                      </div>
+
+                      <div className="text-[10px] font-mono text-slate-300 mt-1 flex items-center gap-2 flex-wrap">
+                        <span className="text-slate-400">20D Avg:</span>
+                        <strong className="text-slate-100">
+                          {Math.round(stock.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares
+                        </strong>
+                        {stock.approxLtp && (
+                          <span className="text-emerald-400 font-semibold">
+                            ~₹{stock.approxLtp.toFixed(1)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Button: Always Visible & Accessible Without Horizontal Scrolling */}
+                    <div className="flex-shrink-0 self-center">
+                      {isInWatchlist ? (
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold whitespace-nowrap">
                             ✓ In Watchlist
                           </span>
-                        ) : (
                           <button
                             type="button"
-                            onClick={() => addStockFromMaster(stock)}
-                            className="text-[10px] px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold transition flex items-center gap-1 ml-auto"
-                            title={`Add ${stock.ticker} to the 20D Crossover Watchlist`}
+                            onClick={() => removeStockFromWatchlist(stock.ticker)}
+                            className="text-[9px] text-slate-500 hover:text-rose-400 underline font-mono transition"
+                            title={`Remove ${stock.ticker} from Active Watchlist`}
                           >
-                            <span>+ Add</span>
+                            Remove
                           </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => addStockFromMaster(stock)}
+                          className="text-[10px] px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 border border-amber-500/50 font-bold transition flex items-center gap-1 shadow-sm whitespace-nowrap active:scale-95"
+                          title={`Add ${stock.ticker} to Active Watchlist`}
+                        >
+                          <span>+ Add</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
