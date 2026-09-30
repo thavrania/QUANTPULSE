@@ -171,6 +171,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [clockSeconds, setClockSeconds] = useState<number>(getNowIstSeconds);
   const [currentTradingDate, setCurrentTradingDate] = useState<string>(() => getISTDate().dateStr);
   const [isBaselineSyncing, setIsBaselineSyncing] = useState<boolean>(false);
+  const isBaselineSyncingRef = useRef<boolean>(false);
   const currentTradingDateRef = useRef<string>(getISTDate().dateStr);
   const hasCheckedInitialDateSyncRef = useRef<boolean>(false);
   const watchlistRef = useRef<Stock[]>(watchlist);
@@ -276,19 +277,57 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           updated_at: new Date().toISOString(),
         }));
 
+        // 1. Attempt standard upsert
         const { error: wlErr } = await supabase
           .from('watchlist')
           .upsert(rows, { onConflict: 'ticker' });
 
         if (wlErr) {
-          console.warn('Watchlist upsert warning, retrying with fallback columns:', wlErr.message);
-          // Fallback: retry without optional columns in case schema differences exist
-          const fallbackRows = rows.map(({ is_active_watchlist, ...rest }) => rest);
-          const { error: retryErr } = await supabase
-            .from('watchlist')
-            .upsert(fallbackRows, { onConflict: 'ticker' });
-          if (retryErr) {
-            console.error('Failed to save stocks to public.watchlist DB:', retryErr.message);
+          console.warn('Watchlist upsert notice, applying robust insert/update fallback:', wlErr.message);
+
+          // 2. Fetch existing watchlist tickers to partition into insert vs update
+          // This avoids PostgreSQL RLS issues where ON CONFLICT DO UPDATE needs both USING and WITH CHECK simultaneously
+          const { data: existingData } = await supabase.from('watchlist').select('ticker');
+          const existingSet = new Set((existingData || []).map((d: any) => d.ticker));
+
+          const toInsert = rows.filter((r) => !existingSet.has(r.ticker));
+          const toUpdate = rows.filter((r) => existingSet.has(r.ticker));
+
+          let allSuccessful = true;
+
+          if (toInsert.length > 0) {
+            const { error: insertErr } = await supabase.from('watchlist').insert(toInsert);
+            if (insertErr) {
+              console.warn('Batch insert notice, retrying without optional is_active_watchlist column:', insertErr.message);
+              const fallbackInsert = toInsert.map(({ is_active_watchlist, ...rest }) => rest);
+              const { error: retryInsertErr } = await supabase.from('watchlist').insert(fallbackInsert);
+              if (retryInsertErr) {
+                console.warn('Batch insert retry notice, attempting individual inserts:', retryInsertErr.message);
+                const results = await Promise.allSettled(
+                  fallbackInsert.map((item) => supabase!.from('watchlist').insert(item))
+                );
+                const failed = results.filter((r) => r.status === 'rejected');
+                if (failed.length === fallbackInsert.length) {
+                  allSuccessful = false;
+                }
+              }
+            }
+          }
+
+          if (toUpdate.length > 0) {
+            const updateResults = await Promise.allSettled(
+              toUpdate.map((r) => {
+                const { ticker, ...fields } = r;
+                return supabase!.from('watchlist').update(fields).eq('ticker', ticker);
+              })
+            );
+            const failedUpdates = updateResults.filter((r) => r.status === 'rejected');
+            if (failedUpdates.length === toUpdate.length) {
+              allSuccessful = false;
+            }
+          }
+
+          if (!allSuccessful && toInsert.length === 0 && toUpdate.length === 0) {
             return false;
           }
         }
@@ -397,10 +436,29 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     async (isDateChange = false, forceRefresh = false) => {
       try {
         setIsBaselineSyncing(true);
+        isBaselineSyncingRef.current = true;
+        markSelfUpdating();
+
         const todayDateStr = getISTDate().dateStr;
         const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
         const accessToken = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_access_token') || '' : '';
-        const currentTickers = watchlistRef.current.map((s) => s.ticker);
+
+        // Source of truth: preserve all currently active tickers in terminal and database
+        let tickersToSync = watchlistRef.current.map((s) => s.ticker);
+        if (isSupabaseConfigured && supabase) {
+          try {
+            const { data: dbStocks } = await supabase
+              .from('watchlist')
+              .select('ticker')
+              .filter('is_active_watchlist', 'neq', false);
+            if (dbStocks && dbStocks.length > 0) {
+              const dbTickers = dbStocks.map((s: any) => s.ticker);
+              tickersToSync = Array.from(new Set([...tickersToSync, ...dbTickers]));
+            }
+          } catch (dbErr) {
+            console.warn('Notice: could not query active tickers from DB before sync:', dbErr);
+          }
+        }
 
         const baselineMap = new Map<string, number>();
         let dataSource = 'QUANT_BASELINE_ENGINE';
@@ -409,7 +467,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           const res = await fetch('/api/pipeline/sync-baselines', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientId, accessToken, tickers: currentTickers }),
+            body: JSON.stringify({ clientId, accessToken, tickers: tickersToSync, isDateChange }),
           });
 
           const data = await res.json();
@@ -424,11 +482,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         }
 
         // Complete any missing tickers using high-fidelity 20-day historical catalog
-        watchlistRef.current.forEach((stock) => {
-          if (!baselineMap.has(stock.ticker)) {
-            const master = getStockMasterByTicker(stock.ticker);
-            const baseAvg = master?.avgVol20DM || stock.avgVol20DM || 5.0;
-            baselineMap.set(stock.ticker, baseAvg);
+        tickersToSync.forEach((ticker) => {
+          if (!baselineMap.has(ticker)) {
+            const master = getStockMasterByTicker(ticker);
+            const existingStock = watchlistRef.current.find((s) => s.ticker === ticker);
+            const baseAvg = master?.avgVol20DM || existingStock?.avgVol20DM || 5.0;
+            baselineMap.set(ticker, baseAvg);
           }
         });
 
@@ -436,8 +495,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         const currentClockStr = formatClockIST(nowSecs);
         const sessionStarted = hasTodayMarketSessionStarted();
 
-        setWatchlist((prevWl) =>
-          prevWl.map((stock) => {
+        // Update baselines for all active stocks WITHOUT removing or resetting any stocks!
+        setWatchlist((prevWl) => {
+          const updated = prevWl.map((stock) => {
             const newAvg20D = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
             if (isDateChange) {
               // Day Start / Date Rollover:
@@ -465,23 +525,43 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 crossoverSpotPrice: hasCrossed ? (stock.crossoverSpotPrice || stock.spotLtp) : null,
               };
             }
-          })
-        );
+          });
+
+          // Also ensure any tickers from DB that were not in prevWl are included
+          const existingTickersSet = new Set(updated.map((s) => normalizeTicker(s.ticker)));
+          tickersToSync.forEach((t) => {
+            if (!existingTickersSet.has(normalizeTicker(t))) {
+              const master = getStockMasterByTicker(t);
+              if (master) {
+                const stock = convertMasterToStock(master);
+                stock.avgVol20DM = baselineMap.get(t) ?? stock.avgVol20DM;
+                updated.push(stock);
+                existingTickersSet.add(normalizeTicker(t));
+              }
+            }
+          });
+
+          watchlistRef.current = updated;
+          return updated;
+        });
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(
+            'qp_active_watchlist_tickers',
+            JSON.stringify(watchlistRef.current.map((s) => s.ticker))
+          );
+        }
 
         if (isDateChange) {
           setCrossoverEvents([]);
           setIdempotencyLocks([]);
           if (typeof window !== 'undefined') {
             localStorage.setItem('qp_last_trading_date', todayDateStr);
-            localStorage.setItem(
-              'qp_active_watchlist_tickers',
-              JSON.stringify(watchlistRef.current.map((s) => s.ticker))
-            );
           }
           if (isSupabaseConfigured && supabase) {
             markSelfUpdating();
             const client = supabase;
-            watchlistRef.current.forEach((stock) => {
+            const updates = watchlistRef.current.map((stock) => {
               const newAvg = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
               const updatePayload: Record<string, any> = {
                 avg_vol_20d_m: newAvg,
@@ -493,32 +573,32 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 updatePayload.crossover_time = null;
                 updatePayload.crossover_spot_price = null;
               }
-              client.from('watchlist').update(updatePayload).eq('ticker', stock.ticker).then();
-              client.from('stock_master').update({ avg_vol_20d_m: newAvg }).eq('ticker', stock.ticker).then();
+              return Promise.allSettled([
+                client.from('watchlist').update(updatePayload).eq('ticker', stock.ticker),
+                client.from('stock_master').update({ avg_vol_20d_m: newAvg }).eq('ticker', stock.ticker),
+              ]);
             });
+            await Promise.allSettled(updates);
           }
           showToast(
-            `📅 Day Start (${todayDateStr}): Last 20-Day Traded Shares baselines updated. Intraday progress initialized for today.`,
+            `📅 Day Start (${todayDateStr}): Last 20-Day Traded Shares baselines updated for ${watchlistRef.current.length} symbols.`,
             'emerald'
           );
         } else {
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(
-              'qp_active_watchlist_tickers',
-              JSON.stringify(watchlistRef.current.map((s) => s.ticker))
-            );
-          }
           if (isSupabaseConfigured && supabase) {
             markSelfUpdating();
             const client = supabase;
-            watchlistRef.current.forEach((stock) => {
+            const updates = watchlistRef.current.map((stock) => {
               const newAvg = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
-              client.from('watchlist').update({ avg_vol_20d_m: newAvg, updated_at: new Date().toISOString() }).eq('ticker', stock.ticker).then();
-              client.from('stock_master').update({ avg_vol_20d_m: newAvg }).eq('ticker', stock.ticker).then();
+              return Promise.allSettled([
+                client.from('watchlist').update({ avg_vol_20d_m: newAvg, updated_at: new Date().toISOString() }).eq('ticker', stock.ticker),
+                client.from('stock_master').update({ avg_vol_20d_m: newAvg }).eq('ticker', stock.ticker),
+              ]);
             });
+            await Promise.allSettled(updates);
           }
           showToast(
-            `⚡ Last 20-Day Traded Shares baselines refreshed for ${currentTickers.length} symbols (${dataSource}).`,
+            `⚡ Last 20-Day Traded Shares baselines refreshed for ${watchlistRef.current.length} symbols (${dataSource}).`,
             'info'
           );
         }
@@ -527,9 +607,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         showToast(`Baseline Sync Notice: Local quantitative models active (${err.message})`, 'amber');
       } finally {
         setIsBaselineSyncing(false);
+        isBaselineSyncingRef.current = false;
+        if (selfUpdateTimeoutRef.current) clearTimeout(selfUpdateTimeoutRef.current);
+        selfUpdateTimeoutRef.current = setTimeout(() => {
+          isSelfUpdatingRef.current = false;
+        }, 2500);
       }
     },
-    [showToast]
+    [showToast, markSelfUpdating]
   );
 
   const clearCrossoverEvents = useCallback(() => {
@@ -620,10 +705,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           activeRecords = smRes.data.filter((s: any) => Boolean(s.is_active_watchlist));
         }
 
-        // If still empty (e.g. fresh DB instance), seed initial watchlist into DB table
+        // If still empty (e.g. fresh DB instance), ONLY fallback if in-memory watchlist is also empty
         if (activeRecords.length === 0) {
-          activeRecords = INITIAL_WATCHLIST_DATA;
-          saveStocksToWatchlistDb(INITIAL_WATCHLIST_DATA).catch(() => {});
+          if (watchlistRef.current && watchlistRef.current.length > 0) {
+            saveStocksToWatchlistDb(watchlistRef.current).catch(() => {});
+            return;
+          } else {
+            activeRecords = INITIAL_WATCHLIST_DATA;
+            saveStocksToWatchlistDb(INITIAL_WATCHLIST_DATA).catch(() => {});
+          }
         }
 
         if (activeRecords && activeRecords.length > 0) {
@@ -775,18 +865,37 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             };
           });
 
-          // PRESERVE USER'S WATCHLIST: Do NOT overwrite with hardcoded defaults
+          // PRESERVE USER'S WATCHLIST: Do NOT overwrite with a smaller subset or lose added stocks
           setWatchlist((prevWl) => {
-            if (isLiveStreamingRef.current) {
+            if (isLiveStreamingRef.current || isBaselineSyncingRef.current) {
               return prevWl;
             }
-            return mapped;
+
+            // Database is the primary source of truth for all records present in DB
+            const mappedMap = new Map<string, Stock>();
+            mapped.forEach((s) => mappedMap.set(normalizeTicker(s.ticker), s));
+
+            // Preserve any stocks currently in memory that might not be in DB yet
+            const preserved: Stock[] = [...mapped];
+            prevWl.forEach((stock) => {
+              if (!mappedMap.has(normalizeTicker(stock.ticker))) {
+                preserved.push(stock);
+              }
+            });
+
+            // If in-memory watchlist had stocks not in DB, sync them to DB asynchronously
+            if (preserved.length > mapped.length) {
+              saveStocksToWatchlistDb(preserved).catch(() => {});
+            }
+
+            watchlistRef.current = preserved;
+            return preserved;
           });
 
           if (typeof window !== 'undefined') {
             localStorage.setItem(
               'qp_active_watchlist_tickers',
-              JSON.stringify(mapped.map((s) => s.ticker))
+              JSON.stringify(watchlistRef.current.map((s) => s.ticker))
             );
           }
         }
@@ -904,7 +1013,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     const channel = supabase
       .channel('quantpulse-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlist' }, () => {
-        if (isSelfUpdatingRef.current || isLiveStreamingRef.current) return;
+        if (isSelfUpdatingRef.current || isLiveStreamingRef.current || isBaselineSyncingRef.current) return;
         loadFromSupabase();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crossover_events' }, () => {
@@ -2008,17 +2117,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         return;
       }
       const newStock: Stock = convertMasterToStock(master);
+      const updated = [...watchlistRef.current, newStock];
+      watchlistRef.current = updated;
+      setWatchlist(updated);
 
-      setWatchlist((prev) => {
-        const updated = [...prev, newStock];
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(
-            'qp_active_watchlist_tickers',
-            JSON.stringify(updated.map((s) => s.ticker))
-          );
-        }
-        return updated;
-      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'qp_active_watchlist_tickers',
+          JSON.stringify(updated.map((s) => s.ticker))
+        );
+      }
 
       let dbSaved = false;
       if (isSupabaseConfigured && supabase) {
@@ -2050,7 +2158,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       const newStockObjects = unadded.map((m) => convertMasterToStock(m));
       const nextWatchlist = [...watchlistRef.current, ...newStockObjects];
 
-      // 1. Update React state
+      // 1. Update React state & ref immediately
+      watchlistRef.current = nextWatchlist;
       setWatchlist(nextWatchlist);
 
       // 2. Persist to localStorage
@@ -2061,16 +2170,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         );
       }
 
-      // 3. Persist to Supabase Watch List DB table
+      // 3. Persist ALL active stocks to Supabase Watch List DB table so the DB remains the source of truth
       let dbSaved = false;
       if (isSupabaseConfigured && supabase) {
-        dbSaved = await saveStocksToWatchlistDb(newStockObjects);
+        dbSaved = await saveStocksToWatchlistDb(nextWatchlist);
       }
 
       showToast(
         dbSaved
-          ? `✅ Added all ${unadded.length} stocks to Watch List & synchronized to DB!`
-          : `✅ Added all ${unadded.length} stocks to Watch List!`,
+          ? `✅ Added all ${unadded.length} stocks to Watch List & synchronized to DB (${nextWatchlist.length} total)!`
+          : `✅ Added all ${unadded.length} stocks to Watch List (${nextWatchlist.length} total)!`,
         'emerald'
       );
     },
@@ -2104,6 +2213,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         return;
       }
       const updated = watchlistRef.current.filter((s) => s.ticker !== ticker);
+      watchlistRef.current = updated;
       setWatchlist(updated);
 
       if (selectedTicker === ticker && updated.length > 0) {

@@ -13,6 +13,7 @@ export function BrokerSettingsModal() {
     setIsBrokerModalOpen,
     brokerVaultStatus,
     refreshBrokerVaultStatus,
+    syncDailyBaselines,
   } = useQuantPulse();
 
   const [broker, setBroker] = useState<BrokerType>('DHAN');
@@ -207,31 +208,18 @@ export function BrokerSettingsModal() {
       return;
     }
 
+    // Persist active credentials to localStorage so syncDailyBaselines picks them up
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qp_dhan_client_id', clientId.trim());
+      localStorage.setItem('qp_dhan_access_token', accessToken.trim());
+    }
+
     setIsSyncingBaselines(true);
-    let updatedCount = 0;
-
     try {
-      for (const stock of watchlist.slice(0, 5)) {
-        const res = await fetch('/api/broker/dhan/historical-20d', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ticker: stock.ticker,
-            clientId: clientId.trim(),
-            accessToken: accessToken.trim(),
-          }),
-        });
-
-        const data = await res.json();
-        if (data.success) {
-          stock.avgVol20DM = data.avgVolume20DM;
-          updatedCount++;
-        }
-      }
-
-      showToast(`Synced real 20-Day Volume Baselines for ${updatedCount} stocks from Dhan!`, 'emerald');
+      await syncDailyBaselines(false, true);
+      showToast(`Synced real 20-Day Volume Baselines for all active stocks from Dhan!`, 'emerald');
     } catch (err: any) {
-      showToast(`Baseline sync error: ${err.message}`, 'rose');
+      showToast(`Baseline sync error: ${err?.message || err}`, 'rose');
     } finally {
       setIsSyncingBaselines(false);
     }

@@ -27,9 +27,10 @@ async function handleSync(req: NextRequest) {
 
     let clientId = process.env.DHAN_CLIENT_ID || '';
     let accessToken = process.env.DHAN_ACCESS_TOKEN || '';
-    let explicitTickers: string[] | null = null;
+    let isDateChange = false;
+    let explicitTickers: string[] = [];
 
-    // If POST, check if credentials or custom tickers were sent in body
+    // If POST, check if credentials, custom tickers, or isDateChange were sent in body
     if (req.method === 'POST') {
       try {
         const body = await req.json();
@@ -37,6 +38,9 @@ async function handleSync(req: NextRequest) {
         if (body.accessToken) accessToken = body.accessToken;
         if (body.tickers && Array.isArray(body.tickers) && body.tickers.length > 0) {
           explicitTickers = body.tickers;
+        }
+        if (body.isDateChange !== undefined) {
+          isDateChange = Boolean(body.isDateChange);
         }
       } catch {
         // no body or json
@@ -50,15 +54,25 @@ async function handleSync(req: NextRequest) {
       accessToken = accessToken || vault.accessToken;
     }
 
-    // 2. Fetch list of monitored tickers
-    let tickersToSync = explicitTickers || ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK'];
-
-    if (!explicitTickers && isSupabaseConfigured && supabase) {
-      const { data: dbStocks } = await supabase.from('watchlist').select('ticker');
-      if (dbStocks && dbStocks.length > 0) {
-        tickersToSync = dbStocks.map((s: any) => s.ticker);
+    // 2. Fetch list of monitored tickers - Database is the primary source of truth
+    let dbTickers: string[] = [];
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: dbStocks } = await supabase
+          .from('watchlist')
+          .select('ticker')
+          .filter('is_active_watchlist', 'neq', false);
+        if (dbStocks && dbStocks.length > 0) {
+          dbTickers = dbStocks.map((s: any) => s.ticker);
+        }
+      } catch (dbErr) {
+        console.warn('Notice: error querying active watchlist from DB in sync-baselines:', dbErr);
       }
     }
+
+    // Combine database tickers and any explicit tickers passed from frontend
+    const allMonitoredTickers = Array.from(new Set([...dbTickers, ...(explicitTickers || [])]));
+    let tickersToSync = allMonitoredTickers.length > 0 ? allMonitoredTickers : ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK'];
 
     // 3. Compute Baselines via Dhan API if credentials are present
     let calculationResults: BaselineCalculationOutput[] = [];
@@ -101,23 +115,60 @@ async function handleSync(req: NextRequest) {
       }
     }
 
-    // 4. Update Supabase Watchlist table for the new trading session
+    // 4. Update Supabase Watchlist table for the trading session
     let updatedInDb = 0;
     if (isSupabaseConfigured && supabase && calculationResults.length > 0) {
       for (const res of calculationResults) {
-        const { error } = await supabase
-          .from('watchlist')
-          .update({
-            avg_vol_20d_m: res.avgVolume20DM,
-            today_vol_m: 0.0, // Pre-market reset
-            has_crossed_20d: false, // Clear previous session crossover flags
-            crossover_time: null,
-            crossover_spot_price: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('ticker', res.ticker);
+        const updatePayload: Record<string, any> = {
+          avg_vol_20d_m: res.avgVolume20DM,
+          updated_at: new Date().toISOString(),
+        };
 
-        if (!error) updatedInDb++;
+        // ONLY reset today's volume & clear crossover flags during Day Start date rollover!
+        // Intraday 20D Sync MUST NOT zero out volume or clear crossover latches!
+        if (isDateChange) {
+          updatePayload.today_vol_m = 0.0;
+          updatePayload.has_crossed_20d = false;
+          updatePayload.crossover_time = null;
+          updatePayload.crossover_spot_price = null;
+        }
+
+        const { data: updatedRows, error: updateErr } = await supabase
+          .from('watchlist')
+          .update(updatePayload)
+          .eq('ticker', res.ticker)
+          .select('ticker');
+
+        if (!updateErr && updatedRows && updatedRows.length > 0) {
+          updatedInDb++;
+        } else if (!updateErr && (!updatedRows || updatedRows.length === 0)) {
+          // If ticker is not yet in watchlist table, insert it so it is preserved in the DB!
+          const master = getStockMasterByTicker(res.ticker);
+          if (master) {
+            await supabase.from('watchlist').insert({
+              ticker: master.ticker,
+              short_name: master.shortName,
+              name: master.name,
+              isin: master.isin,
+              segment: master.segment,
+              sector: master.sector,
+              security_id: master.securityId,
+              is_fno: master.isFnO,
+              lot_size: master.lotSize,
+              strike_step: master.strikeStep,
+              spot_ltp: master.approxLtp,
+              today_vol_m: 0.0,
+              avg_vol_20d_m: res.avgVolume20DM,
+              has_crossed_20d: false,
+              crossover_time: null,
+              crossover_spot_price: null,
+              iv_pct: master.isFnO ? 16.5 : 0,
+              is_active_watchlist: true,
+              updated_at: new Date().toISOString(),
+            });
+            updatedInDb++;
+          }
+        }
       }
     }
 

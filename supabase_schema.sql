@@ -128,9 +128,10 @@ CREATE POLICY "Allow anonymous select on crossover_events" ON public.crossover_e
 CREATE POLICY "Allow anonymous select on active_positions" ON public.active_positions FOR SELECT TO anon USING (true);
 CREATE POLICY "Allow anonymous select on system_config" ON public.system_config FOR SELECT TO anon USING (true);
 
--- Allow anonymous insert/update for demo purposes (can be restricted to authenticated later)
+-- Allow anonymous insert/update/delete for demo purposes (can be restricted to authenticated later)
 CREATE POLICY "Allow anonymous insert on watchlist" ON public.watchlist FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "Allow anonymous update on watchlist" ON public.watchlist FOR UPDATE TO anon USING (true);
+CREATE POLICY "Allow anonymous update on watchlist" ON public.watchlist FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anonymous delete on watchlist" ON public.watchlist FOR DELETE TO anon USING (true);
 
 CREATE POLICY "Allow anonymous insert on crossover_events" ON public.crossover_events FOR INSERT TO anon WITH CHECK (true);
 
