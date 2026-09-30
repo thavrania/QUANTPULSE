@@ -6,12 +6,14 @@ export type InstrumentMode = 'STOCK' | 'OPTION';
 export type ExecutionMode = 'MANUAL' | 'AUTO';
 
 export interface Stock {
-  ticker: string; // Short name / Symbol (e.g. TCS, RELIANCE)
-  name: string; // Full Company Name
+  ticker: string; // NSE Symbol / Ticker (e.g. TCS, RELIANCE)
+  shortName?: string; // Market Short Name (e.g. Reliance, TCS, HDFC Bank, ICICI Bank)
+  name: string; // Exact Registered Real Market Company Name (e.g. Reliance Industries Limited)
   isFnO: boolean;
   segment?: 'NSE_FNO' | 'NSE_EQ' | string;
   sector?: string; // Industry sector (e.g. IT Services, Banking)
   securityId?: string; // Dhan Official Security ID
+  isin?: string; // International Securities Identification Number (e.g. INE002A01018)
   lotSize: number;
   strikeStep: number;
   spotLtp: number;
@@ -31,12 +33,14 @@ export interface Stock {
 }
 
 export interface StockMasterItem {
-  ticker: string; // Short name (e.g. TCS, RELIANCE, HDFCBANK, ICICIBANK)
-  name: string; // Full Company Name
+  ticker: string; // Official NSE Trading Symbol (e.g. RELIANCE, TCS)
+  shortName: string; // Real Market Short Name (e.g. Reliance, TCS, HDFC Bank, ICICI Bank)
+  name: string; // Exact Legal Registered Name (e.g. Reliance Industries Limited)
   segment: 'NSE_FNO' | 'NSE_EQ';
   exchange: 'NSE';
   sector: string;
   securityId: string;
+  isin: string;
   lotSize: number;
   strikeStep: number;
   avgVol20DM: number;

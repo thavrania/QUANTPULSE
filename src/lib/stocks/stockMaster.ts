@@ -1,8 +1,9 @@
 // =====================================================================
 // QUANTPULSE — Master Stock Universe & Metadata Registry
-// Contains complete information on all stocks (Short Name, Full Name,
-// Segment, Exchange, Sector, Dhan Security ID, Lot Size, Strike Step,
-// and 20-Day Baseline Volume).
+// Contains complete, official real-market information on all stocks
+// (Official NSE Symbol, Market Short Name, Exact Legal Company Name,
+// ISIN, Segment, Exchange, Sector, Dhan Security ID, Lot Size,
+// Strike Step, and 20-Day Baseline Volume).
 // =====================================================================
 
 import { StockMasterItem, Stock } from '../types/quant';
@@ -10,7 +11,9 @@ import { StockMasterItem, Stock } from '../types/quant';
 export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   {
     ticker: 'RELIANCE',
+    shortName: 'Reliance',
     name: 'Reliance Industries Limited',
+    isin: 'INE002A01018',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Oil & Gas / Conglomerate',
@@ -23,7 +26,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'TCS',
+    shortName: 'TCS',
     name: 'Tata Consultancy Services Limited',
+    isin: 'INE467B01029',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Information Technology',
@@ -36,7 +41,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'HDFCBANK',
+    shortName: 'HDFC Bank',
     name: 'HDFC Bank Limited',
+    isin: 'INE040A01034',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Private Banking & Financials',
@@ -49,7 +56,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'ICICIBANK',
+    shortName: 'ICICI Bank',
     name: 'ICICI Bank Limited',
+    isin: 'INE090A01021',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Private Banking & Financials',
@@ -62,7 +71,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'INFY',
+    shortName: 'Infosys',
     name: 'Infosys Limited',
+    isin: 'INE009A01021',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Information Technology',
@@ -75,7 +86,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'SBIN',
+    shortName: 'SBI',
     name: 'State Bank of India',
+    isin: 'INE062A01020',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Public Sector Banking',
@@ -88,7 +101,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'BHARTIARTL',
+    shortName: 'Bharti Airtel',
     name: 'Bharti Airtel Limited',
+    isin: 'INE397D01024',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Telecommunications',
@@ -101,7 +116,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'KOTAKBANK',
+    shortName: 'Kotak Bank',
     name: 'Kotak Mahindra Bank Limited',
+    isin: 'INE237A01028',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Private Banking',
@@ -114,7 +131,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'LT',
+    shortName: 'L&T',
     name: 'Larsen & Toubro Limited',
+    isin: 'INE018A01030',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Infrastructure & Engineering',
@@ -127,7 +146,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'AXISBANK',
+    shortName: 'Axis Bank',
     name: 'Axis Bank Limited',
+    isin: 'INE238A01034',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Private Banking',
@@ -140,7 +161,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'TATAMOTORS',
+    shortName: 'Tata Motors',
     name: 'Tata Motors Limited',
+    isin: 'INE155A01022',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Automobile Manufacturers',
@@ -153,7 +176,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'MARUTI',
+    shortName: 'Maruti Suzuki',
     name: 'Maruti Suzuki India Limited',
+    isin: 'INE585B01010',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Automobile Manufacturers',
@@ -166,7 +191,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'BAJFINANCE',
+    shortName: 'Bajaj Finance',
     name: 'Bajaj Finance Limited',
+    isin: 'INE296A01024',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Non-Banking Financial Services (NBFC)',
@@ -179,7 +206,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'TATASTEEL',
+    shortName: 'Tata Steel',
     name: 'Tata Steel Limited',
+    isin: 'INE081A01020',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Iron & Steel / Metals',
@@ -192,7 +221,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'ITC',
+    shortName: 'ITC',
     name: 'ITC Limited',
+    isin: 'INE154A01025',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'FMCG & Cigarettes / Hotels',
@@ -205,7 +236,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'SUNPHARMA',
+    shortName: 'Sun Pharma',
     name: 'Sun Pharmaceutical Industries Limited',
+    isin: 'INE044A01036',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Pharmaceuticals',
@@ -218,7 +251,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'WIPRO',
+    shortName: 'Wipro',
     name: 'Wipro Limited',
+    isin: 'INE075A01022',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Information Technology',
@@ -231,7 +266,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'HINDUNILVR',
+    shortName: 'Hindustan Unilever',
     name: 'Hindustan Unilever Limited',
+    isin: 'INE030A01027',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'FMCG & Consumer Goods',
@@ -244,7 +281,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'TITAN',
+    shortName: 'Titan Company',
     name: 'Titan Company Limited',
+    isin: 'INE280A01028',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Gems, Jewellery & Luxury',
@@ -257,7 +296,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'ADANIENT',
+    shortName: 'Adani Enterprises',
     name: 'Adani Enterprises Limited',
+    isin: 'INE423A01024',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Metals, Mining & Trading',
@@ -270,7 +311,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'ADANIPORTS',
+    shortName: 'Adani Ports',
     name: 'Adani Ports and Special Economic Zone Limited',
+    isin: 'INE742F01042',
     segment: 'NSE_FNO',
     exchange: 'NSE',
     sector: 'Ports & Infrastructure',
@@ -283,7 +326,9 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
   },
   {
     ticker: 'ZOMATO',
-    name: 'Zomato Limited (Cash Equity Only)',
+    shortName: 'Zomato',
+    name: 'Zomato Limited',
+    isin: 'INE758T01015',
     segment: 'NSE_EQ',
     exchange: 'NSE',
     sector: 'Online Food Delivery & Quick Commerce',
@@ -297,16 +342,18 @@ export const STOCK_MASTER_CATALOG: StockMasterItem[] = [
 ];
 
 /**
- * Converts a StockMasterItem into a live tracking Stock object
+ * Converts a StockMasterItem into a live tracking Stock object with exact real market names
  */
 export function convertMasterToStock(master: StockMasterItem): Stock {
   return {
     ticker: master.ticker,
+    shortName: master.shortName,
     name: master.name,
     isFnO: master.isFnO,
     segment: master.segment,
     sector: master.sector,
     securityId: master.securityId,
+    isin: master.isin,
     lotSize: master.lotSize,
     strikeStep: master.strikeStep,
     spotLtp: master.approxLtp || 1000,
@@ -317,6 +364,7 @@ export function convertMasterToStock(master: StockMasterItem): Stock {
     crossoverSpotPrice: null,
     ivPct: master.isFnO ? 16.5 : 0,
     justCrossedHighlight: false,
+    feedSource: 'LIVE_DHAN',
   };
 }
 

@@ -220,12 +220,21 @@ export function ZoneB_Watchlist() {
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-white">{stock.ticker}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-xs text-white">{stock.ticker}</span>
+                      {stock.shortName && stock.shortName !== stock.ticker && (
+                        <span className="text-[10px] text-cyan-300 font-semibold font-sans">
+                          ({stock.shortName})
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold">
                       {stock.segment || 'NSE_FNO'}
                     </span>
                   </div>
-                  <div className="text-[10px] text-slate-400 truncate mt-0.5">{stock.name}</div>
+                  <div className="text-[10px] text-slate-300 font-medium truncate mt-0.5" title={stock.name}>
+                    {stock.name}
+                  </div>
                   <div className="flex items-center justify-between text-[10px] font-mono mt-2 text-slate-300">
                     <span>₹{stock.spotLtp.toFixed(1)}</span>
                     <span className="text-cyan-300">{stock.avgVol20DM}M 20D</span>
@@ -385,8 +394,13 @@ export function ZoneB_Watchlist() {
                       className={`hover:bg-slate-900/60 ${isInWatchlist ? 'bg-cyan-950/20' : ''}`}
                     >
                       <td className="py-2 px-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-white">{stock.ticker}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-white font-mono">{stock.ticker}</span>
+                          {stock.shortName && stock.shortName !== stock.ticker && (
+                            <span className="text-[10px] text-cyan-300 font-semibold font-sans">
+                              ({stock.shortName})
+                            </span>
+                          )}
                           <span
                             className={`text-[9px] px-1 py-0.2 rounded font-semibold ${
                               stock.segment === 'NSE_FNO'
@@ -397,10 +411,14 @@ export function ZoneB_Watchlist() {
                             {stock.segment}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-300 font-sans truncate max-w-[160px]">
+                        <div className="text-[10px] text-slate-200 font-sans truncate max-w-[200px]" title={stock.name}>
                           {stock.name}
                         </div>
-                        <div className="text-[9px] text-slate-500">Dhan ID: {stock.securityId}</div>
+                        <div className="text-[9px] text-slate-500 flex items-center gap-1.5 font-mono">
+                          <span>ID: {stock.securityId}</span>
+                          <span>•</span>
+                          <span>{stock.isin}</span>
+                        </div>
                       </td>
 
                       <td className="py-2 px-2.5 text-[10px] font-sans text-slate-300">

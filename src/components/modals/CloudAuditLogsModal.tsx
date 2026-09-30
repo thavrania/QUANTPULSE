@@ -618,8 +618,18 @@ export function CloudAuditLogsModal() {
                   {stockMasterList.map((stock) => (
                     <tr key={stock.ticker} className="hover:bg-slate-900/50">
                       <td className="py-2 px-2.5">
-                        <span className="font-bold text-white">{stock.ticker}</span>
-                        <div className="text-[10px] text-slate-300 font-sans">{stock.name}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-white font-mono">{stock.ticker}</span>
+                          {stock.shortName && stock.shortName !== stock.ticker && (
+                            <span className="text-[10px] text-cyan-300 font-semibold font-sans">
+                              ({stock.shortName})
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-200 font-sans">{stock.name}</div>
+                        {stock.isin && (
+                          <div className="text-[9px] text-slate-500 font-mono">ISIN: {stock.isin}</div>
+                        )}
                       </td>
                       <td className="py-2 px-2.5">
                         <span

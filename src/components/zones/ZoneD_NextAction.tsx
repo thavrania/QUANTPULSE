@@ -64,8 +64,13 @@ export function ZoneD_NextAction() {
             }`}
           >
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-bold text-white">{stock.ticker}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-base font-bold text-white font-mono">{stock.ticker}</span>
+                {stock.shortName && stock.shortName !== stock.ticker && (
+                  <span className="text-xs font-semibold text-cyan-300">
+                    ({stock.shortName})
+                  </span>
+                )}
                 <span
                   className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
                     isEligible
@@ -76,6 +81,7 @@ export function ZoneD_NextAction() {
                   {isEligible ? 'ELIGIBLE FOR BUY' : 'NOT ELIGIBLE YET'}
                 </span>
               </div>
+              <div className="text-[11px] text-slate-300 font-medium mt-0.5">{stock.name}</div>
               <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
                 Today Vol: <span className="text-white font-semibold">{stock.todayVolM.toFixed(2)}M</span>
                 {' '}/ 20D Avg:{' '}

@@ -248,7 +248,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             const master = getStockMasterByTicker(d.ticker);
             return {
               ticker: d.ticker,
-              name: d.name || master?.name || d.ticker,
+              shortName: d.short_name || master?.shortName || d.ticker,
+              name: master?.name || d.name || d.ticker,
+              isin: d.isin || master?.isin || '',
               isFnO: d.is_fno !== undefined ? Boolean(d.is_fno) : (master?.isFnO ?? true),
               segment: d.segment || master?.segment || (d.is_fno ? 'NSE_FNO' : 'NSE_EQ'),
               sector: d.sector || master?.sector || '',
@@ -1042,7 +1044,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         }
         const newStock: Stock = {
           ticker: master.ticker,
+          shortName: master.shortName,
           name: master.name,
+          isin: master.isin,
           isFnO: master.isFnO,
           segment: master.segment,
           sector: master.sector,
