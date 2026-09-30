@@ -39,7 +39,14 @@ import {
 import { MarketSessionInfo, getIndianMarketSession, getISTDate, hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 import { IngestionTelemetry } from '@/lib/services/liveIngestionEngine';
 import { requestQueueEngine } from '@/lib/engine/requestQueueEngine';
-import { formatTslAlert, formatOrderAlert } from '@/lib/alerts/telegramService';
+import { formatTslAlert, formatOrderAlert, formatAutoPilotAlert, sendTelegramMessage } from '@/lib/alerts/telegramService';
+import {
+  evaluateAutoPilot,
+  PreMarketAutoPilotStatus,
+  AutoPilotStepId,
+  setStoredAutoPilotEnabled,
+  saveStepCompleted,
+} from '@/lib/services/preMarketAutoPilotService';
 
 export interface ToastMessage {
   id: string;
@@ -106,6 +113,11 @@ interface QuantPulseContextType {
   setIsCloudLogsModalOpen: (open: boolean) => void;
   removeToast: (id: string) => void;
   showToast: (message: string, variant?: 'info' | 'emerald' | 'amber' | 'rose') => void;
+  autoPilotStatus: PreMarketAutoPilotStatus;
+  isAutoPilotModalOpen: boolean;
+  setIsAutoPilotModalOpen: (open: boolean) => void;
+  toggleAutoPilot: () => void;
+  runAutoPilotStepNow: (stepId: AutoPilotStepId) => Promise<void>;
 }
 
 const QuantPulseContext = createContext<QuantPulseContextType | undefined>(undefined);
@@ -187,6 +199,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     streamActive: false,
     pulseIntervalMs: 2000,
   });
+
+  const [autoPilotStatus, setAutoPilotStatus] = useState<PreMarketAutoPilotStatus>(() =>
+    evaluateAutoPilot(getNowIstSeconds(), false).status
+  );
+  const [isAutoPilotModalOpen, setIsAutoPilotModalOpen] = useState<boolean>(false);
+  const runningAutoPilotStepRef = useRef<AutoPilotStepId | null>(null);
+  const executeAutoPilotStepRef = useRef<((stepId: AutoPilotStepId) => Promise<void>) | null>(null);
 
   const packetCountRef = useRef<number>(0);
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -465,6 +484,18 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       const secs = ist.hours * 3600 + ist.minutes * 60 + ist.seconds;
       setClockSeconds(secs);
       setMarketSession(getIndianMarketSession());
+
+      // Pre-Market Auto-Pilot continuous evaluation & scheduled trigger check
+      const { status: apStatus, shouldTriggerStep } = evaluateAutoPilot(
+        secs,
+        isLiveStreamingRef.current,
+        runningAutoPilotStepRef.current
+      );
+      setAutoPilotStatus(apStatus);
+
+      if (shouldTriggerStep && executeAutoPilotStepRef.current) {
+        executeAutoPilotStepRef.current(shouldTriggerStep);
+      }
 
       // Midnight date change rollover detection
       if (ist.dateStr !== currentTradingDateRef.current) {
@@ -1471,6 +1502,111 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     showToast('🔄 Watchlist initialized for Day Start (Traded Shares set to today\'s session).', 'info');
   }, [syncDailyBaselines, fetchLiveDhanQuotes, showToast]);
 
+  const executeAutoPilotStep = useCallback(
+    async (stepId: AutoPilotStepId) => {
+      if (runningAutoPilotStepRef.current) return;
+      runningAutoPilotStepRef.current = stepId;
+      const ist = getISTDate();
+
+      try {
+        if (stepId === 'STEP_1_SYNC_20D') {
+          showToast('🤖 Auto-Pilot: Step 1 (09:00 AM) — 20D Baseline Sync starting...', 'info');
+          await syncDailyBaselines(false, true);
+          saveStepCompleted('STEP_1_SYNC_20D', ist.timeStr, ist.dateStr);
+          showToast('✅ Step 1 Done: 20D Baselines synced for today.', 'emerald');
+
+          if (typeof window !== 'undefined') {
+            const botToken = localStorage.getItem('qp_telegram_bot_token');
+            const chatId = localStorage.getItem('qp_telegram_chat_id');
+            if (botToken && chatId) {
+              const msg = formatAutoPilotAlert(1, '20D Baseline Sync', 'Calculated 20-Day historical volume benchmarks for all focus stocks.', ist.timeStr);
+              sendTelegramMessage(botToken, chatId, msg).catch(() => {});
+            }
+          }
+        } else if (stepId === 'STEP_2_DAY_START') {
+          showToast('🤖 Auto-Pilot: Step 2 (09:00 AM) — Day Start Session Reset starting...', 'info');
+          await resetToDayStart();
+          saveStepCompleted('STEP_2_DAY_START', ist.timeStr, ist.dateStr);
+          showToast('✅ Step 2 Done: Day Start Initialized (0.00M volume reset).', 'emerald');
+
+          if (typeof window !== 'undefined') {
+            const botToken = localStorage.getItem('qp_telegram_bot_token');
+            const chatId = localStorage.getItem('qp_telegram_chat_id');
+            if (botToken && chatId) {
+              const msg = formatAutoPilotAlert(2, 'Day Start Session Reset', 'Today traded volume zeroed. Cleared prior crossover event flags.', ist.timeStr);
+              sendTelegramMessage(botToken, chatId, msg).catch(() => {});
+            }
+          }
+        } else if (stepId === 'STEP_3_LIVE_SYNC') {
+          showToast('🤖 Auto-Pilot: Step 3 (09:07 AM) — Pre-Open Discovered Quotes Sync...', 'info');
+          await fetchLiveDhanQuotes(true);
+          saveStepCompleted('STEP_3_LIVE_SYNC', ist.timeStr, ist.dateStr);
+          showToast('✅ Step 3 Done: Discovered pre-open prices synced & Option strikes calibrated.', 'emerald');
+
+          if (typeof window !== 'undefined') {
+            const botToken = localStorage.getItem('qp_telegram_bot_token');
+            const chatId = localStorage.getItem('qp_telegram_chat_id');
+            if (botToken && chatId) {
+              const msg = formatAutoPilotAlert(3, 'Pre-Open Live Sync', 'NSE pre-open discovered opening prices synced. ATM Option strikes calibrated.', ist.timeStr);
+              sendTelegramMessage(botToken, chatId, msg).catch(() => {});
+            }
+          }
+        } else if (stepId === 'STEP_4_START_FEED') {
+          showToast('🤖 Auto-Pilot: Step 4 (09:14 AM) — Starting Live Feed ahead of Opening Bell...', 'emerald');
+          setFeedModeState('DHAN_LIVE');
+          setIsLiveStreaming(true);
+          saveStepCompleted('STEP_4_START_FEED', ist.timeStr, ist.dateStr);
+          showToast('🟢 Step 4 Done: Live Feed Connected! Ready for 09:15 Opening Bell.', 'emerald');
+
+          if (typeof window !== 'undefined') {
+            const botToken = localStorage.getItem('qp_telegram_bot_token');
+            const chatId = localStorage.getItem('qp_telegram_chat_id');
+            if (botToken && chatId) {
+              const msg = formatAutoPilotAlert(4, 'Start Live Feed', 'Live quote & tick ingestion active. Armed for 09:15 opening bell!', ist.timeStr);
+              sendTelegramMessage(botToken, chatId, msg).catch(() => {});
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error(`Auto-Pilot ${stepId} error:`, err);
+        showToast(`⚠️ Auto-Pilot ${stepId} error: ${err.message || 'Unknown error'}`, 'rose');
+      } finally {
+        runningAutoPilotStepRef.current = null;
+        const istNow = getISTDate();
+        const secs = istNow.hours * 3600 + istNow.minutes * 60 + istNow.seconds;
+        setAutoPilotStatus(evaluateAutoPilot(secs, isLiveStreamingRef.current, null).status);
+      }
+    },
+    [syncDailyBaselines, resetToDayStart, fetchLiveDhanQuotes, showToast]
+  );
+
+  useEffect(() => {
+    executeAutoPilotStepRef.current = executeAutoPilotStep;
+  }, [executeAutoPilotStep]);
+
+  const toggleAutoPilot = useCallback(() => {
+    setAutoPilotStatus((prev) => {
+      const nextEnabled = !prev.enabled;
+      setStoredAutoPilotEnabled(nextEnabled);
+      showToast(
+        nextEnabled
+          ? '🤖 Pre-Market Auto-Pilot ACTIVATED (09:00 -> 09:01 -> 09:07 -> 09:14)'
+          : '⏸️ Pre-Market Auto-Pilot PAUSED (Manual Execution Mode)',
+        nextEnabled ? 'emerald' : 'amber'
+      );
+      const ist = getISTDate();
+      const secs = ist.hours * 3600 + ist.minutes * 60 + ist.seconds;
+      return evaluateAutoPilot(secs, isLiveStreamingRef.current, runningAutoPilotStepRef.current).status;
+    });
+  }, [showToast]);
+
+  const runAutoPilotStepNow = useCallback(
+    async (stepId: AutoPilotStepId) => {
+      await executeAutoPilotStep(stepId);
+    },
+    [executeAutoPilotStep]
+  );
+
   const toggleLiveStream = useCallback(() => {
     setIsLiveStreaming((prev) => {
       const next = !prev;
@@ -1991,6 +2127,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         refreshBrokerVaultStatus,
         marketSession,
         ingestionTelemetry,
+        autoPilotStatus,
+        isAutoPilotModalOpen,
+        setIsAutoPilotModalOpen,
+        toggleAutoPilot,
+        runAutoPilotStepNow,
       }}
     >
       {children}

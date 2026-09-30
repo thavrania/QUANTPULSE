@@ -114,3 +114,14 @@ export function formatTslAlert(
 ──────────────────────
 _QuantPulse High-Frequency Trailing Stop-Loss Engine_`;
 }
+
+export function formatAutoPilotAlert(stepNumber: number, stepName: string, details: string, timeIST: string): string {
+  return `🤖 *QUANTPULSE — PRE-MARKET AUTO-PILOT (Step ${stepNumber}/4)*
+──────────────────────
+• *Action:* \`${stepName}\`
+• *Status:* ✅ COMPLETED
+• *Execution Time:* \`${timeIST} IST\`
+• *Details:* ${details}
+──────────────────────
+⚡ _Automated NSE/BSE Pre-Market Pipeline (QuantPulse)_`;
+}

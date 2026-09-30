@@ -33,6 +33,8 @@ export function ZoneA_Header() {
     brokerVaultStatus,
     marketSession,
     ingestionTelemetry,
+    autoPilotStatus,
+    setIsAutoPilotModalOpen,
   } = useQuantPulse();
 
   return (
@@ -75,6 +77,35 @@ export function ZoneA_Header() {
                 ></span>
                 <span>{marketSession.statusLabel}</span>
               </span>
+
+              {/* Pre-Market Auto-Pilot Status Pill */}
+              {autoPilotStatus && (
+                <button
+                  type="button"
+                  onClick={() => setIsAutoPilotModalOpen(true)}
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold border transition flex items-center gap-1.5 cursor-pointer shadow-sm ${
+                    autoPilotStatus.enabled
+                      ? autoPilotStatus.isPreMarketWindow
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 animate-pulse'
+                        : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-white'
+                  }`}
+                  title="Pre-Market Auto-Pilot (09:00 20D Sync → Day Start → 09:07 Live Sync → 09:14 Feed Start). Click to configure."
+                >
+                  <span className="text-xs">🤖</span>
+                  <span className="font-sans font-bold">Auto-Pilot:</span>
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      autoPilotStatus.enabled
+                        ? autoPilotStatus.isPreMarketWindow
+                          ? 'bg-cyan-400 animate-ping'
+                          : 'bg-emerald-400'
+                        : 'bg-slate-500'
+                    }`}
+                  ></span>
+                  <span>{autoPilotStatus.statusBadge}</span>
+                </button>
+              )}
 
               {/* Live Ingestion Telemetry Packet Monitor */}
               {isLiveStreaming && (
@@ -346,6 +377,18 @@ export function ZoneA_Header() {
                 <span>🔌 Broker: Dhan HQ</span>
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setIsAutoPilotModalOpen(true)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 ${
+                autoPilotStatus?.enabled
+                  ? 'bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border-cyan-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
+              title="Pre-Market Auto-Pilot Workflow & Timetable"
+            >
+              <span>🤖 Auto-Pilot</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsAlertsModalOpen(true)}
