@@ -50,6 +50,19 @@ export function getISTDate(refDate?: Date): {
 }
 
 /**
+ * Determines if today's regular NSE continuous trading session has already opened.
+ * Continuous trading takes place from 09:15 to 15:30 IST on Monday through Friday.
+ * Before 09:15 IST (e.g. pre-market or closed), zero shares have traded in today's regular session,
+ * so today's traded volume is strictly 0.00M.
+ */
+export function hasTodayMarketSessionStarted(refDate?: Date): boolean {
+  const { hours, minutes, dayOfWeek } = getISTDate(refDate);
+  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+  const timeInMinutes = hours * 60 + minutes;
+  return isWeekday && timeInMinutes >= 9 * 60 + 15;
+}
+
+/**
  * Calculates current market session state
  */
 export function getIndianMarketSession(refDate?: Date): MarketSessionInfo {

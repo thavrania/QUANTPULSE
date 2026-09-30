@@ -31,7 +31,7 @@ import {
   closeTradeOrderInCloud,
   logBatchTickSnapshotsToCloud,
 } from '@/lib/services/supabaseTelemetryService';
-import { MarketSessionInfo, getIndianMarketSession, getISTDate } from '@/lib/services/marketHoursService';
+import { MarketSessionInfo, getIndianMarketSession, getISTDate, hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 import { IngestionTelemetry } from '@/lib/services/liveIngestionEngine';
 import { requestQueueEngine } from '@/lib/engine/requestQueueEngine';
 
@@ -438,6 +438,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         const todayDateStr = getISTDate().dateStr;
         const { data: wlData } = await supabase!.from('watchlist').select('*');
         if (wlData && wlData.length > 0) {
+          const sessionStarted = hasTodayMarketSessionStarted();
           const mapped: Stock[] = wlData.map((d: any) => {
             const master = getStockMasterByTicker(d.ticker);
             let isUpdatedToday = false;
@@ -447,7 +448,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 isUpdatedToday = getISTDate(dt).dateStr === todayDateStr;
               }
             }
-            const todayVol = isUpdatedToday ? (Number(d.today_vol_m) || 0) : 0;
+            // Before 09:15 IST on trading days or on weekends, today's regular session has not traded.
+            // Today's traded volume must remain 0.00M, and crossover cannot trigger!
+            const todayVol = (sessionStarted && isUpdatedToday) ? (Number(d.today_vol_m) || 0) : 0;
             const avgVol = Number(d.avg_vol_20d_m) || master?.avgVol20DM || 1.0;
             const spot = Number(d.spot_ltp) || master?.approxLtp || 1000;
             const dayOpen = d.day_open ? Number(d.day_open) : spot;
@@ -456,6 +459,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
             // Rule 1 & Rule 5: Volume must genuinely meet/exceed 20D average (>0) AND price must be bullish
             const hasCrossed =
+              sessionStarted &&
               isUpdatedToday &&
               Boolean(d.has_crossed_20d) &&
               todayVol >= avgVol &&
@@ -954,78 +958,90 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         const quotesMap = data.quotes;
         const nowTime = formatClockIST(clockSecondsRef.current);
+        const sessionStarted = hasTodayMarketSessionStarted();
 
         setWatchlist((prevWl) => {
           const updatedWl = prevWl.map((stock) => {
             const q = quotesMap[stock.ticker];
             if (!q) return stock;
 
+            // Before 09:15 IST on trading days or on weekends, today's regular session has not traded.
+            // Today's traded volume must remain 0.00M, and crossover cannot trigger!
+            const safeTodayVol = sessionStarted
+              ? (q.volumeM !== undefined ? Number(q.volumeM) : stock.todayVolM)
+              : 0.0;
+
             const updated: Stock = {
               ...stock,
               spotLtp: q.ltp || stock.spotLtp,
-              todayVolM: q.volumeM !== undefined ? q.volumeM : stock.todayVolM,
-              dayHigh: q.high || stock.dayHigh,
-              dayLow: q.low || stock.dayLow,
-              dayOpen: q.open || stock.dayOpen,
+              todayVolM: safeTodayVol,
+              dayHigh: sessionStarted ? (q.high || stock.dayHigh) : (q.ltp || stock.spotLtp),
+              dayLow: sessionStarted ? (q.low || stock.dayLow) : (q.ltp || stock.spotLtp),
+              dayOpen: sessionStarted ? (q.open || stock.dayOpen) : (q.ltp || stock.spotLtp),
               dayClose: q.close || stock.dayClose,
               changePct: q.changePct !== undefined ? q.changePct : stock.changePct,
               feedSource: 'LIVE_DHAN',
+              hasCrossed20D: sessionStarted ? stock.hasCrossed20D : false,
+              crossoverTime: sessionStarted ? stock.crossoverTime : null,
+              crossoverSpotPrice: sessionStarted ? stock.crossoverSpotPrice : null,
             };
 
-            const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, nowTime);
-            if (newlyCrossed && event) {
-              setCrossoverEvents((prevEv) => [event, ...prevEv]);
-              showToast(
-                `🚀 [LIVE MARKET] ${stock.ticker} Crossed 20D Volume (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)}!`,
-                'emerald'
-              );
+            if (sessionStarted && safeTodayVol > 0) {
+              const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, nowTime);
+              if (newlyCrossed && event) {
+                setCrossoverEvents((prevEv) => [event, ...prevEv]);
+                showToast(
+                  `🚀 [LIVE MARKET] ${stock.ticker} Crossed 20D Volume (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)}!`,
+                  'emerald'
+                );
 
-              if (isSupabaseConfigured && supabase) {
-                markSelfUpdating();
-                supabase
-                  .from('crossover_events')
-                  .insert({
-                    ticker: event.ticker,
-                    time_ist: event.time,
-                    avg_vol_20d_m: event.avgVol20DM,
-                    cross_price: event.crossPrice,
-                    is_fno: event.isFnO,
-                  })
-                  .then();
-                supabase
-                  .from('watchlist')
-                  .update({
-                    has_crossed_20d: true,
-                    crossover_time: event.time,
-                    crossover_spot_price: event.crossPrice,
-                    spot_ltp: updated.spotLtp,
-                    today_vol_m: updated.todayVolM,
-                    day_high: updated.dayHigh,
-                    day_low: updated.dayLow,
-                    day_open: updated.dayOpen,
-                    day_close: updated.dayClose,
-                    change_pct: updated.changePct,
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq('ticker', event.ticker)
-                  .then();
-              }
+                if (isSupabaseConfigured && supabase) {
+                  markSelfUpdating();
+                  supabase
+                    .from('crossover_events')
+                    .insert({
+                      ticker: event.ticker,
+                      time_ist: event.time,
+                      avg_vol_20d_m: event.avgVol20DM,
+                      cross_price: event.crossPrice,
+                      is_fno: event.isFnO,
+                    })
+                    .then();
+                  supabase
+                    .from('watchlist')
+                    .update({
+                      has_crossed_20d: true,
+                      crossover_time: event.time,
+                      crossover_spot_price: event.crossPrice,
+                      spot_ltp: updated.spotLtp,
+                      today_vol_m: updated.todayVolM,
+                      day_high: updated.dayHigh,
+                      day_low: updated.dayLow,
+                      day_open: updated.dayOpen,
+                      day_close: updated.dayClose,
+                      change_pct: updated.changePct,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('ticker', event.ticker)
+                    .then();
+                }
 
-              // Telegram push
-              if (typeof window !== 'undefined') {
-                const botToken = localStorage.getItem('qp_telegram_bot_token');
-                const chatId = localStorage.getItem('qp_telegram_chat_id');
-                const notifyCross = localStorage.getItem('qp_notify_crossover') !== 'false';
-                if (botToken && chatId && notifyCross) {
-                  fetch('/api/alerts/telegram', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      botToken,
-                      chatId,
-                      message: `🚀 *QUANTPULSE 20D CROSSOVER (LIVE FEED)!*\nSymbol: \`${stock.ticker}\`\nTime: \`${nowTime} IST\`\nToday Vol: \`${updated.todayVolM.toFixed(2)}M\` (vs 20D: \`${stock.avgVol20DM.toFixed(2)}M\`)\nSpot Price: \`₹${updated.spotLtp.toFixed(2)}\`\nStatus: 🟢 *ELIGIBLE FOR BUY*`,
-                    }),
-                  }).catch(() => {});
+                // Telegram push
+                if (typeof window !== 'undefined') {
+                  const botToken = localStorage.getItem('qp_telegram_bot_token');
+                  const chatId = localStorage.getItem('qp_telegram_chat_id');
+                  const notifyCross = localStorage.getItem('qp_notify_crossover') !== 'false';
+                  if (botToken && chatId && notifyCross) {
+                    fetch('/api/alerts/telegram', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        botToken,
+                        chatId,
+                        message: `🚀 *QUANTPULSE 20D CROSSOVER (LIVE FEED)!*\nSymbol: \`${stock.ticker}\`\nTime: \`${nowTime} IST\`\nToday Vol: \`${updated.todayVolM.toFixed(2)}M\` (vs 20D: \`${stock.avgVol20DM.toFixed(2)}M\`)\nSpot Price: \`₹${updated.spotLtp.toFixed(2)}\`\nStatus: 🟢 *ELIGIBLE FOR BUY*`,
+                      }),
+                    }).catch(() => {});
+                  }
                 }
               }
             }
@@ -1033,8 +1049,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             return updated;
           });
 
-          // Run auto-mode scan
-          runAutoScan(updatedWl, idempotencyLocksRef.current, positionsRef.current);
+          // Run auto-mode scan only if regular market has opened today
+          if (sessionStarted) {
+            runAutoScan(updatedWl, idempotencyLocksRef.current, positionsRef.current);
+          }
           return updatedWl;
         });
 
@@ -1112,7 +1130,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           const snapshots = Object.entries(quotesMap).map(([ticker, q]: [string, any]) => {
             const stock = currentWl.find((s) => s.ticker === ticker);
             const avgVol = stock?.avgVol20DM || 1.0;
-            const vol = q.volumeM !== undefined ? Number(q.volumeM) : 0;
+            const vol = sessionStarted ? (q.volumeM !== undefined ? Number(q.volumeM) : 0) : 0;
             return {
               ticker,
               timestamp_ist: nowTime,
@@ -1130,11 +1148,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           markSelfUpdating();
           const client = supabase;
           Object.entries(quotesMap).forEach(([ticker, q]: [string, any]) => {
+            const vol = sessionStarted ? (q.volumeM !== undefined ? Number(q.volumeM) : 0) : 0;
             client
               .from('watchlist')
               .update({
                 spot_ltp: Number(q.ltp) || 0,
-                today_vol_m: q.volumeM !== undefined ? Number(q.volumeM) : 0,
+                today_vol_m: vol,
                 day_high: q.high ? Number(q.high) : undefined,
                 day_low: q.low ? Number(q.low) : undefined,
                 day_open: q.open ? Number(q.open) : undefined,

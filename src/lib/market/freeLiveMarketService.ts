@@ -1,4 +1,5 @@
 import { LiveQuoteRecord } from '@/app/api/broker/dhan/quote/route';
+import { getISTDate, hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 
 /**
  * 100% Free Live Market Data Service for Indian Equities (NSE)
@@ -42,16 +43,35 @@ export async function fetchFreeLiveQuotes(
 
       const ltp = Number(meta.regularMarketPrice) || 0;
       const prevClose = Number(meta.chartPreviousClose) || ltp;
-      const rawVol =
-        Number(meta.regularMarketVolume) ||
-        (Array.isArray(quoteIndicator?.volume) && quoteIndicator.volume[0]) ||
-        0;
+
+      const ist = getISTDate();
+      const todayDateStr = ist.dateStr;
+      const sessionStarted = hasTodayMarketSessionStarted();
+
+      // Check whether Yahoo's quote timestamp corresponds to today's date in IST
+      let isQuoteFromToday = false;
+      if (meta.regularMarketTime) {
+        const quoteDate = new Date(meta.regularMarketTime * 1000);
+        isQuoteFromToday = getISTDate(quoteDate).dateStr === todayDateStr;
+      }
+
+      // Today's traded volume is only valid if regular trading has opened today (>= 09:15 IST)
+      // AND the quote timestamp is genuinely from today's session.
+      // Outside market hours or before 09:15 IST, volume for today is strictly 0.00M.
+      const isTodayVolumeValid = sessionStarted && isQuoteFromToday;
+      const rawVol = isTodayVolumeValid
+        ? (Number(meta.regularMarketVolume) ||
+           (Array.isArray(quoteIndicator?.volume) && quoteIndicator.volume[0]) ||
+           0)
+        : 0;
 
       const volumeM = +(rawVol / 1_000_000).toFixed(3);
-      const dayHigh = Number(meta.regularMarketDayHigh) || ltp;
-      const dayLow = Number(meta.regularMarketDayLow) || ltp;
-      const dayOpen =
-        (Array.isArray(quoteIndicator?.open) && Number(quoteIndicator.open[0])) || ltp;
+      const dayHigh = isTodayVolumeValid ? (Number(meta.regularMarketDayHigh) || ltp) : ltp;
+      const dayLow = isTodayVolumeValid ? (Number(meta.regularMarketDayLow) || ltp) : ltp;
+      const dayOpen = isTodayVolumeValid
+        ? ((Array.isArray(quoteIndicator?.open) && Number(quoteIndicator.open[0])) || ltp)
+        : ltp;
+
       const changePct =
         meta.regularMarketChangePercent !== undefined
           ? +Number(meta.regularMarketChangePercent).toFixed(2)

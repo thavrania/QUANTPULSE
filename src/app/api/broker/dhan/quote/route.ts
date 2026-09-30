@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
 import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 import { fetchFreeLiveQuotes } from '@/lib/market/freeLiveMarketService';
+import { hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 
 export interface LiveQuoteRecord {
   ltp: number;
@@ -85,6 +86,7 @@ export async function POST(req: NextRequest) {
       const nseData = quoteData?.data?.NSE_EQ || {};
 
       const quotes: Record<string, LiveQuoteRecord> = {};
+      const sessionStarted = hasTodayMarketSessionStarted();
 
       tickerList.forEach((sym) => {
         const secId = getDhanSecurityId(sym);
@@ -94,9 +96,13 @@ export async function POST(req: NextRequest) {
           const close = item.close || ltp;
           const calcChange = close > 0 ? +(((ltp - close) / close) * 100).toFixed(2) : 0;
 
+          // Before 09:15 IST, Dhan quotes carry yesterday's accumulated volume.
+          // Zero it out if regular market continuous trading has not opened today.
+          const effectiveVolume = sessionStarted ? (item.volume || 0) : 0;
+
           quotes[sym] = {
             ltp: +(ltp).toFixed(2),
-            volumeM: +((item.volume || 0) / 1_000_000).toFixed(3),
+            volumeM: +((effectiveVolume) / 1_000_000).toFixed(3),
             high: +(item.high || ltp).toFixed(2),
             low: +(item.low || ltp).toFixed(2),
             open: +(item.open || ltp).toFixed(2),
