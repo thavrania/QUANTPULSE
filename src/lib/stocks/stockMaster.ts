@@ -357,7 +357,7 @@ export function convertMasterToStock(master: StockMasterItem): Stock {
     lotSize: master.lotSize,
     strikeStep: master.strikeStep,
     spotLtp: master.approxLtp || 1000,
-    todayVolM: +(master.avgVol20DM * 0.4).toFixed(2),
+    todayVolM: 0.0,
     avgVol20DM: master.avgVol20DM,
     hasCrossed20D: false,
     crossoverTime: null,

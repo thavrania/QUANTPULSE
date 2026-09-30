@@ -83,13 +83,13 @@ export function ZoneD_NextAction() {
                   {isEligible
                     ? 'ELIGIBLE FOR BUY'
                     : payload.eligibilityStatus === 'HIGH_VOL_BEARISH'
-                    ? 'VOL CROSSED (BEARISH)'
+                    ? 'SHARES CROSSED (BEARISH)'
                     : 'NOT ELIGIBLE YET'}
                 </span>
               </div>
               <div className="text-[11px] text-slate-300 font-medium mt-0.5">{stock.name}</div>
               <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-                Today Vol: <span className="text-white font-semibold">{stock.todayVolM.toFixed(2)}M</span>
+                Today Shares: <span className="text-white font-semibold">{stock.todayVolM.toFixed(2)}M</span>
                 {' '}/ 20D Avg:{' '}
                 <span className="text-cyan-300 font-semibold">{stock.avgVol20DM.toFixed(2)}M</span>
                 {' '}({payload.volumeTracking.crossoverProgressPct}%)
@@ -102,7 +102,7 @@ export function ZoneD_NextAction() {
             <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-emerald-300 flex items-center gap-1">
-                  ⏱️ 20D Vol Crossover Time:
+                  ⏱️ 20D Shares Crossover Time:
                 </span>
                 <span className="font-mono font-bold text-amber-300 bg-obsidian/80 px-2 py-0.5 rounded border border-amber-500/30">
                   {stock.crossoverTime} IST
@@ -120,29 +120,29 @@ export function ZoneD_NextAction() {
           ) : payload.eligibilityStatus === 'HIGH_VOL_BEARISH' ? (
             <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-2">
               <div className="text-xs font-bold text-rose-300 flex items-center justify-between">
-                <span>⚠️ Volume Crossed 20D Average, but Price is Bearish</span>
-                <span className="font-mono text-emerald-400">Vol: {payload.volumeTracking.crossoverProgressPct}%</span>
+                <span>⚠️ Traded Shares Crossed 20D Average, but Price is Bearish</span>
+                <span className="font-mono text-emerald-400">Shares: {payload.volumeTracking.crossoverProgressPct}%</span>
               </div>
               <p className="text-[11px] text-slate-300">
-                Rule 1 Filter: Buying is locked because <strong className="text-white">{stock.ticker}</strong> is trading below its day open / red candle (LTP: ₹{stock.spotLtp.toFixed(2)}). Buy orders require both 20D volume breakout AND bullish price action.
+                Rule 1 Filter: Buying is locked because <strong className="text-white">{stock.ticker}</strong> is trading below its day open / red candle (LTP: ₹{stock.spotLtp.toFixed(2)}). Buy orders require both 20D traded shares breakout AND bullish price action.
               </p>
             </div>
           ) : (
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
               <div className="text-xs font-bold text-amber-300 flex items-center justify-between">
-                <span>⏳ Waiting for 20D Vol Crossover</span>
+                <span>⏳ Waiting for 20D Traded Shares Crossover</span>
                 <span className="font-mono">{payload.volumeTracking.crossoverProgressPct}%</span>
               </div>
               <p className="text-[11px] text-slate-300">
                 Needs <strong className="font-mono text-white">+{payload.volumeTracking.remainingDeficitM.toFixed(2)}M</strong>{' '}
-                more volume today to beat the 20-day average (<strong className="font-mono">{stock.avgVol20DM.toFixed(2)}M</strong>) and unlock buying.
+                more traded shares today to beat the 20-day average (<strong className="font-mono">{stock.avgVol20DM.toFixed(2)}M</strong>) and unlock buying.
               </p>
               <button
                 type="button"
                 onClick={() => forceCrossover(stock.ticker)}
                 className="w-full py-1.5 rounded-lg text-xs font-bold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition"
               >
-                ⚡ Simulate Volume Crossover Now
+                ⚡ Simulate Traded Shares Crossover Now
               </button>
             </div>
           )}
@@ -298,7 +298,7 @@ export function ZoneD_NextAction() {
                 disabled
                 className="w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider bg-slate-800/80 text-slate-500 border border-slate-700 cursor-not-allowed"
               >
-                🔒 Locked Until 20D Volume Crossover
+                🔒 Locked Until 20D Traded Shares Crossover
               </button>
             )
           ) : (
@@ -311,8 +311,8 @@ export function ZoneD_NextAction() {
               </div>
               <p className="text-[11px] text-slate-300">
                 {isAlreadyTraded
-                  ? `${stock.ticker} was automatically bought upon crossing its 20-Day Volume Average at ${stock.crossoverTime}.`
-                  : `The instant ${stock.ticker} crosses ${stock.avgVol20DM.toFixed(2)}M volume, the system will auto-buy ${activeLeg.symbol} via ${isPaperMode ? 'Paper Engine' : 'Live Dhan API'}.`}
+                  ? `${stock.ticker} was automatically bought upon crossing its 20-Day Traded Shares Average at ${stock.crossoverTime}.`
+                  : `The instant ${stock.ticker} crosses ${stock.avgVol20DM.toFixed(2)}M traded shares, the system will auto-buy ${activeLeg.symbol} via ${isPaperMode ? 'Paper Engine' : 'Live Dhan API'}.`}
               </p>
             </div>
           )}

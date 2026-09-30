@@ -306,41 +306,40 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           console.warn('Backend baseline sync API notice, activating quantitative baseline fallback:', apiErr);
         }
 
-        // Complete any missing tickers using high-fidelity 20-day historical catalog & rolling session model
+        // Complete any missing tickers using high-fidelity 20-day historical catalog
         watchlistRef.current.forEach((stock) => {
           if (!baselineMap.has(stock.ticker)) {
             const master = getStockMasterByTicker(stock.ticker);
             const baseAvg = master?.avgVol20DM || stock.avgVol20DM || 5.0;
-            // Minor daily session shift (+- 1.5%) reflecting the rolling 20-day window
-            const drift = +((Math.random() - 0.48) * 0.08).toFixed(2);
-            const recalculatedAvg = Math.max(0.2, +(baseAvg + drift).toFixed(2));
-            baselineMap.set(stock.ticker, recalculatedAvg);
+            baselineMap.set(stock.ticker, baseAvg);
           }
         });
 
         const nowSecs = getNowIstSeconds();
         const currentClockStr = formatClockIST(nowSecs);
+        const sessionStarted = hasTodayMarketSessionStarted();
 
         setWatchlist((prevWl) =>
           prevWl.map((stock) => {
             const newAvg20D = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
             if (isDateChange) {
-              // Day Start / Date Rollover: volume starts fresh at 0.0M
-              const dayStartVol = 0.0;
-              // Evaluate crossover eligibility status against the new 20D baseline
-              const hasCrossed = dayStartVol >= newAvg20D;
+              // Day Start / Date Rollover:
+              // If continuous trading has not started today (e.g. pre-market or closed), Traded Shares is strictly 0.0
+              // Do not fall back to previous trading day's traded shares or mock data.
+              const dayStartVol = sessionStarted ? stock.todayVolM : 0.0;
+              const hasCrossed = sessionStarted && dayStartVol >= newAvg20D && dayStartVol > 0;
               return {
                 ...stock,
                 avgVol20DM: newAvg20D,
                 todayVolM: dayStartVol,
                 hasCrossed20D: hasCrossed,
-                crossoverTime: null,
-                crossoverSpotPrice: null,
+                crossoverTime: hasCrossed ? stock.crossoverTime : null,
+                crossoverSpotPrice: hasCrossed ? stock.crossoverSpotPrice : null,
                 justCrossedHighlight: false,
               };
             } else {
-              // Mid-day refresh: keep today's traded volume and re-evaluate crossover eligibility against new 20D baseline
-              const hasCrossed = stock.todayVolM >= newAvg20D;
+              // Mid-day refresh: keep today's traded shares and re-evaluate crossover eligibility against new 20D baseline
+              const hasCrossed = sessionStarted && stock.todayVolM >= newAvg20D && stock.todayVolM > 0;
               return {
                 ...stock,
                 avgVol20DM: newAvg20D,
@@ -358,13 +357,29 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           if (typeof window !== 'undefined') {
             localStorage.setItem('qp_last_trading_date', todayDateStr);
           }
+          if (isSupabaseConfigured && supabase && !sessionStarted) {
+            markSelfUpdating();
+            watchlistRef.current.forEach((stock) => {
+              supabase
+                .from('watchlist')
+                .update({
+                  today_vol_m: 0.0,
+                  has_crossed_20d: false,
+                  crossover_time: null,
+                  crossover_spot_price: null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('ticker', stock.ticker)
+                .then();
+            });
+          }
           showToast(
-            `📅 Day Start (${todayDateStr}): Last 20-Day Volume baselines updated. Intraday progress reset to 0.0M (Tracking Vol).`,
+            `📅 Day Start (${todayDateStr}): Last 20-Day Traded Shares baselines updated. Intraday progress initialized for today.`,
             'emerald'
           );
         } else {
           showToast(
-            `⚡ Last 20-Day Volume baselines refreshed for ${currentTickers.length} symbols (${dataSource}).`,
+            `⚡ Last 20-Day Traded Shares baselines refreshed for ${currentTickers.length} symbols (${dataSource}).`,
             'info'
           );
         }
@@ -377,11 +392,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     },
     [showToast]
   );
-
-  const resetToDayStart = useCallback(async () => {
-    await syncDailyBaselines(true, true);
-    showToast('🔄 Watchlist reset to fresh Day Start baseline state.', 'info');
-  }, [syncDailyBaselines, showToast]);
 
   const clearCrossoverEvents = useCallback(() => {
     setCrossoverEvents([]);
@@ -1195,6 +1205,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const refreshLiveQuotesNow = useCallback(async () => {
     await fetchLiveDhanQuotes(true);
   }, [fetchLiveDhanQuotes]);
+
+  const resetToDayStart = useCallback(async () => {
+    await syncDailyBaselines(true, true);
+    // If continuous trading has already started today, initialize Traded Shares with today's live feed
+    if (hasTodayMarketSessionStarted()) {
+      await fetchLiveDhanQuotes(true);
+    }
+    showToast('🔄 Watchlist initialized for Day Start (Traded Shares set to today\'s session).', 'info');
+  }, [syncDailyBaselines, fetchLiveDhanQuotes, showToast]);
 
   const toggleLiveStream = useCallback(() => {
     setIsLiveStreaming((prev) => {

@@ -23,7 +23,7 @@ export function AddStockModal() {
 
     const spot = parseFloat(spotLtp) || 1000;
     const avg = parseFloat(avgVol) || 10;
-    const today = parseFloat(todayVol) || 5;
+    const today = parseFloat(todayVol) || 0;
 
     addCustomStock({
       ticker: sym,
@@ -49,7 +49,7 @@ export function AddStockModal() {
         <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-            Add Stock to 20-Day Volume Monitor
+            Add Stock to 20-Day Traded Shares Monitor
           </h3>
           <button
             type="button"
@@ -127,7 +127,7 @@ export function AddStockModal() {
               />
             </div>
             <div>
-              <label className="block text-[10px] text-slate-400 uppercase mb-1 font-semibold">20D Avg Vol(M)</label>
+              <label className="block text-[10px] text-slate-400 uppercase mb-1 font-semibold">20D Avg Shares (M)</label>
               <input
                 type="number"
                 step="0.05"
@@ -138,7 +138,7 @@ export function AddStockModal() {
               />
             </div>
             <div>
-              <label className="block text-[10px] text-slate-400 uppercase mb-1 font-semibold">Today Vol (M)</label>
+              <label className="block text-[10px] text-slate-400 uppercase mb-1 font-semibold">Today Shares (M)</label>
               <input
                 type="number"
                 step="0.05"

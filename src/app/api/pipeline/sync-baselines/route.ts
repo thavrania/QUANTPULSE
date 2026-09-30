@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
-import { batchSyncWatchlistBaselines, BaselineCalculationOutput } from '@/lib/engine/baselineBatchService';
+import { batchSyncWatchlistBaselines, calculateFree20DBaseline, BaselineCalculationOutput } from '@/lib/engine/baselineBatchService';
 import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 import { getStockMasterByTicker } from '@/lib/stocks/stockMaster';
 
@@ -75,27 +75,29 @@ async function handleSync(req: NextRequest) {
       }
     }
 
-    // High-Fidelity Master Fallback for any tickers missing from calculation (or when Data API is not subscribed)
+    // Fallback: Compute true 20-day historical baseline from free NSE candles (or master catalog without mock drift)
     const calculatedTickerSet = new Set(calculationResults.map((r) => r.ticker));
     for (const ticker of tickersToSync) {
       if (!calculatedTickerSet.has(ticker)) {
-        const master = getStockMasterByTicker(ticker);
-        const baseAvg = master?.avgVol20DM || 5.0;
-        // Minor realistic daily drift (+- 1.5%) to reflect latest completed session
-        const drift = +((Math.random() - 0.5) * 0.08).toFixed(2);
-        const finalAvg = Math.max(0.5, +(baseAvg + drift).toFixed(2));
+        const freeBaseline = await calculateFree20DBaseline(ticker);
+        if (freeBaseline) {
+          calculationResults.push(freeBaseline);
+        } else {
+          const master = getStockMasterByTicker(ticker);
+          const finalAvg = master?.avgVol20DM || 5.0;
 
-        calculationResults.push({
-          ticker,
-          securityId: master?.securityId || '1330',
-          avgVolume20DM: finalAvg,
-          totalVolumeSumM: +(finalAvg * 20).toFixed(2),
-          sessionsEvaluated: 20,
-          volatilityStdDevM: +(finalAvg * 0.15).toFixed(2),
-          shortTerm5DAvgM: +(finalAvg * 1.02).toFixed(2),
-          trendRatio: 1.02,
-          calculatedAt: new Date().toISOString(),
-        });
+          calculationResults.push({
+            ticker,
+            securityId: master?.securityId || '1330',
+            avgVolume20DM: finalAvg,
+            totalVolumeSumM: +(finalAvg * 20).toFixed(2),
+            sessionsEvaluated: 20,
+            volatilityStdDevM: +(finalAvg * 0.15).toFixed(2),
+            shortTerm5DAvgM: +(finalAvg * 1.02).toFixed(2),
+            trendRatio: 1.02,
+            calculatedAt: new Date().toISOString(),
+          });
+        }
       }
     }
 

@@ -261,9 +261,9 @@ export function ZoneA_Header() {
                 type="button"
                 onClick={simulateSingleTick}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
-                title="Advance 1 Volume & Price Tick across all stocks"
+                title="Advance 1 Traded Shares & Price Tick across all stocks"
               >
-                + Boost Vol Tick
+                + Boost Shares Tick
               </button>
             )}
 

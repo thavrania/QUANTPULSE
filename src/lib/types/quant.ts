@@ -17,8 +17,10 @@ export interface Stock {
   lotSize: number;
   strikeStep: number;
   spotLtp: number;
-  todayVolM: number;
-  avgVol20DM: number;
+  todayVolM: number; // Cumulative Traded Shares today (in Millions)
+  avgVol20DM: number; // 20-Day Average Traded Shares (in Millions)
+  todayTradedShares?: number; // Exact count of shares traded today
+  avg20DTradedShares?: number; // Exact count of 20-day average traded shares
   hasCrossed20D: boolean;
   crossoverTime: string | null;
   crossoverSpotPrice: number | null;
@@ -89,6 +91,8 @@ export interface VolumeMetrics {
   progressPct: number;
   rvolRatio: number;
   deficitM: number;
+  deficitShares?: number;
+  surplusShares?: number;
   isEligibleForBuy: boolean;
   statusCode: VolumeStatusCode;
   statusBadge: string;

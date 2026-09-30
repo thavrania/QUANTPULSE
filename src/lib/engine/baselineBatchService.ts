@@ -4,6 +4,7 @@
 // =====================================================================
 
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { getISTDate } from '@/lib/services/marketHoursService';
 
 export interface BaselineCalculationOutput {
   ticker: string;
@@ -15,6 +16,76 @@ export interface BaselineCalculationOutput {
   shortTerm5DAvgM: number;
   trendRatio: number; // 5D Avg / 20D Avg
   calculatedAt: string;
+}
+
+/**
+ * Calculates true 20-Day Traded Shares baseline directly from Yahoo Finance historical daily candles (free fallback).
+ * Filters down to completed daily trading sessions (excluding today's live/incomplete session).
+ */
+export async function calculateFree20DBaseline(
+  ticker: string
+): Promise<BaselineCalculationOutput | null> {
+  try {
+    const response = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}.NS?interval=1d&range=2mo`,
+      {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        cache: 'no-store',
+      }
+    );
+
+    if (!response.ok) return null;
+
+    const json = await response.json();
+    const chart = json?.chart?.result?.[0];
+    const timestamps: number[] = chart?.timestamp || [];
+    const vols: number[] = chart?.indicators?.quote?.[0]?.volume || [];
+    if (!timestamps.length || !vols.length) return null;
+
+    const todayDateStr = getISTDate().dateStr;
+    const completedVolumes: number[] = [];
+
+    // Filter to completed daily trading sessions with positive traded volume
+    for (let i = 0; i < timestamps.length; i++) {
+      const vol = vols[i] || 0;
+      if (vol <= 0) continue;
+      const barDate = getISTDate(new Date(timestamps[i] * 1000)).dateStr;
+      // Do not include today's in-progress session in the completed 20-session historical baseline
+      if (barDate === todayDateStr) continue;
+      completedVolumes.push(vol);
+    }
+
+    if (completedVolumes.length < 5) return null;
+
+    const last20 = completedVolumes.slice(-20);
+    const sumVol = last20.reduce((acc, v) => acc + v, 0);
+    const avgVol = sumVol / last20.length;
+    const avgVolume20DM = +(avgVol / 1_000_000).toFixed(3);
+
+    const last5 = last20.slice(-5);
+    const sum5D = last5.reduce((acc, v) => acc + v, 0);
+    const shortTerm5DAvgM = +(sum5D / last5.length / 1_000_000).toFixed(3);
+
+    const variance =
+      last20.reduce((acc, v) => acc + Math.pow(v / 1_000_000 - avgVolume20DM, 2), 0) /
+      last20.length;
+    const volatilityStdDevM = +Math.sqrt(variance).toFixed(3);
+    const trendRatio = +(shortTerm5DAvgM / Math.max(avgVolume20DM, 0.001)).toFixed(2);
+
+    return {
+      ticker,
+      securityId: getDhanSecurityId(ticker),
+      avgVolume20DM,
+      totalVolumeSumM: +(sumVol / 1_000_000).toFixed(2),
+      sessionsEvaluated: last20.length,
+      volatilityStdDevM,
+      shortTerm5DAvgM,
+      trendRatio,
+      calculatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

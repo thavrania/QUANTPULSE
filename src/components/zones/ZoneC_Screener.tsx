@@ -25,10 +25,10 @@ export function ZoneC_Screener() {
         <div>
           <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            Zone C: Live Stock Volume vs. 20-Day Average Crossover Tracker
+            Zone C: Live Stock Traded Shares vs. 20-Day Average Crossover Tracker
           </h2>
           <p className="text-[11px] text-slate-400">
-            Stocks crossing their 20-Day Average Volume latch the exact crossover time and become{' '}
+            Stocks crossing their 20-Day Average Traded Shares latch the exact crossover time and become{' '}
             <strong className="text-emerald-300">ELIGIBLE FOR BUY</strong>
           </p>
         </div>
@@ -56,7 +56,7 @@ export function ZoneC_Screener() {
           <thead>
             <tr className="border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-400 bg-obsidian/60">
               <th className="py-2.5 px-3">Stock &amp; Segment</th>
-              <th className="py-2.5 px-3">Today Vol vs 20D Avg</th>
+              <th className="py-2.5 px-3">Today Traded Shares vs 20D Avg</th>
               <th className="py-2.5 px-3">Crossover Progress</th>
               <th className="py-2.5 px-3">Exact Crossover Time</th>
               <th className="py-2.5 px-3">Spot LTP &amp; Cross Price</th>
@@ -125,12 +125,13 @@ export function ZoneC_Screener() {
                     </div>
                   </td>
 
-                  {/* Today Vol vs 20D Avg & RVOL Ratio */}
+                  {/* Today Traded Shares vs 20D Avg & RVOL Ratio */}
                   <td className="py-2.5 px-3 font-mono">
                     <div className={`font-bold ${m.isEligibleForBuy ? 'text-emerald-400' : 'text-slate-200'} flex items-center gap-1.5 flex-wrap`}>
                       <span>{stock.todayVolM.toFixed(2)}M</span>
                       <span className="text-slate-500 font-normal">/</span>
                       <span>{stock.avgVol20DM.toFixed(2)}M</span>
+                      <span className="text-[10px] text-slate-400 font-normal">shares</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold ${
                         m.rvolRatio >= 1.0
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
@@ -139,10 +140,13 @@ export function ZoneC_Screener() {
                         {m.rvolRatio}x RVOL
                       </span>
                     </div>
-                    <div className={`text-[10px] ${m.isEligibleForBuy ? 'text-emerald-300/80 font-bold' : 'text-slate-400'}`}>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      {Math.round(stock.todayVolM * 1_000_000).toLocaleString('en-IN')} / {Math.round(stock.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares
+                    </div>
+                    <div className={`text-[10px] mt-0.5 ${m.isEligibleForBuy ? 'text-emerald-300/80 font-bold' : 'text-slate-400'}`}>
                       {m.isEligibleForBuy
-                        ? `🚀 Cross Surplus: +${(stock.todayVolM - stock.avgVol20DM).toFixed(2)}M`
-                        : `Deficit: ${m.deficitM.toFixed(2)}M remaining`}
+                        ? `🚀 Surplus: +${Math.round((stock.todayVolM - stock.avgVol20DM) * 1_000_000).toLocaleString('en-IN')} shares (+${(stock.todayVolM - stock.avgVol20DM).toFixed(2)}M)`
+                        : `Deficit: ${Math.round(m.deficitM * 1_000_000).toLocaleString('en-IN')} shares remaining (${m.deficitM.toFixed(2)}M)`}
                     </div>
                   </td>
 
@@ -229,13 +233,13 @@ export function ZoneC_Screener() {
                     ) : m.statusCode === 'HIGH_VOL_BEARISH' ? (
                       <span
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                        title="Volume crossed 20D average but stock is below day open (red candle)"
+                        title="Traded shares crossed 20D average but stock is below day open (red candle)"
                       >
-                        ⚠️ VOL CROSSED (BEARISH)
+                        ⚠️ SHARES CROSSED (BEARISH)
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold bg-slate-800 text-slate-400 border border-slate-700">
-                        TRACKING VOL
+                        TRACKING SHARES
                       </span>
                     )}
                   </td>
@@ -250,9 +254,9 @@ export function ZoneC_Screener() {
                           forceCrossover(stock.ticker);
                         }}
                         className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition"
-                        title="Force Today's Volume to cross 20-Day Average right now"
+                        title="Force Today's Traded Shares to cross 20-Day Average right now"
                       >
-                        ⚡ Cross 20D Now
+                        ⚡ Cross 20D Shares Now
                       </button>
                     ) : (
                       <span className="text-[10px] font-mono text-emerald-400 font-semibold">

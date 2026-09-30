@@ -38,7 +38,7 @@ export function ZoneB_Watchlist() {
 
     const spot = parseFloat(spotInput) || 1000;
     const avg = parseFloat(avgVolInput) || 10;
-    const cur = parseFloat(curVolInput) || 9.5;
+    const cur = parseFloat(curVolInput) || 0;
 
     addCustomStock({
       ticker: sym,
@@ -137,8 +137,8 @@ export function ZoneB_Watchlist() {
           {showAddForm && (
             <form onSubmit={handleSubmit} className="p-3 border-b border-slate-800 bg-obsidian/70 space-y-2">
               <div className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
-                <span>Add Stock to Volume Tracker</span>
-                <span className="text-[10px] text-slate-400">Today vs 20D Vol</span>
+                <span>Add Stock to Traded Shares Tracker</span>
+                <span className="text-[10px] text-slate-400">Today vs 20D Shares</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -205,7 +205,7 @@ export function ZoneB_Watchlist() {
                 type="submit"
                 className="w-full py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition"
               >
-                + Add Stock to 20D Volume Monitor
+                + Add Stock to 20D Traded Shares Monitor
               </button>
             </form>
           )}
@@ -242,11 +242,11 @@ export function ZoneB_Watchlist() {
                   </div>
                   <div className="flex items-center justify-between text-[10px] font-mono mt-2 text-slate-300">
                     <span>₹{stock.spotLtp.toFixed(1)}</span>
-                    <span className="text-cyan-300">{stock.avgVol20DM}M 20D</span>
+                    <span className="text-cyan-300">{stock.avgVol20DM}M Shares</span>
                   </div>
                   <div className="mt-1 flex items-center justify-between text-[9px]">
                     <span className={stock.hasCrossed20D ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-                      {stock.hasCrossed20D ? '✅ 20D Crossed' : '⏳ Tracking Vol'}
+                      {stock.hasCrossed20D ? '✅ 20D Crossed' : '⏳ Tracking Shares'}
                     </span>
                     {watchlist.length > 1 && (
                       <button
@@ -274,7 +274,7 @@ export function ZoneB_Watchlist() {
                 <span>🌅 09:00 AM Pre-Market Engine</span>
                 <span className="text-[10px] font-mono text-cyan-300">({currentTradingDate})</span>
               </div>
-              <div className="text-[10px] text-slate-400">Automated 20D Volume Baseline &amp; Session Engine</div>
+              <div className="text-[10px] text-slate-400">Automated 20D Traded Shares Baseline &amp; Session Engine</div>
             </div>
             <div className="flex items-center gap-1.5">
               <button
@@ -282,7 +282,7 @@ export function ZoneB_Watchlist() {
                 disabled={isBaselineSyncing}
                 onClick={() => syncDailyBaselines(false, true)}
                 className="px-2 py-1 rounded text-[10px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 disabled:opacity-50"
-                title="Recalculate 20-Day volume baselines from the last 20 completed sessions"
+                title="Recalculate 20-Day traded shares baselines from the last 20 completed sessions"
               >
                 <span>{isBaselineSyncing ? '⏳ Syncing...' : '⚡ 20D Sync'}</span>
               </button>
@@ -322,7 +322,7 @@ export function ZoneB_Watchlist() {
           <div className="p-2.5 flex-1 overflow-y-auto space-y-2 max-h-[220px]">
             {crossoverEvents.length === 0 ? (
               <div className="p-4 text-center text-xs text-slate-500">
-                No active watchlist stocks have crossed their 20-Day Average Volume yet.
+                No active watchlist stocks have crossed their 20-Day Average Traded Shares yet.
               </div>
             ) : (
               crossoverEvents.map((ev, idx) => (
@@ -347,7 +347,7 @@ export function ZoneB_Watchlist() {
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-300 font-mono">
-                    Crossed 20D Avg (<span className="text-white">{ev.avgVol20DM.toFixed(2)}M</span>) @ Spot{' '}
+                    Crossed 20D Avg (<span className="text-white">{ev.avgVol20DM.toFixed(2)}M shares</span>) @ Spot{' '}
                     <span className="text-emerald-300 font-semibold">₹{ev.crossPrice.toFixed(2)}</span>
                   </div>
                 </div>

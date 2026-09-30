@@ -121,8 +121,10 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
   const progressPct = +((stock.todayVolM / Math.max(stock.avgVol20DM, 0.001)) * 100).toFixed(1);
   const rvolRatio = +(stock.todayVolM / Math.max(stock.avgVol20DM, 0.001)).toFixed(2);
   const deficitM = Math.max(0, +(stock.avgVol20DM - stock.todayVolM).toFixed(3));
+  const deficitShares = Math.max(0, Math.round((stock.avgVol20DM - stock.todayVolM) * 1_000_000));
+  const surplusShares = Math.max(0, Math.round((stock.todayVolM - stock.avgVol20DM) * 1_000_000));
 
-  // Rule 5: Strict Day Start Integrity - volume must genuinely meet/exceed 20D average (> 0)
+  // Rule 5: Strict Day Start Integrity - traded shares must genuinely meet/exceed 20D average (> 0)
   const hasVolumeCrossed =
     (stock.hasCrossed20D || stock.todayVolM >= stock.avgVol20DM) &&
     stock.todayVolM >= stock.avgVol20DM &&
@@ -131,11 +133,11 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
   // Rule 1: Bullish Price / Candle Filter (Spot LTP >= Day Open or changePct >= 0)
   const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
 
-  // Fully Eligible: Volume Crossover + Bullish Price Action
+  // Fully Eligible: Traded Shares Crossover + Bullish Price Action
   const isEligibleForBuy = hasVolumeCrossed && isBullish;
 
   let statusCode: VolumeStatusCode = 'TRACKING_VOLUME';
-  let statusBadge = 'TRACKING VOL (< 20D)';
+  let statusBadge = 'TRACKING SHARES (< 20D)';
 
   if (hasVolumeCrossed) {
     if (isBullish) {
@@ -143,7 +145,7 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
       statusBadge = 'ELIGIBLE FOR BUY';
     } else {
       statusCode = 'HIGH_VOL_BEARISH';
-      statusBadge = 'VOL CROSSED (BEARISH)';
+      statusBadge = 'SHARES CROSSED (BEARISH)';
     }
   }
 
@@ -151,6 +153,8 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
     progressPct,
     rvolRatio,
     deficitM,
+    deficitShares,
+    surplusShares,
     isEligibleForBuy,
     statusCode,
     statusBadge,
