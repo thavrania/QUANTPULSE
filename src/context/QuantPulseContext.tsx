@@ -1128,8 +1128,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         // Periodic sync of live quotes to public.watchlist in Supabase (every 5 packets)
         if (packetCountRef.current % 5 === 0 && isSupabaseConfigured && supabase) {
           markSelfUpdating();
+          const client = supabase;
           Object.entries(quotesMap).forEach(([ticker, q]: [string, any]) => {
-            supabase
+            client
               .from('watchlist')
               .update({
                 spot_ltp: Number(q.ltp) || 0,
