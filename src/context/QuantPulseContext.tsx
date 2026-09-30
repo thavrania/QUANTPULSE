@@ -444,7 +444,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     setCrossoverEvents([]);
     if (isSupabaseConfigured && supabase) {
       markSelfUpdating();
-      supabase.from('crossover_events').delete().neq('ticker', 'DUMMY_NEVER_MATCH').then();
+      const client = supabase;
+      client.from('crossover_events').delete().neq('ticker', 'DUMMY_NEVER_MATCH').then();
     }
     showToast('Exact Crossover Timestamp Feed cleared.', 'info');
   }, [markSelfUpdating, showToast]);
@@ -833,7 +834,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       // Persist to Supabase if available
       if (isSupabaseConfigured && supabase) {
         markSelfUpdating();
-        supabase.from('active_positions').insert({
+        const client = supabase;
+        client.from('active_positions').insert({
           id: newPos.id,
           order_time: newPos.orderTime,
           crossover_time: newPos.crossoverTime,
@@ -943,15 +945,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
           if (isSupabaseConfigured && supabase) {
             markSelfUpdating();
+            const client = supabase;
             const todayStr = getISTDate().dateStr;
-            supabase
+            client
               .from('crossover_events')
               .select('id')
               .eq('ticker', event.ticker)
               .gte('created_at', `${todayStr}T00:00:00`)
               .then(({ data: existingRows }) => {
                 if (!existingRows || existingRows.length === 0) {
-                  supabase.from('crossover_events').insert({
+                  client.from('crossover_events').insert({
                     ticker: event.ticker,
                     time_ist: event.time,
                     avg_vol_20d_m: event.avgVol20DM,
@@ -961,7 +964,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 }
               });
 
-            supabase.from('watchlist').update({
+            client.from('watchlist').update({
               has_crossed_20d: true,
               crossover_time: event.time,
               crossover_spot_price: event.crossPrice,
@@ -1120,15 +1123,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
                 if (isSupabaseConfigured && supabase) {
                   markSelfUpdating();
+                  const client = supabase;
                   const todayStr = getISTDate().dateStr;
-                  supabase
+                  client
                     .from('crossover_events')
                     .select('id')
                     .eq('ticker', event.ticker)
                     .gte('created_at', `${todayStr}T00:00:00`)
                     .then(({ data: existingRows }) => {
                       if (!existingRows || existingRows.length === 0) {
-                        supabase
+                        client
                           .from('crossover_events')
                           .insert({
                             ticker: event.ticker,
@@ -1141,7 +1145,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                       }
                     });
 
-                  supabase
+                  client
                     .from('watchlist')
                     .update({
                       has_crossed_20d: true,
@@ -1420,15 +1424,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
               if (isSupabaseConfigured && supabase) {
                 markSelfUpdating();
+                const client = supabase;
                 const todayStr = getISTDate().dateStr;
-                supabase
+                client
                   .from('crossover_events')
                   .select('id')
                   .eq('ticker', event.ticker)
                   .gte('created_at', `${todayStr}T00:00:00`)
                   .then(({ data: existingRows }) => {
                     if (!existingRows || existingRows.length === 0) {
-                      supabase.from('crossover_events').insert({
+                      client.from('crossover_events').insert({
                         ticker: event.ticker,
                         time_ist: event.time,
                         avg_vol_20d_m: event.avgVol20DM,
@@ -1438,7 +1443,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                     }
                   });
 
-                supabase.from('watchlist').update({
+                client.from('watchlist').update({
                   has_crossed_20d: true,
                   crossover_time: event.time,
                   crossover_spot_price: event.crossPrice,
@@ -1605,7 +1610,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
       if (isSupabaseConfigured && supabase) {
         markSelfUpdating();
-        supabase
+        const client = supabase;
+        client
           .from('watchlist')
           .upsert({
             ticker: newStock.ticker,
@@ -1660,15 +1666,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         if (isSupabaseConfigured && supabase) {
           markSelfUpdating();
+          const client = supabase;
           // 1. Update status flag in stock_master directory table
-          supabase
+          client
             .from('stock_master')
             .update({ is_active_watchlist: true, updated_at: new Date().toISOString() })
             .eq('ticker', master.ticker)
             .then();
 
           // 2. Upsert into active watchlist table
-          supabase
+          client
             .from('watchlist')
             .upsert({
               ticker: newStock.ticker,
@@ -1720,15 +1727,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         if (isSupabaseConfigured && supabase) {
           markSelfUpdating();
+          const client = supabase;
           // 1. Update status flag in stock_master directory table
-          supabase
+          client
             .from('stock_master')
             .update({ is_active_watchlist: false, updated_at: new Date().toISOString() })
             .eq('ticker', ticker)
             .then();
 
           // 2. Delete from active watchlist table
-          supabase.from('watchlist').delete().eq('ticker', ticker).then();
+          client.from('watchlist').delete().eq('ticker', ticker).then();
         }
         showToast(`Removed ${ticker} from Active Watchlist.`, 'info');
         return updated;

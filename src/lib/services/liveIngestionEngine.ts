@@ -69,15 +69,16 @@ export function processLiveMarketfeedBatch(
 
       // Immediately persist crossover flag in Supabase
       if (isSupabaseConfigured && supabase) {
+        const client = supabase;
         const todayDateStr = new Date().toISOString().slice(0, 10);
-        supabase
+        client
           .from('crossover_events')
           .select('id')
           .eq('ticker', event.ticker)
           .gte('created_at', `${todayDateStr}T00:00:00`)
           .then(({ data: existingRows }) => {
             if (!existingRows || existingRows.length === 0) {
-              supabase
+              client
                 .from('crossover_events')
                 .insert({
                   ticker: event.ticker,
@@ -90,7 +91,7 @@ export function processLiveMarketfeedBatch(
             }
           });
 
-        supabase
+        client
           .from('watchlist')
           .update({
             has_crossed_20d: true,
