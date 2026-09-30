@@ -110,7 +110,7 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
 export const INITIAL_CROSSOVER_LOGS: CrossoverEvent[] = [];
 
 export function formatClockIST(totalSeconds: number): string {
-  const secsInDay = totalSeconds % 86400;
+  const secsInDay = ((Math.floor(totalSeconds) % 86400) + 86400) % 86400;
   const hrs = String(Math.floor(secsInDay / 3600)).padStart(2, '0');
   const mins = String(Math.floor((secsInDay % 3600) / 60)).padStart(2, '0');
   const secs = String(secsInDay % 60).padStart(2, '0');
@@ -121,15 +121,39 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
   const progressPct = +((stock.todayVolM / Math.max(stock.avgVol20DM, 0.001)) * 100).toFixed(1);
   const rvolRatio = +(stock.todayVolM / Math.max(stock.avgVol20DM, 0.001)).toFixed(2);
   const deficitM = Math.max(0, +(stock.avgVol20DM - stock.todayVolM).toFixed(3));
-  const isEligibleForBuy = stock.hasCrossed20D || stock.todayVolM >= stock.avgVol20DM;
+
+  // Rule 5: Strict Day Start Integrity - volume must genuinely meet/exceed 20D average (> 0)
+  const hasVolumeCrossed =
+    (stock.hasCrossed20D || stock.todayVolM >= stock.avgVol20DM) &&
+    stock.todayVolM >= stock.avgVol20DM &&
+    stock.todayVolM > 0;
+
+  // Rule 1: Bullish Price / Candle Filter (Spot LTP >= Day Open or changePct >= 0)
+  const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
+
+  // Fully Eligible: Volume Crossover + Bullish Price Action
+  const isEligibleForBuy = hasVolumeCrossed && isBullish;
+
+  let statusCode = 'TRACKING_VOLUME';
+  let statusBadge = 'TRACKING VOL (< 20D)';
+
+  if (hasVolumeCrossed) {
+    if (isBullish) {
+      statusCode = 'ELIGIBLE_FOR_BUY';
+      statusBadge = 'ELIGIBLE FOR BUY';
+    } else {
+      statusCode = 'HIGH_VOL_BEARISH';
+      statusBadge = 'VOL CROSSED (BEARISH)';
+    }
+  }
 
   return {
     progressPct,
     rvolRatio,
     deficitM,
     isEligibleForBuy,
-    statusCode: isEligibleForBuy ? 'ELIGIBLE_FOR_BUY' : 'TRACKING_VOLUME',
-    statusBadge: isEligibleForBuy ? 'ELIGIBLE FOR BUY' : 'TRACKING VOL (< 20D)',
+    statusCode,
+    statusBadge,
   };
 }
 
@@ -137,7 +161,13 @@ export function checkAndLatchVolumeCrossover(
   stock: Stock,
   currentTimeStr: string
 ): { newlyCrossed: boolean; event: CrossoverEvent | null } {
-  if (!stock.hasCrossed20D && stock.todayVolM >= stock.avgVol20DM) {
+  // Volume condition: Today volume must meet or exceed 20D average (> 0)
+  const volumeCrossed = stock.todayVolM >= stock.avgVol20DM && stock.todayVolM > 0;
+
+  // Rule 1: Price must be bullish (LTP >= Day Open or changePct >= 0)
+  const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
+
+  if (!stock.hasCrossed20D && volumeCrossed && isBullish) {
     stock.hasCrossed20D = true;
     stock.crossoverTime = currentTimeStr;
     stock.crossoverSpotPrice = stock.spotLtp;
@@ -153,5 +183,14 @@ export function checkAndLatchVolumeCrossover(
 
     return { newlyCrossed: true, event };
   }
+
+  // Rule 5: If volume has not crossed (e.g. Day Start or 0.0M), clear any stale crossover latch
+  if (stock.todayVolM < stock.avgVol20DM) {
+    stock.hasCrossed20D = false;
+    stock.crossoverTime = null;
+    stock.crossoverSpotPrice = null;
+    stock.justCrossedHighlight = false;
+  }
+
   return { newlyCrossed: false, event: null };
 }

@@ -178,7 +178,7 @@ export function ZoneC_Screener() {
 
                   {/* Exact Crossover Time (HH:MM:SS) */}
                   <td className="py-2.5 px-3 font-mono">
-                    {stock.hasCrossed20D ? (
+                    {stock.hasCrossed20D && stock.crossoverTime && stock.todayVolM >= stock.avgVol20DM ? (
                       <div>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-[11px]">
                           ⏱️ {stock.crossoverTime}
@@ -222,6 +222,13 @@ export function ZoneC_Screener() {
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                         ✅ ELIGIBLE FOR BUY
                       </span>
+                    ) : m.statusCode === 'HIGH_VOL_BEARISH' ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                        title="Volume crossed 20D average but stock is below day open (red candle)"
+                      >
+                        ⚠️ VOL CROSSED (BEARISH)
+                      </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold bg-slate-800 text-slate-400 border border-slate-700">
                         TRACKING VOL
@@ -261,7 +268,7 @@ export function ZoneC_Screener() {
         <div>
           ⚡ <strong className="text-slate-200">Live Market Streaming:</strong> When connected to Dhan HQ, prices and cumulative volumes update every 2 seconds in real-time.
         </div>
-        <div className="font-mono text-slate-400">Tick Clock: {clockTime} IST</div>
+        <div className="font-mono text-slate-400">Tick Clock: <span suppressHydrationWarning>{clockTime}</span> IST</div>
       </div>
     </section>
   );

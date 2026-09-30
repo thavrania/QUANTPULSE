@@ -28,52 +28,23 @@ export function getISTDate(refDate?: Date): {
 } {
   const d = refDate || new Date();
 
-  // Robust, cross-timezone conversion to Asia/Kolkata using standard Intl
-  const dtf = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
+  // Exact, high-precision cross-timezone conversion to Asia/Kolkata (IST = UTC + 05:30)
+  // India operates on a permanent, fixed UTC+05:30 offset with zero Daylight Saving Time
+  const istOffsetMs = 5.5 * 3600 * 1000;
+  const istTimeMs = d.getTime() + istOffsetMs;
+  const istDate = new Date(istTimeMs);
 
-  const parts = dtf.formatToParts(d);
-  const partMap: Record<string, string> = {};
-  for (const part of parts) {
-    partMap[part.type] = part.value;
-  }
+  const hours = istDate.getUTCHours();
+  const minutes = istDate.getUTCMinutes();
+  const seconds = istDate.getUTCSeconds();
+  const year = istDate.getUTCFullYear();
+  const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istDate.getUTCDate()).padStart(2, '0');
+  const dayOfWeek = istDate.getUTCDay();
 
-  const hours = parseInt(partMap.hour || '0', 10);
-  const minutes = parseInt(partMap.minute || '0', 10);
-  const seconds = parseInt(partMap.second || '0', 10);
-  const year = partMap.year || '2026';
-  const month = partMap.month || '01';
-  const day = partMap.day || '01';
-
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, '0');
   const timeStr = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   const dateStr = `${year}-${month}-${day}`;
-
-  const weekdayStr = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Kolkata',
-    weekday: 'short',
-  }).format(d);
-
-  const dayOfWeekMap: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  };
-  const dayOfWeek = dayOfWeekMap[weekdayStr] ?? 1;
-
-  const istDate = new Date(`${dateStr}T${timeStr}+05:30`);
 
   return { istDate, hours, minutes, seconds, dayOfWeek, timeStr, dateStr };
 }

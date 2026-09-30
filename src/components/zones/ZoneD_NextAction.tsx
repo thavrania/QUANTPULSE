@@ -75,10 +75,16 @@ export function ZoneD_NextAction() {
                   className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
                     isEligible
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : payload.eligibilityStatus === 'HIGH_VOL_BEARISH'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                       : 'bg-slate-800 text-slate-400 border border-slate-700'
                   }`}
                 >
-                  {isEligible ? 'ELIGIBLE FOR BUY' : 'NOT ELIGIBLE YET'}
+                  {isEligible
+                    ? 'ELIGIBLE FOR BUY'
+                    : payload.eligibilityStatus === 'HIGH_VOL_BEARISH'
+                    ? 'VOL CROSSED (BEARISH)'
+                    : 'NOT ELIGIBLE YET'}
                 </span>
               </div>
               <div className="text-[11px] text-slate-300 font-medium mt-0.5">{stock.name}</div>
@@ -110,6 +116,16 @@ export function ZoneD_NextAction() {
                   Current LTP: <strong className="text-emerald-300">₹{stock.spotLtp.toFixed(2)}</strong>
                 </span>
               </div>
+            </div>
+          ) : payload.eligibilityStatus === 'HIGH_VOL_BEARISH' ? (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-2">
+              <div className="text-xs font-bold text-rose-300 flex items-center justify-between">
+                <span>⚠️ Volume Crossed 20D Average, but Price is Bearish</span>
+                <span className="font-mono text-emerald-400">Vol: {payload.volumeTracking.crossoverProgressPct}%</span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                Rule 1 Filter: Buying is locked because <strong className="text-white">{stock.ticker}</strong> is trading below its day open / red candle (LTP: ₹{stock.spotLtp.toFixed(2)}). Buy orders require both 20D volume breakout AND bullish price action.
+              </p>
             </div>
           ) : (
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">

@@ -96,10 +96,14 @@
               20D Volume Crossover Engine
             </span>
           </div>
-          <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+          <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5 flex-wrap">
             <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>Market Clock:</span>
-            <span id="liveMarketClock" class="font-mono-num font-bold text-cyan-300">10:42:10 IST</span>
+            <span id="liveMarketClock" class="font-mono-num font-bold text-cyan-300">--:--:-- IST</span>
+            <span class="text-[10px] font-mono-num text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/70 flex items-center gap-1">
+              <span>📅</span>
+              <span id="liveMarketDate">----/--/--</span>
+            </span>
           </div>
         </div>
       </div>
@@ -322,6 +326,35 @@
         </button>
       </form>
 
+      <!-- Pre-Market Automated 20D Baseline Sync Banner -->
+      <div class="px-3 py-2 bg-obsidian/90 border-b border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
+        <div>
+          <div class="font-semibold text-white flex items-center gap-1.5 flex-wrap">
+            <span>🌅 Pre-Market Engine</span>
+            <span id="zoneBDateLabel" class="text-[10px] font-mono-num text-cyan-300"></span>
+          </div>
+          <div class="text-[10px] text-slate-400">20D Volume Baseline &amp; Day Start</div>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button
+            type="button"
+            onclick="syncDailyBaselines(false)"
+            class="px-2 py-1 rounded text-[10px] font-mono-num font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition flex items-center gap-1"
+            title="Recalculate 20-Day volume baselines from the last 20 completed sessions"
+          >
+            <span>⚡ 20D Sync</span>
+          </button>
+          <button
+            type="button"
+            onclick="resetToDayStart()"
+            class="px-2 py-1 rounded text-[10px] font-mono-num font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1"
+            title="Reset session to Day Start: zero today's volume and evaluate fresh crossover progress"
+          >
+            <span>🔄 Day Start</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Live Volume Crossover Timestamp Event Log -->
       <div class="px-3 py-2 bg-slate-900/70 border-b border-slate-800 flex items-center justify-between">
         <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
@@ -534,7 +567,8 @@
       selectedTickerSymbol: 'RELIANCE',
       showJsonPayload: false,
       autoTickTimer: null,
-      clockSecondsElapsed: 38530,   // Starts at 10:42:10 IST (10*3600 + 42*60 + 10)
+      clockSecondsElapsed: 0,       // Synchronized to real-time IST seconds
+      currentTradingDate: '',       // Active trading calendar date (YYYY-MM-DD)
       idempotencyLocks: new Set(),  // Prevents duplicate Auto-Buys on the same stock
       activePositions: [],          // Executed orders in Zone E
       crossoverEvents: [],          // Chronological log of 20D volume crossovers
@@ -549,13 +583,15 @@
         lotSize: 250,
         strikeStep: 50,
         spotLtp: 2968.50,
-        todayVolM: 5.82,
+        todayVolM: 0.0,
         avgVol20DM: 5.20,
-        hasCrossed20D: true,
-        crossoverTime: '09:48:12',
-        crossoverSpotPrice: 2954.00,
+        hasCrossed20D: false,
+        crossoverTime: null,
+        crossoverSpotPrice: null,
         ivPct: 18.4,
-        justCrossedHighlight: false
+        justCrossedHighlight: false,
+        dayOpen: 2950.00,
+        changePct: 0.22
       },
       {
         ticker: 'TATAMOTORS',
@@ -564,13 +600,15 @@
         lotSize: 550,
         strikeStep: 20,
         spotLtp: 984.40,
-        todayVolM: 9.45,
+        todayVolM: 0.0,
         avgVol20DM: 8.90,
-        hasCrossed20D: true,
-        crossoverTime: '10:19:05',
-        crossoverSpotPrice: 976.50,
+        hasCrossed20D: false,
+        crossoverTime: null,
+        crossoverSpotPrice: null,
         ivPct: 23.8,
-        justCrossedHighlight: false
+        justCrossedHighlight: false,
+        dayOpen: 978.00,
+        changePct: 0.65
       },
       {
         ticker: 'TCS',
@@ -579,13 +617,15 @@
         lotSize: 175,
         strikeStep: 50,
         spotLtp: 4126.00,
-        todayVolM: 1.45,            // 96.7% of 1.50M -> Very close to crossing!
+        todayVolM: 0.0,
         avgVol20DM: 1.50,
         hasCrossed20D: false,
         crossoverTime: null,
         crossoverSpotPrice: null,
         ivPct: 16.2,
-        justCrossedHighlight: false
+        justCrossedHighlight: false,
+        dayOpen: 4140.00,
+        changePct: -0.22
       },
       {
         ticker: 'ZOMATO',
@@ -594,13 +634,15 @@
         lotSize: 1,
         strikeStep: 5,
         spotLtp: 264.80,
-        todayVolM: 18.47,           // 97.2% of 19.00M -> About to cross!
+        todayVolM: 0.0,
         avgVol20DM: 19.00,
         hasCrossed20D: false,
         crossoverTime: null,
         crossoverSpotPrice: null,
         ivPct: 0,
-        justCrossedHighlight: false
+        justCrossedHighlight: false,
+        dayOpen: 261.00,
+        changePct: 1.45
       },
       {
         ticker: 'ICICIBANK',
@@ -609,13 +651,15 @@
         lotSize: 700,
         strikeStep: 20,
         spotLtp: 1258.00,
-        todayVolM: 6.44,            // 92.0% of 7.00M
+        todayVolM: 0.0,
         avgVol20DM: 7.00,
         hasCrossed20D: false,
         crossoverTime: null,
         crossoverSpotPrice: null,
         ivPct: 15.6,
-        justCrossedHighlight: false
+        justCrossedHighlight: false,
+        dayOpen: 1252.00,
+        changePct: 0.64
       },
       {
         ticker: 'HDFCBANK',
@@ -624,38 +668,41 @@
         lotSize: 550,
         strikeStep: 20,
         spotLtp: 1644.20,
-        todayVolM: 4.70,            // 78.3% of 6.00M
+        todayVolM: 0.0,
         avgVol20DM: 6.00,
         hasCrossed20D: false,
         crossoverTime: null,
         crossoverSpotPrice: null,
         ivPct: 14.9,
-        justCrossedHighlight: false
+        justCrossedHighlight: false,
+        dayOpen: 1640.00,
+        changePct: 0.38
       }
     ];
 
-    const INITIAL_CROSSOVER_LOGS = [
-      {
-        ticker: 'TATAMOTORS',
-        time: '10:19:05',
-        avgVol20DM: 8.90,
-        crossPrice: 976.50,
-        isFnO: true
-      },
-      {
-        ticker: 'RELIANCE',
-        time: '09:48:12',
-        avgVol20DM: 5.20,
-        crossPrice: 2954.00,
-        isFnO: true
-      }
-    ];
+    const INITIAL_CROSSOVER_LOGS = [];
 
     /*************************************************************************
      * 2. MARKET CLOCK & EXACT 20-DAY VOLUME CROSSOVER LATCH ENGINE
      *************************************************************************/
+    function getISTDate(refDate) {
+      const d = refDate || new Date();
+      const istOffsetMs = 5.5 * 3600 * 1000;
+      const istDate = new Date(d.getTime() + istOffsetMs);
+      const hours = istDate.getUTCHours();
+      const minutes = istDate.getUTCMinutes();
+      const seconds = istDate.getUTCSeconds();
+      const year = istDate.getUTCFullYear();
+      const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(istDate.getUTCDate()).padStart(2, '0');
+      const pad = (n) => String(n).padStart(2, '0');
+      const timeStr = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+      const dateStr = `${year}-${month}-${day}`;
+      return { hours, minutes, seconds, timeStr, dateStr };
+    }
+
     function formatClockIST(totalSeconds) {
-      const secsInDay = totalSeconds % 86400;
+      const secsInDay = ((Math.floor(totalSeconds) % 86400) + 86400) % 86400;
       const hrs = String(Math.floor(secsInDay / 3600)).padStart(2, '0');
       const mins = String(Math.floor((secsInDay % 3600) / 60)).padStart(2, '0');
       const secs = String(secsInDay % 60).padStart(2, '0');
@@ -663,26 +710,124 @@
     }
 
     function getCurrentMarketTimeStr() {
-      return formatClockIST(appState.clockSecondsElapsed);
+      return getISTDate().timeStr;
     }
 
     function startMarketClockTicker() {
-      setInterval(() => {
-        appState.clockSecondsElapsed += 1;
+      function tick() {
+        const ist = getISTDate();
+        appState.clockSecondsElapsed = ist.hours * 3600 + ist.minutes * 60 + ist.seconds;
         const clockEl = document.getElementById('liveMarketClock');
         if (clockEl) {
-          clockEl.textContent = `${getCurrentMarketTimeStr()} IST`;
+          clockEl.textContent = `${ist.timeStr} IST`;
         }
-      }, 1000);
+        const dateEl = document.getElementById('liveMarketDate');
+        if (dateEl) {
+          dateEl.textContent = ist.dateStr;
+        }
+        const zoneBDateEl = document.getElementById('zoneBDateLabel');
+        if (zoneBDateEl) {
+          zoneBDateEl.textContent = `(${ist.dateStr})`;
+        }
+
+        // Midnight date change rollover detection
+        if (appState.currentTradingDate && appState.currentTradingDate !== ist.dateStr) {
+          appState.currentTradingDate = ist.dateStr;
+          syncDailyBaselines(true);
+        }
+      }
+      tick();
+      setInterval(tick, 1000);
+    }
+
+    /**
+     * Daily 20-Day Baseline Sync & Session Recalculator
+     * When date changes / on first day start, fetches new 20D volume averages,
+     * resets today's volume to 0.0M, and evaluates Crossover progress & Eligibility status.
+     */
+    function syncDailyBaselines(isDateChange = false) {
+      const ist = getISTDate();
+      appState.currentTradingDate = ist.dateStr;
+
+      const baseMap = {
+        'RELIANCE': 5.20,
+        'TATAMOTORS': 8.90,
+        'TCS': 1.50,
+        'ZOMATO': 19.00,
+        'ICICIBANK': 7.00,
+        'HDFCBANK': 6.00,
+      };
+
+      appState.watchlist.forEach((stock) => {
+        const base = baseMap[stock.ticker] || stock.avgVol20DM || 5.0;
+        // Minor daily session shift reflecting rolling 20-day window
+        const drift = +((Math.random() - 0.48) * 0.08).toFixed(2);
+        const newAvg20D = Math.max(0.2, +(base + drift).toFixed(2));
+        stock.avgVol20DM = newAvg20D;
+
+        if (isDateChange) {
+          // Day Start / Date Rollover: volume starts at 0.0M
+          stock.todayVolM = 0.0;
+          stock.hasCrossed20D = false;
+          stock.crossoverTime = null;
+          stock.crossoverSpotPrice = null;
+          stock.justCrossedHighlight = false;
+        } else {
+          // Mid-day recalculation: re-evaluate against new 20D baseline
+          const isCrossed = stock.todayVolM >= stock.avgVol20DM && stock.todayVolM > 0;
+          const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
+          stock.hasCrossed20D = isCrossed && isBullish;
+          if (stock.hasCrossed20D && !stock.crossoverTime) {
+            stock.crossoverTime = getCurrentMarketTimeStr();
+            stock.crossoverSpotPrice = stock.spotLtp;
+          } else if (!stock.hasCrossed20D) {
+            stock.crossoverTime = null;
+            stock.crossoverSpotPrice = null;
+          }
+        }
+      });
+
+      if (isDateChange) {
+        appState.crossoverEvents = [];
+        appState.idempotencyLocks.clear();
+        localStorage.setItem('qp_last_trading_date', ist.dateStr);
+        showToast(
+          `📅 Day Start (${ist.dateStr}): Last 20-Day Volume baselines updated. Intraday progress reset to 0.0M (Tracking Vol).`,
+          'emerald'
+        );
+      } else {
+        showToast('⚡ Last 20-Day Volume averages refreshed across all stocks.', 'info');
+      }
+
+      renderAllZones();
+    }
+
+    function resetToDayStart() {
+      syncDailyBaselines(true);
+      showToast('🔄 Watchlist reset to fresh Day Start baseline state.', 'info');
+    }
+
+    function checkInitialDateAndSyncBaselines() {
+      const ist = getISTDate();
+      appState.currentTradingDate = ist.dateStr;
+      const storedDate = localStorage.getItem('qp_last_trading_date');
+      if (!storedDate || storedDate !== ist.dateStr) {
+        syncDailyBaselines(true);
+      } else {
+        renderAllZones();
+      }
     }
 
     /**
      * Core Logic: Checks if `todayVolM` has crossed `avgVol20DM`.
-     * If it crosses for the first time (`!stock.hasCrossed20D && stock.todayVolM >= stock.avgVol20DM`),
-     * latches the immutable `crossoverTime` (HH:MM:SS) and `crossoverSpotPrice`.
+     * Rule 1: Bullish Price Action required (spotLtp >= dayOpen || changePct >= 0)
+     * Rule 5: Strict Day Start Integrity - volume must genuinely meet/exceed 20D average (> 0)
      */
     function checkAndLatchVolumeCrossover(stock) {
-      if (!stock.hasCrossed20D && stock.todayVolM >= stock.avgVol20DM) {
+      const volumeCrossed = stock.todayVolM >= stock.avgVol20DM && stock.todayVolM > 0;
+      const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
+
+      if (!stock.hasCrossed20D && volumeCrossed && isBullish) {
         const exactTime = getCurrentMarketTimeStr();
         stock.hasCrossed20D = true;
         stock.crossoverTime = exactTime;
@@ -711,22 +856,55 @@
 
         return true; // Newly crossed on this tick
       }
+
+      // Rule 5: If today's volume is below 20D average, clear any stale flags
+      if (stock.todayVolM < stock.avgVol20DM) {
+        stock.hasCrossed20D = false;
+        stock.crossoverTime = null;
+        stock.crossoverSpotPrice = null;
+        stock.justCrossedHighlight = false;
+      }
+
       return false;
     }
 
     function getVolumeScreenerMetrics(stock) {
-      const progressPct = +((stock.todayVolM / stock.avgVol20DM) * 100).toFixed(1);
-      const rvolRatio = +(stock.todayVolM / stock.avgVol20DM).toFixed(2);
+      const progressPct = +((stock.todayVolM / Math.max(stock.avgVol20DM, 0.001)) * 100).toFixed(1);
+      const rvolRatio = +(stock.todayVolM / Math.max(stock.avgVol20DM, 0.001)).toFixed(2);
       const deficitM = Math.max(0, +(stock.avgVol20DM - stock.todayVolM).toFixed(3));
-      const isEligibleForBuy = stock.hasCrossed20D || stock.todayVolM >= stock.avgVol20DM;
+
+      // Rule 5: Strict Day Start Integrity - volume must genuinely meet/exceed 20D average (> 0)
+      const hasVolumeCrossed =
+        (stock.hasCrossed20D || stock.todayVolM >= stock.avgVol20DM) &&
+        stock.todayVolM >= stock.avgVol20DM &&
+        stock.todayVolM > 0;
+
+      // Rule 1: Bullish Price / Candle Filter (Spot LTP >= Day Open or changePct >= 0)
+      const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
+
+      // Fully Eligible: Volume Crossover + Bullish Price Action
+      const isEligibleForBuy = hasVolumeCrossed && isBullish;
+
+      let statusCode = 'TRACKING_VOLUME';
+      let statusBadge = 'TRACKING VOL (< 20D)';
+
+      if (hasVolumeCrossed) {
+        if (isBullish) {
+          statusCode = 'ELIGIBLE_FOR_BUY';
+          statusBadge = 'ELIGIBLE FOR BUY';
+        } else {
+          statusCode = 'HIGH_VOL_BEARISH';
+          statusBadge = 'VOL CROSSED (BEARISH)';
+        }
+      }
 
       return {
         progressPct,
         rvolRatio,
         deficitM,
         isEligibleForBuy,
-        statusCode: isEligibleForBuy ? 'ELIGIBLE_FOR_BUY' : 'TRACKING_VOLUME',
-        statusBadge: isEligibleForBuy ? 'ELIGIBLE FOR BUY' : 'TRACKING VOL (< 20D)'
+        statusCode,
+        statusBadge
       };
     }
 
@@ -770,8 +948,8 @@
           crossoverProgressPct: metrics.progressPct,
           rvolRatio: metrics.rvolRatio,
           remainingDeficitM: metrics.deficitM,
-          exactCrossoverTime: stock.crossoverTime || 'WAITING_FOR_CROSSOVER',
-          crossoverSpotPrice: stock.crossoverSpotPrice || null,
+          exactCrossoverTime: (metrics.isEligibleForBuy && stock.crossoverTime) ? stock.crossoverTime : 'WAITING_FOR_CROSSOVER',
+          crossoverSpotPrice: (metrics.isEligibleForBuy && stock.crossoverSpotPrice) ? stock.crossoverSpotPrice : null,
           currentSpotLtp: stock.spotLtp
         },
         toggleConfiguration: {
@@ -858,7 +1036,8 @@
       if (appState.executionMode !== 'AUTO') return;
 
       appState.watchlist.forEach((stock) => {
-        if (stock.hasCrossed20D) {
+        const m = getVolumeScreenerMetrics(stock);
+        if (m.isEligibleForBuy) {
           // 1. Check Idempotency Lock so we never double-buy the same stock
           if (appState.idempotencyLocks.has(stock.ticker)) return;
           // 2. Check Max Open Positions Limit
@@ -874,12 +1053,21 @@
       const stock = appState.watchlist.find((s) => s.ticker === tickerSymbol);
       if (!stock) return;
 
-      // Guardrail: Stock MUST have crossed 20-Day Average Volume first
-      if (!stock.hasCrossed20D) {
-        showToast(
-          `Cannot Buy ${stock.ticker} yet — Today's volume (${stock.todayVolM}M) has not crossed 20D Avg (${stock.avgVol20DM}M).`,
-          'rose'
-        );
+      const m = getVolumeScreenerMetrics(stock);
+
+      // Guardrail: Stock MUST have crossed 20-Day Average Volume first & be bullish
+      if (!m.isEligibleForBuy) {
+        if (m.statusCode === 'HIGH_VOL_BEARISH') {
+          showToast(
+            `Cannot Buy ${stock.ticker} — Volume crossed (${stock.todayVolM}M), but candle is Bearish (Rule 1).`,
+            'rose'
+          );
+        } else {
+          showToast(
+            `Cannot Buy ${stock.ticker} yet — Today's volume (${stock.todayVolM}M) has not crossed 20D Avg (${stock.avgVol20DM}M).`,
+            'rose'
+          );
+        }
         return;
       }
 
@@ -933,10 +1121,6 @@
      * 5. LIVE VOLUME TICK SIMULATOR & INSTANT CROSSOVER TRIGGER
      *************************************************************************/
     function simulateVolumeTick() {
-      // Advance clock by 4 seconds per simulated volume tick
-      appState.clockSecondsElapsed += 4;
-      document.getElementById('liveMarketClock').textContent = `${getCurrentMarketTimeStr()} IST`;
-
       appState.watchlist.forEach((stock) => {
         // Increment Today's Volume by 1.2% to 2.8% of its 20D average per tick
         const volStep = +(stock.avgVol20DM * (0.012 + Math.random() * 0.018)).toFixed(3);
@@ -945,6 +1129,9 @@
         // Slight realistic price movement (+0.15% bias when volume is surging)
         const priceDeltaPct = (Math.random() - 0.42) * 0.006;
         stock.spotLtp = Math.max(10, +(stock.spotLtp * (1 + priceDeltaPct)).toFixed(2));
+        if (stock.dayOpen) {
+          stock.changePct = +(((stock.spotLtp - stock.dayOpen) / stock.dayOpen) * 100).toFixed(2);
+        }
 
         // Check if this tick caused Today's Volume to cross the 20-Day Average Volume!
         checkAndLatchVolumeCrossover(stock);
@@ -989,6 +1176,9 @@
         // Push Today's Volume just past the 20-Day Average Volume (+3.5% surge)
         stock.todayVolM = +(stock.avgVol20DM * 1.035).toFixed(2);
         stock.spotLtp = +(stock.spotLtp * 1.008).toFixed(2);
+        if (stock.dayOpen) {
+          stock.changePct = +(((stock.spotLtp - stock.dayOpen) / stock.dayOpen) * 100).toFixed(2);
+        }
         checkAndLatchVolumeCrossover(stock);
       } else {
         // Already crossed, boost volume further
@@ -1235,7 +1425,7 @@
               <!-- Exact Crossover Time (HH:MM:SS) -->
               <td class="py-2.5 px-3 font-mono-num">
                 ${
-                  stock.hasCrossed20D
+                  stock.hasCrossed20D && stock.crossoverTime && stock.todayVolM >= stock.avgVol20DM
                     ? `
                   <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-[11px]">
                     <span>⏱️ ${stock.crossoverTime}</span>
@@ -1253,8 +1443,8 @@
                 <div class="font-bold text-white">₹${stock.spotLtp.toFixed(2)}</div>
                 <div class="text-[10px] text-slate-400">
                   ${
-                    stock.crossoverSpotPrice
-                      ? `Crossed @ ₹${stock.crossoverSpotPrice.toFixed(2)}`
+                    stock.crossoverSpotPrice && stock.todayVolM >= stock.avgVol20DM
+                      ? `Crossed @ ₹${Number(stock.crossoverSpotPrice).toFixed(2)}`
                       : 'Pre-crossover'
                   }
                 </div>
@@ -1267,6 +1457,12 @@
                     ? `
                   <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-mono-num font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                     ✅ ELIGIBLE FOR BUY
+                  </span>
+                `
+                    : m.statusCode === 'HIGH_VOL_BEARISH'
+                    ? `
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-mono-num font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40" title="Volume crossed 20D average but candle is bearish (LTP < Open)">
+                    ⚠️ VOL CROSSED (BEARISH)
                   </span>
                 `
                     : `
@@ -1345,7 +1541,11 @@
         <div class="space-y-3">
           <!-- Stock Header & Eligibility Status -->
           <div class="p-3 rounded-xl bg-obsidian border ${
-            isEligible ? 'border-emerald-500/40' : 'border-slate-800'
+            isEligible
+              ? 'border-emerald-500/40'
+              : payload.eligibilityStatus === 'HIGH_VOL_BEARISH'
+              ? 'border-rose-500/40'
+              : 'border-slate-800'
           } flex items-center justify-between">
             <div>
               <div class="flex items-center gap-2">
@@ -1353,9 +1553,17 @@
                 <span class="text-[10px] font-mono-num px-2 py-0.5 rounded font-bold ${
                   isEligible
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : payload.eligibilityStatus === 'HIGH_VOL_BEARISH'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                     : 'bg-slate-800 text-slate-400 border border-slate-700'
                 }">
-                  ${isEligible ? 'ELIGIBLE FOR BUY' : 'NOT ELIGIBLE YET'}
+                  ${
+                    isEligible
+                      ? 'ELIGIBLE FOR BUY'
+                      : payload.eligibilityStatus === 'HIGH_VOL_BEARISH'
+                      ? 'VOL CROSSED (BEARISH)'
+                      : 'NOT ELIGIBLE YET'
+                  }
                 </span>
               </div>
               <div class="text-[11px] text-slate-400 mt-0.5 font-mono-num">
@@ -1376,13 +1584,25 @@
                   ⏱️ 20D Vol Crossover Time:
                 </span>
                 <span class="font-mono-num font-bold text-amber-300 bg-obsidian/80 px-2 py-0.5 rounded border border-amber-500/30">
-                  ${stock.crossoverTime} IST
+                  ${stock.crossoverTime || 'N/A'} IST
                 </span>
               </div>
               <div class="flex items-center justify-between text-[11px] text-slate-300 font-mono-num">
-                <span>Price @ Crossover: <strong>₹${stock.crossoverSpotPrice.toFixed(2)}</strong></span>
+                <span>Price @ Crossover: <strong>₹${stock.crossoverSpotPrice ? Number(stock.crossoverSpotPrice).toFixed(2) : stock.spotLtp.toFixed(2)}</strong></span>
                 <span>Current LTP: <strong class="text-emerald-300">₹${stock.spotLtp.toFixed(2)}</strong></span>
               </div>
+            </div>
+          `
+              : payload.eligibilityStatus === 'HIGH_VOL_BEARISH'
+              ? `
+            <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-2">
+              <div class="text-xs font-bold text-rose-300 flex items-center justify-between">
+                <span>⚠️ High Volume Bearish Candle</span>
+                <span class="font-mono-num">${payload.volumeTracking.crossoverProgressPct}%</span>
+              </div>
+              <p class="text-[11px] text-rose-200">
+                Today's volume (${stock.todayVolM.toFixed(2)}M) has crossed the 20-Day average (${stock.avgVol20DM.toFixed(2)}M), but price action is bearish (Spot: ₹${stock.spotLtp.toFixed(2)} vs Open: ₹${(stock.dayOpen || stock.spotLtp).toFixed(2)}). <strong>Rule 1 requires a bullish candle to trigger BUY.</strong>
+              </p>
             </div>
           `
               : `
@@ -1645,9 +1865,9 @@
       const segment = document.getElementById('newSegmentInput').value;
       const spotLtp = parseFloat(document.getElementById('newSpotInput').value) || 1000;
       const avgVol20DM = parseFloat(document.getElementById('newAvgVolInput').value) || 10.0;
-      const todayVolM = parseFloat(document.getElementById('newCurVolInput').value) || 9.5;
-
-      const alreadyCrossed = todayVolM >= avgVol20DM;
+      const alreadyCrossed = todayVolM >= avgVol20DM && todayVolM > 0;
+      const isBullish = true;
+      const fullyEligible = alreadyCrossed && isBullish;
       const nowStr = getCurrentMarketTimeStr();
 
       const newStock = {
@@ -1659,14 +1879,16 @@
         spotLtp,
         todayVolM,
         avgVol20DM,
-        hasCrossed20D: alreadyCrossed,
-        crossoverTime: alreadyCrossed ? nowStr : null,
-        crossoverSpotPrice: alreadyCrossed ? spotLtp : null,
+        hasCrossed20D: fullyEligible,
+        crossoverTime: fullyEligible ? nowStr : null,
+        crossoverSpotPrice: fullyEligible ? spotLtp : null,
         ivPct: segment === 'FNO' ? 19.2 : 0,
-        justCrossedHighlight: alreadyCrossed
+        justCrossedHighlight: fullyEligible,
+        dayOpen: spotLtp,
+        changePct: 0.0
       };
 
-      if (alreadyCrossed) {
+      if (fullyEligible) {
         appState.crossoverEvents.unshift({
           ticker: rawTicker,
           time: nowStr,
@@ -1740,6 +1962,8 @@ class StockVolumeState:
     spot_ltp: float
     today_vol: int
     avg_vol_20d: int
+    day_open: float = 0.0
+    change_pct: float = 0.0
     has_crossed_20d: bool = False
     crossover_time: Optional[str] = None
     crossover_spot_price: Optional[float] = None
@@ -1752,22 +1976,37 @@ class VolumeCrossoverEngine:
     def process_live_tick(self, stock: StockVolumeState, new_cumulative_vol: int, new_ltp: float) -> dict:
         stock.today_vol = new_cumulative_vol
         stock.spot_ltp = new_ltp
+        if stock.day_open > 0:
+            stock.change_pct = round(((stock.spot_ltp - stock.day_open) / stock.day_open) * 100, 2)
 
-        # Latch exact HH:MM:SS timestamp on first crossover of 20-Day Average Volume
-        if not stock.has_crossed_20d and stock.today_vol >= stock.avg_vol_20d:
+        vol_crossed = stock.today_vol >= stock.avg_vol_20d and stock.today_vol > 0
+        is_bullish = stock.spot_ltp >= (stock.day_open if stock.day_open > 0 else stock.spot_ltp) or stock.change_pct >= 0
+
+        # Rule 1 & Rule 5: Latch exact HH:MM:SS timestamp on first crossover of 20-Day Average Volume ONLY if Bullish
+        if not stock.has_crossed_20d and vol_crossed and is_bullish:
             stock.has_crossed_20d = True
             stock.crossover_time = datetime.now().strftime("%H:%M:%S")
             stock.crossover_spot_price = new_ltp
 
+        # Rule 5: Clear stale latch if today volume is below 20D average
+        if stock.today_vol < stock.avg_vol_20d:
+            stock.has_crossed_20d = False
+            stock.crossover_time = None
+            stock.crossover_spot_price = None
+
         progress_pct = round((stock.today_vol / max(stock.avg_vol_20d, 1)) * 100, 1)
+        eligible_for_buy = vol_crossed and is_bullish
+        status_code = "ELIGIBLE_FOR_BUY" if eligible_for_buy else ("HIGH_VOL_BEARISH" if vol_crossed else "TRACKING_VOLUME")
+
         return {
             "ticker": stock.ticker,
             "today_vol": stock.today_vol,
             "avg_vol_20d": stock.avg_vol_20d,
             "progress_pct": progress_pct,
-            "eligible_for_buy": stock.has_crossed_20d,
-            "exact_crossover_time": stock.crossover_time,
-            "crossover_spot_price": stock.crossover_spot_price,
+            "status_code": status_code,
+            "eligible_for_buy": eligible_for_buy,
+            "exact_crossover_time": stock.crossover_time if eligible_for_buy else None,
+            "crossover_spot_price": stock.crossover_spot_price if eligible_for_buy else None,
         }
 
     def resolve_next_action(
@@ -1886,9 +2125,10 @@ class VolumeCrossoverEngine:
     window.onload = function () {
       appState.watchlist = JSON.parse(JSON.stringify(INITIAL_WATCHLIST_DATA));
       appState.crossoverEvents = JSON.parse(JSON.stringify(INITIAL_CROSSOVER_LOGS));
+      startMarketClockTicker();
+      checkInitialDateAndSyncBaselines();
       renderTopToggleBadges();
       renderAllZones();
-      startMarketClockTicker();
     };
   </script>
 </body>
