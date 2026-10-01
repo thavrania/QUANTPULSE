@@ -46,3 +46,10 @@ export function getNextValidTradingDay(fromDate?: Date): NextTradingDayResult {
     istDate: testDate,
   };
 }
+
+/**
+ * Checks whether the specified date (or today in IST) is an active NSE trading day.
+ */
+export function isNseTradingDay(date?: Date): boolean {
+  return isTradingDay(date).isTradingDay;
+}

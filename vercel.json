@@ -5,6 +5,14 @@
       "schedule": "30 3 * * 1-5"
     },
     {
+      "path": "/api/strategy/nifty-overnight?action=SCAN_AND_SELECT",
+      "schedule": "50 3 * * 1-5"
+    },
+    {
+      "path": "/api/strategy/nifty-overnight?action=MANDATORY_0925_EXIT",
+      "schedule": "55 3 * * 1-5"
+    },
+    {
       "path": "/api/pipeline/market-close-archive",
       "schedule": "5 10 * * 1-5"
     }

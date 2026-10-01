@@ -63,7 +63,8 @@ When adding an entry to this log, copy and populate the following markdown struc
 - `src/lib/types/quant.ts`: Added `strategyId`, `allowOvernight`, `referencePrice`, `nextTradingDay`, `exit_reason` fields to `Position` and `TradeLog`. Added `NiftyOvernightState`, `NiftyOptionLeg`, `NiftyOvernightStatus` types.
 - `src/lib/services/tradingCalendarService.ts`: New calendar utility calculating the next valid NSE trading day skipping weekends and gazetted holidays.
 - `src/lib/strategies/niftyOvernightEngine.ts`: Core pure mathematical engine handling expiry skipping, candidate filtering, closest-to-62.5 selection, fixed 25% SL, and exit validations.
-- `src/app/api/strategy/nifty-overnight/route.ts`: Serverless API route handling 09:20 scan/selection, intraday SL exits, mandatory 09:25 exits, and crash recovery.
+- `src/app/api/strategy/nifty-overnight/route.ts`: Serverless API route handling 09:20 scan/selection, intraday SL exits, mandatory 09:25 exits, and crash recovery. Enhanced with dual GET/POST support for Vercel Cron triggers, holiday check gate (`isNseTradingDay`), and permanent recording to `public.trade_logs`.
+- `vercel.json`: Added institutional Vercel Cron jobs for 09:20 AM IST (`50 3 * * 1-5`) scan and 09:25 AM IST (`55 3 * * 1-5`) mandatory next-day exit.
 - `src/app/api/pipeline/market-close-archive/route.ts`: Added exemption filter to bypass auto square-off for `NIFTY_0920_PREMIUM_625_OVERNIGHT` / `allow_overnight` positions, transitioning them cleanly to `OVERNIGHT_HOLD`.
 - `src/components/strategies/Zone_NiftyOvernight.tsx`: Section 21 compliant specialized strategy control & monitoring panel.
 - `src/components/zones/ZoneA_Header.tsx`: Integrated dual-strategy toggle between `20D Crossover` and `🌙 NIFTY 09:20 Overnight`.
