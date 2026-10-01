@@ -82,13 +82,21 @@ export interface Position {
   stateIndex: 1 | 2 | 3 | 4; // 1: Initial SL (1R), 2: Breakeven, 3: +2R Trail, 4: Closed
   stateLabel: string;
   buyValue?: number;
+  buy_value?: number;
   piPct?: number;
+  pi_pct?: number;
   target1?: number;
   target2?: number;
   target3?: number;
   target4?: number;
+  target_1?: number;
+  target_2?: number;
+  target_3?: number;
+  target_4?: number;
   highestTargetAchieved?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4';
+  highest_target_achieved?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4';
   targetAchievementTimestamp?: string | null;
+  target_achievement_time?: string | null;
 }
 
 export interface SystemConfig {

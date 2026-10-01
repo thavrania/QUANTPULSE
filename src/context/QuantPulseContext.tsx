@@ -1194,13 +1194,21 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         stateIndex: 1,
         stateLabel: 'State 1: Initial SL (1R)',
         buyValue: targetLevels.buyValue,
+        buy_value: targetLevels.buyValue,
         piPct: targetLevels.piPct,
+        pi_pct: targetLevels.piPct,
         target1: targetLevels.target1Price,
         target2: targetLevels.target2Price,
         target3: targetLevels.target3Price,
         target4: targetLevels.target4Price,
+        target_1: targetLevels.target1Price,
+        target_2: targetLevels.target2Price,
+        target_3: targetLevels.target3Price,
+        target_4: targetLevels.target4Price,
         highestTargetAchieved: 'NONE',
+        highest_target_achieved: 'NONE',
         targetAchievementTimestamp: null,
+        target_achievement_time: null,
       };
 
       setPositions((prev) => [newPos, ...prev]);
@@ -1451,27 +1459,30 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         const nextPos = autoUpdatePositionFromTick(pos);
 
         // Mathematical Pi% Target Milestones Evaluation
-        if (nextPos.target_1) {
+        const t1 = nextPos.target1 || nextPos.target_1;
+        if (t1) {
           const evalRes = evaluateTargetMilestone(
             nextPos.currentLtp,
             {
-              piPct: nextPos.pi_pct || 3.1416,
-              buyValue: nextPos.buy_value || nextPos.entryPrice * nextPos.quantity,
+              piPct: nextPos.piPct || nextPos.pi_pct || 3.1416,
+              buyValue: nextPos.buyValue || nextPos.buy_value || nextPos.entryPrice * nextPos.quantity,
               entryPrice: nextPos.entryPrice,
               quantity: nextPos.quantity,
-              target1Price: nextPos.target_1,
-              target2Price: nextPos.target_2 || nextPos.target_1,
-              target3Price: nextPos.target_3 || nextPos.target_1,
-              target4Price: nextPos.target_4 || nextPos.target_1,
+              target1Price: t1,
+              target2Price: nextPos.target2 || nextPos.target_2 || t1,
+              target3Price: nextPos.target3 || nextPos.target_3 || t1,
+              target4Price: nextPos.target4 || nextPos.target_4 || t1,
               target1Value: 0,
               target2Value: 0,
               target3Value: 0,
               target4Value: 0,
             },
-            nextPos.highest_target_achieved || 'NONE'
+            nextPos.highestTargetAchieved || nextPos.highest_target_achieved || 'NONE'
           );
           if (evalRes.isNewMilestone) {
+            nextPos.highestTargetAchieved = evalRes.highestTargetAchieved;
             nextPos.highest_target_achieved = evalRes.highestTargetAchieved;
+            nextPos.targetAchievementTimestamp = evalRes.achievedTimestamp;
             nextPos.target_achievement_time = evalRes.achievedTimestamp;
             updateTradeTargetMilestoneInCloud(
               pos.id,
@@ -1749,7 +1760,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             );
             if (isNewMilestone) {
               nextPos.highestTargetAchieved = highestTargetAchieved;
+              nextPos.highest_target_achieved = highestTargetAchieved;
               nextPos.targetAchievementTimestamp = achievedTimestamp;
+              nextPos.target_achievement_time = achievedTimestamp;
               showToast(`🎯 ${pos.symbol} Achieved Target ${highestTargetAchieved} (₹${updatedLtp.toFixed(2)})!`, 'emerald');
               if (isSupabaseConfigured && supabase) {
                 supabase.from('trade_logs').update({
