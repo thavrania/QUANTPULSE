@@ -197,13 +197,13 @@
 
             <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
               <span class="text-slate-400">Selected Expiry</span>
-              <span id="infoSelectedExpiry" class="font-bold text-amber-300">08-OCT-2026</span>
+              <span id="infoSelectedExpiry" class="font-bold text-amber-300">06-OCT-2026</span>
             </div>
 
             <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
               <span class="text-slate-400">Expiry Override (Today is Expiry?)</span>
-              <span id="infoExpiryOverride" class="font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                YES (Next Expiry Used)
+              <span id="infoExpiryOverride" class="font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                NO (Nearest Valid Expiry)
               </span>
             </div>
 
@@ -513,14 +513,14 @@
       tradingDate: '2026-10-01',
       dailyExecutionId: 'NIFTY_0920_PREMIUM_625_OVERNIGHT_20261001',
       selectionTime: '09:20:00 IST',
-      isTodayExpiry: true,
-      selectedExpiry: '08-OCT-2026',
+      isTodayExpiry: false,
+      selectedExpiry: '06-OCT-2026',
       status: 'PENDING_SELECTION', // PENDING_SELECTION, SELECTED, ACTIVE, SL_HIT, OVERNIGHT_HOLD, NEXT_DAY_0925_EXIT, NEXT_DAY_0925_EXIT_RECOVERY, CLOSED
       nextTradingDay: '2026-10-05',
       ceLeg: {
         symbol: 'NIFTY 25100 CE',
         strike: 25100,
-        expiry: '08-OCT-2026',
+        expiry: '06-OCT-2026',
         refPrice: 61.00,
         stopLoss: 45.75, // 61 * 0.75
         currentPrice: 61.00,
@@ -535,7 +535,7 @@
       peLeg: {
         symbol: 'NIFTY 24800 PE',
         strike: 24800,
-        expiry: '08-OCT-2026',
+        expiry: '06-OCT-2026',
         refPrice: 63.00,
         stopLoss: 47.25, // 63 * 0.75
         currentPrice: 63.00,

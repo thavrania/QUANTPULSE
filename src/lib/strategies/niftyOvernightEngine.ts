@@ -9,7 +9,7 @@
  */
 
 import { NiftyOptionLeg, NiftyOvernightState, NiftyOvernightStatus } from '../types/quant';
-import { getISTDate } from '../services/marketHoursService';
+import { getISTDate, isTradingDay } from '../services/marketHoursService';
 import { getNextValidTradingDay } from '../services/tradingCalendarService';
 
 export const STRATEGY_ID = 'NIFTY_0920_PREMIUM_625_OVERNIGHT';
@@ -48,18 +48,24 @@ export function formatExpiryToStandard(d: Date): string {
 
 /**
  * Generates the upcoming valid NIFTY 50 weekly expiry dates starting from reference date.
- * Typically weekly expiries fall on Thursdays (or preceding Wednesday if Thursday is an exchange holiday).
+ * Under current NSE regulations, NIFTY 50 weekly options expire on Tuesdays
+ * (or the preceding trading day if Tuesday is an exchange holiday).
  */
 export function getUpcomingNiftyExpiries(refDate?: Date): string[] {
   const ist = getISTDate(refDate);
   const expiries: string[] = [];
   const testDate = new Date(ist.istDate.getTime());
 
-  // Find next 4 Thursdays
-  for (let i = 0; i < 28; i++) {
-    // 4 = Thursday
-    if (testDate.getUTCDay() === 4) {
-      expiries.push(formatExpiryToStandard(testDate));
+  // Search forward for upcoming Tuesdays (Day 2)
+  for (let i = 0; i < 45; i++) {
+    // 2 = Tuesday
+    if (testDate.getUTCDay() === 2) {
+      // Check if Tuesday is an exchange holiday; if so, step back to preceding trading day
+      const effectiveExpiry = new Date(testDate.getTime());
+      while (!isTradingDay(effectiveExpiry).isTradingDay && effectiveExpiry.getUTCDay() > 0) {
+        effectiveExpiry.setUTCDate(effectiveExpiry.getUTCDate() - 1);
+      }
+      expiries.push(formatExpiryToStandard(effectiveExpiry));
       if (expiries.length >= 4) break;
     }
     testDate.setUTCDate(testDate.getUTCDate() + 1);
