@@ -26,25 +26,42 @@ async function handleClearSession(req: NextRequest) {
 
     const client = supabase;
 
-    // 1. Delete all active positions
+    // 1. Delete all active positions + mark closed
     const { error: posErr } = await client
       .from('active_positions')
       .delete()
       .neq('id', 'DUMMY_NEVER_MATCH');
 
     if (posErr) {
-      console.warn('Error clearing active_positions:', posErr.message);
+      console.warn('Error clearing active_positions (delete):', posErr.message);
     }
 
-    // 2. Delete today's trade logs
+    // Always ensure state is marked closed (bypasses missing DELETE RLS policies)
+    await client
+      .from('active_positions')
+      .update({
+        state_index: 4,
+        state_label: 'Closed / Session Cleared',
+      })
+      .neq('id', 'DUMMY_NEVER_MATCH');
+
+    // 2. Delete today's trade logs + mark cancelled
     const { error: tradeErr } = await client
       .from('trade_logs')
       .delete()
       .gte('created_at', `${dateStr}T00:00:00`);
 
     if (tradeErr) {
-      console.warn('Error clearing trade_logs:', tradeErr.message);
+      console.warn('Error clearing trade_logs (delete):', tradeErr.message);
     }
+
+    // Always ensure trade logs are marked cancelled (bypasses missing DELETE RLS policies)
+    await client
+      .from('trade_logs')
+      .update({
+        status: 'CANCELLED',
+      })
+      .neq('id', '00000000-0000-0000-0000-000000000000');
 
     // 3. Delete today's TSL audit trail
     const { error: tslErr } = await client

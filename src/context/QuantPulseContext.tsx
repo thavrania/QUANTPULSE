@@ -1004,29 +1004,32 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           return Array.from(finalMap.values());
         });
 
-        const { data: posData } = await supabase!.from('active_positions').select('*').order('created_at', { ascending: false });
-        if (posData && posData.length > 0) {
-          const mappedPos: Position[] = posData.map((p: any) => ({
-            id: p.id,
-            orderTime: p.order_time,
-            crossoverTime: p.crossover_time,
-            ticker: p.ticker,
-            executionMode: p.execution_mode,
-            instrumentType: p.instrument_type,
-            symbol: p.symbol,
-            quantity: p.quantity,
-            lots: p.lots,
-            entryPrice: Number(p.entry_price),
-            currentLtp: Number(p.current_ltp),
-            riskPerUnit: Number(p.risk_per_unit),
-            activeTrailingSl: Number(p.active_trailing_sl),
-            targetPrice: Number(p.target_price),
-            stateIndex: p.state_index as 1 | 2 | 3 | 4,
-            stateLabel: p.state_label,
-          }));
-          setPositions(mappedPos);
-          setIdempotencyLocks(mappedPos.map((p) => p.ticker));
-        }
+        const { data: posData } = await supabase!
+          .from('active_positions')
+          .select('*')
+          .lt('state_index', 4)
+          .order('created_at', { ascending: false });
+
+        const mappedPos: Position[] = (posData || []).map((p: any) => ({
+          id: p.id,
+          orderTime: p.order_time,
+          crossoverTime: p.crossover_time,
+          ticker: p.ticker,
+          executionMode: p.execution_mode,
+          instrumentType: p.instrument_type,
+          symbol: p.symbol,
+          quantity: p.quantity,
+          lots: p.lots,
+          entryPrice: Number(p.entry_price),
+          currentLtp: Number(p.current_ltp),
+          riskPerUnit: Number(p.risk_per_unit),
+          activeTrailingSl: Number(p.active_trailing_sl),
+          targetPrice: Number(p.target_price),
+          stateIndex: p.state_index as 1 | 2 | 3 | 4,
+          stateLabel: p.state_label,
+        }));
+        setPositions(mappedPos);
+        setIdempotencyLocks(mappedPos.map((p) => p.ticker));
       } catch (err) {
         console.error('Supabase load error:', err);
       }
@@ -1860,8 +1863,28 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         }))
       );
 
-      // 3. Call backend clear pipeline to wipe active_positions, trade_logs, tsl_audit_trail, crossover_events, and reset watchlist in Supabase
+      // 3. Mark positions closed and cancel trade logs in Supabase directly
       markSelfUpdating();
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await Promise.allSettled([
+            supabase.from('active_positions').update({ state_index: 4, state_label: 'Closed / Session Cleared' }).neq('id', 'DUMMY'),
+            supabase.from('trade_logs').update({ status: 'CANCELLED' }).neq('id', '00000000-0000-0000-0000-000000000000'),
+            supabase.from('watchlist').update({
+              today_vol_m: 0.0,
+              has_crossed_20d: false,
+              crossover_time: null,
+              crossover_spot_price: null,
+              updated_at: new Date().toISOString(),
+            }).neq('ticker', 'DUMMY'),
+          ]);
+        } catch (dbErr) {
+          console.warn('Direct Supabase reset warning:', dbErr);
+        }
+      }
+
+      // 4. Call backend clear pipeline to wipe active_positions, trade_logs, tsl_audit_trail, crossover_events, and reset watchlist in Supabase
       const res = await fetch('/api/pipeline/clear-session', {
         method: 'POST',
       });
@@ -1875,7 +1898,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       console.warn('Error clearing session:', err);
       showToast('Clean slate reset completed (local state reset).', 'emerald');
     }
-  }, [markSelfUpdating, showToast]);
+  }, [markSelfUpdating, isSupabaseConfigured, showToast]);
 
   const toggleLiveStream = useCallback(() => {
     setIsLiveStreaming((prev) => {

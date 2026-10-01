@@ -29,6 +29,7 @@ export function ZoneE_Positions() {
       const { data: tLogs } = await supabase
         .from('trade_logs')
         .select('*')
+        .neq('status', 'CANCELLED')
         .order('created_at', { ascending: false })
         .limit(25);
       if (tLogs) setCloudTradeLogs(tLogs as TradeLog[]);
@@ -71,7 +72,12 @@ export function ZoneE_Positions() {
             </span>
             <button
               type="button"
-              onClick={clearAllPositionsAndTrades}
+              onClick={async () => {
+                setCloudTradeLogs([]);
+                setCloudTslTrails([]);
+                await clearAllPositionsAndTrades();
+                await fetchCloudData();
+              }}
               className="text-[11px] font-mono px-2.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 font-semibold transition flex items-center gap-1 cursor-pointer"
               title="Wipe all open positions, trade logs, and stale crossovers for a clean fresh start"
             >
@@ -141,6 +147,24 @@ export function ZoneE_Positions() {
           </div>
 
           <div className="flex items-center gap-2">
+            {subTab === 'TRADE_LOGS' && cloudTradeLogs.length > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (supabase) {
+                    await supabase
+                      .from('trade_logs')
+                      .update({ status: 'CANCELLED' })
+                      .neq('id', '00000000-0000-0000-0000-000000000000');
+                    setCloudTradeLogs([]);
+                  }
+                }}
+                className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition flex items-center gap-1"
+                title="Cancel and clear executed orders from cloud ledger"
+              >
+                <span>Clear Ledger</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={fetchCloudData}
@@ -173,7 +197,7 @@ export function ZoneE_Positions() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70 text-xs">
-                {positions.length === 0 ? (
+                {openPositions.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="py-8 text-center text-xs text-slate-400">
                       No active trades in local memory. Dispatched trades are permanently archived in the{' '}
@@ -186,7 +210,7 @@ export function ZoneE_Positions() {
                     </td>
                   </tr>
                 ) : (
-                  positions.map((pos) => {
+                  openPositions.map((pos) => {
                     const unitPnl = pos.currentLtp - pos.entryPrice;
                     const posPnl = +(unitPnl * pos.quantity).toFixed(2);
 

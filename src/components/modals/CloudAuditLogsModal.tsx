@@ -34,6 +34,7 @@ export function CloudAuditLogsModal() {
       const { data: trades, error: tradesErr } = await supabase
         .from('trade_logs')
         .select('*')
+        .neq('status', 'CANCELLED')
         .order('created_at', { ascending: false })
         .limit(50);
 
