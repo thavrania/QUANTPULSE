@@ -36,6 +36,8 @@ export function ZoneA_Header() {
     autoPilotStatus,
     setIsAutoPilotModalOpen,
     marketLifecycle,
+    activeStrategy,
+    setActiveStrategy,
   } = useQuantPulse();
 
   return (
@@ -52,9 +54,34 @@ export function ZoneA_Header() {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold tracking-tight text-sm md:text-base text-white">QUANTPULSE</span>
-              <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
-                20D Crossover
-              </span>
+
+              {/* Strategy Switcher Toggle */}
+              <div className="inline-flex items-center h-6 rounded-md p-0.5 border border-slate-700 bg-slate-900 text-[10px] font-mono shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setActiveStrategy('20D_CROSSOVER')}
+                  className={`px-2 py-0.5 rounded transition ${
+                    activeStrategy === '20D_CROSSOVER'
+                      ? 'bg-emerald-500 text-slate-950 font-bold shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Strategy 1: 20-Day Cumulative Volume Crossover & Intraday Options"
+                >
+                  20D Crossover
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveStrategy('NIFTY_OVERNIGHT')}
+                  className={`px-2 py-0.5 rounded transition flex items-center gap-1 ${
+                    activeStrategy === 'NIFTY_OVERNIGHT'
+                      ? 'bg-purple-500 text-white font-bold shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Strategy 2: NIFTY 09:20 Premium 62.5 Overnight Strategy (No Target)"
+                >
+                  <span>🌙</span> NIFTY 09:20 Overnight
+                </button>
+              </div>
 
               {/* Market Session Beacon (NSE IST) */}
               <span

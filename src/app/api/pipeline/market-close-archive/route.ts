@@ -67,6 +67,28 @@ async function handleMarketCloseArchive(req: NextRequest) {
 
     if (openPositions && openPositions.length > 0) {
       for (const pos of openPositions) {
+        // Exemption Rule: NIFTY 09:20 Premium 62.5 Overnight Strategy explicitly holds overnight
+        if (pos.strategy_id === 'NIFTY_0920_PREMIUM_625_OVERNIGHT' || pos.allow_overnight) {
+          await client
+            .from('active_positions')
+            .update({
+              state_label: 'OVERNIGHT_HOLD',
+            })
+            .eq('id', pos.id);
+
+          try {
+            await client
+              .from('strategy_nifty_overnight')
+              .update({
+                status: 'OVERNIGHT_HOLD',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('trading_date', dateStr);
+          } catch {}
+
+          continue; // Strictly skip EOD sell order
+        }
+
         const exitPrice = Number(pos.current_ltp) || Number(pos.entry_price) || 1000;
         const entryPrice = Number(pos.entry_price) || exitPrice;
         const quantity = Number(pos.quantity) || 1;

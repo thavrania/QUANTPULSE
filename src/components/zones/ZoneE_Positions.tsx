@@ -294,13 +294,21 @@ export function ZoneE_Positions() {
                           ₹{pos.activeTrailingSl.toFixed(2)}
                         </td>
                         <td className="py-2.5 px-3 font-mono">
-                          <div className="text-emerald-400">₹{pos.targetPrice.toFixed(2)}</div>
-                          {pos.highestTargetAchieved && pos.highestTargetAchieved !== 'NONE' ? (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                              🎯 {pos.highestTargetAchieved}
+                          {pos.strategy_id === 'NIFTY_0920_PREMIUM_625_OVERNIGHT' || pos.strategyId === 'NIFTY_0920_PREMIUM_625_OVERNIGHT' ? (
+                            <span className="text-[10px] font-mono text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                              NONE (No Target)
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-500">T1: ₹{pos.target1 ? pos.target1.toFixed(1) : '-'}</span>
+                            <>
+                              <div className="text-emerald-400">₹{pos.targetPrice.toFixed(2)}</div>
+                              {pos.highestTargetAchieved && pos.highestTargetAchieved !== 'NONE' ? (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  🎯 {pos.highestTargetAchieved}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-500">T1: ₹{pos.target1 ? pos.target1.toFixed(1) : '-'}</span>
+                              )}
+                            </>
                           )}
                         </td>
                         <td className="py-2.5 px-3">
@@ -317,7 +325,11 @@ export function ZoneE_Positions() {
                           {posPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="py-2.5 px-3 text-right space-x-1">
-                          {pos.stateIndex < 4 ? (
+                          {pos.strategy_id === 'NIFTY_0920_PREMIUM_625_OVERNIGHT' || pos.strategyId === 'NIFTY_0920_PREMIUM_625_OVERNIGHT' ? (
+                            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">
+                              Fixed 25% SL • Exit @ 09:25
+                            </span>
+                          ) : pos.stateIndex < 4 ? (
                             <>
                               <button
                                 type="button"

@@ -97,6 +97,14 @@ export interface Position {
   highest_target_achieved?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4';
   targetAchievementTimestamp?: string | null;
   target_achievement_time?: string | null;
+  strategyId?: string;
+  strategy_id?: string;
+  allowOvernight?: boolean;
+  allow_overnight?: boolean;
+  referencePrice?: number;
+  reference_price?: number;
+  nextTradingDay?: string;
+  next_trading_day?: string;
 }
 
 export interface SystemConfig {
@@ -200,6 +208,9 @@ export interface TradeLog {
   target_4?: number;
   highest_target_achieved?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4';
   target_achievement_time?: string | null;
+  strategy_id?: string;
+  reference_price?: number;
+  exit_reason?: string;
 }
 
 export interface TargetPerformanceReport {
@@ -283,4 +294,52 @@ export interface BrokerVaultStatus {
   availableMargin?: number | null;
   source: 'VAULT' | 'LOCAL' | 'ENV' | 'NONE';
 }
+
+// =====================================================================
+// NIFTY 09:20 Premium 62.5 Overnight Strategy Domain Types
+// Strategy ID: NIFTY_0920_PREMIUM_625_OVERNIGHT
+// =====================================================================
+
+export type NiftyOvernightStatus =
+  | 'PENDING_SELECTION'
+  | 'SELECTED'
+  | 'ACTIVE'
+  | 'SL_HIT'
+  | 'OVERNIGHT_HOLD'
+  | 'NEXT_DAY_0925_EXIT'
+  | 'NEXT_DAY_0925_EXIT_RECOVERY'
+  | 'CLOSED'
+  | 'NO_ELIGIBLE_OPTION'
+  | 'ERROR';
+
+export interface NiftyOptionLeg {
+  symbol: string;
+  strike: number;
+  expiry: string;
+  refPrice: number;
+  stopLoss: number;
+  currentPrice: number;
+  distance: number;
+  status: 'PENDING' | 'ACTIVE' | 'SL_HIT' | 'OVERNIGHT_HOLD' | 'CLOSED';
+  quantity: number;
+  exitPrice?: number | null;
+  exitTime?: string | null;
+  exitReason?: string | null;
+  realizedPnl?: number;
+}
+
+export interface NiftyOvernightState {
+  id: string;
+  tradingDate: string;
+  dailyExecutionId: string;
+  selectionTime: string;
+  isTodayExpiry: boolean;
+  selectedExpiry: string;
+  status: NiftyOvernightStatus;
+  nextTradingDay: string;
+  mandatoryExitTime: string;
+  ceLeg: NiftyOptionLeg;
+  peLeg: NiftyOptionLeg;
+}
+
 

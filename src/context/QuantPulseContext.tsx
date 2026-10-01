@@ -10,7 +10,15 @@ import {
   ExecutionMode,
   BrokerVaultStatus,
   StockMasterItem,
+  NiftyOvernightState,
+  NiftyOptionLeg,
 } from '@/lib/types/quant';
+import {
+  initializePendingState,
+  resolveNiftyExpiry,
+  STRATEGY_ID as NIFTY_OVERNIGHT_STRATEGY_ID,
+  RawOptionContract,
+} from '@/lib/strategies/niftyOvernightEngine';
 import {
   STOCK_MASTER_CATALOG,
   getStockMasterByTicker,
@@ -132,6 +140,17 @@ interface QuantPulseContextType {
   toggleAutoPilot: () => void;
   runAutoPilotStepNow: (stepId: AutoPilotStepId) => Promise<void>;
   clearAllPositionsAndTrades: () => Promise<void>;
+
+  // Multi-Strategy Orchestration (Strategy 1 vs Strategy 2)
+  activeStrategy: '20D_CROSSOVER' | 'NIFTY_OVERNIGHT';
+  setActiveStrategy: (strat: '20D_CROSSOVER' | 'NIFTY_OVERNIGHT') => void;
+  niftyOvernightState: NiftyOvernightState;
+  setNiftyOvernightState: React.Dispatch<React.SetStateAction<NiftyOvernightState>>;
+  executeNifty0920Scan: () => Promise<void>;
+  adjustNiftyLegPrice: (type: 'CE' | 'PE', delta: number) => void;
+  forceNiftyStopLoss: (type: 'CE' | 'PE') => Promise<void>;
+  forceNiftyNextDayExit: (isRecovery?: boolean) => Promise<void>;
+  resetNiftyScenario: () => void;
 }
 
 const QuantPulseContext = createContext<QuantPulseContextType | undefined>(undefined);
@@ -254,9 +273,21 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [autoPilotStatus, setAutoPilotStatus] = useState<PreMarketAutoPilotStatus>(() =>
     evaluateAutoPilot(getNowIstSeconds(), false).status
   );
+
+  // Multi-Strategy Orchestration State
+  const [activeStrategy, setActiveStrategy] = useState<'20D_CROSSOVER' | 'NIFTY_OVERNIGHT'>('20D_CROSSOVER');
+  const [niftyOvernightState, setNiftyOvernightState] = useState<NiftyOvernightState>(() =>
+    initializePendingState(getISTDate().dateStr)
+  );
+  const niftyOvernightStateRef = useRef<NiftyOvernightState>(niftyOvernightState);
+  useEffect(() => {
+    niftyOvernightStateRef.current = niftyOvernightState;
+  }, [niftyOvernightState]);
   const [isAutoPilotModalOpen, setIsAutoPilotModalOpen] = useState<boolean>(false);
   const runningAutoPilotStepRef = useRef<AutoPilotStepId | null>(null);
   const executeAutoPilotStepRef = useRef<((stepId: AutoPilotStepId) => Promise<void>) | null>(null);
+  const executeNifty0920ScanRef = useRef<(() => Promise<void>) | null>(null);
+  const forceNiftyNextDayExitRef = useRef<((isRecovery?: boolean) => Promise<void>) | null>(null);
 
   const packetCountRef = useRef<number>(0);
   const streamTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -733,6 +764,34 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         reconcileAutoTradeOrdersRef.current();
       }
 
+      // NIFTY 09:20 Strategy Scheduled Trigger: 09:20 AM IST
+      if (secs >= 9 * 3600 + 20 * 60 && secs < 9 * 3600 + 20 * 60 + 5) {
+        if (niftyOvernightStateRef.current.status === 'PENDING_SELECTION') {
+          executeNifty0920ScanRef.current?.();
+        }
+      }
+
+      // NIFTY 09:20 Strategy Mandatory Exit: 09:25 AM IST on Next Valid Trading Day
+      const nState = niftyOvernightStateRef.current;
+      if (
+        (nState.status === 'OVERNIGHT_HOLD' || nState.status === 'ACTIVE') &&
+        ist.dateStr >= nState.nextTradingDay &&
+        secs >= 9 * 3600 + 25 * 60
+      ) {
+        const isRecovery = secs >= 9 * 3600 + 26 * 60;
+        forceNiftyNextDayExitRef.current?.(isRecovery);
+      }
+
+      // NIFTY 09:20 Strategy Market Close Transition: 15:30 IST
+      if (secs >= 15 * 3600 + 30 * 60 && nState.status === 'ACTIVE') {
+        setNiftyOvernightState((prev) => ({
+          ...prev,
+          status: 'OVERNIGHT_HOLD',
+          ceLeg: prev.ceLeg.status === 'ACTIVE' ? { ...prev.ceLeg, status: 'OVERNIGHT_HOLD' } : prev.ceLeg,
+          peLeg: prev.peLeg.status === 'ACTIVE' ? { ...prev.peLeg, status: 'OVERNIGHT_HOLD' } : prev.peLeg,
+        }));
+      }
+
       // Midnight date change rollover detection
       if (ist.dateStr !== currentTradingDateRef.current) {
         currentTradingDateRef.current = ist.dateStr;
@@ -765,6 +824,62 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       }
     }
     hydrateSession();
+  }, []);
+
+  // Hydrate NIFTY 09:20 Overnight Strategy state on initial load
+  useEffect(() => {
+    async function hydrateNiftyOvernight() {
+      try {
+        const res = await fetch('/api/strategy/nifty-overnight');
+        const data = await res.json();
+        if (data && data.success && data.data) {
+          const d = data.data;
+          if (d.ce_symbol) {
+            setNiftyOvernightState((prev) => ({
+              ...prev,
+              id: d.id,
+              tradingDate: d.trading_date || prev.tradingDate,
+              dailyExecutionId: d.id,
+              status: d.status,
+              selectedExpiry: d.selected_expiry,
+              isTodayExpiry: Boolean(d.is_expiry_override),
+              nextTradingDay: d.next_trading_day || prev.nextTradingDay,
+              ceLeg: {
+                ...prev.ceLeg,
+                symbol: d.ce_symbol,
+                strike: d.ce_strike || 0,
+                expiry: d.selected_expiry,
+                refPrice: Number(d.ce_ref_price) || 0,
+                stopLoss: Number(d.ce_stop_loss) || 0,
+                currentPrice: Number(d.ce_current_price) || Number(d.ce_ref_price) || 0,
+                status: d.ce_status || 'PENDING',
+                exitPrice: d.ce_exit_price ? Number(d.ce_exit_price) : null,
+                exitTime: d.ce_exit_time || null,
+                exitReason: d.ce_exit_reason || null,
+                realizedPnl: d.ce_realized_pnl ? Number(d.ce_realized_pnl) : 0,
+              },
+              peLeg: {
+                ...prev.peLeg,
+                symbol: d.pe_symbol,
+                strike: d.pe_strike || 0,
+                expiry: d.selected_expiry,
+                refPrice: Number(d.pe_ref_price) || 0,
+                stopLoss: Number(d.pe_stop_loss) || 0,
+                currentPrice: Number(d.pe_current_price) || Number(d.pe_ref_price) || 0,
+                status: d.pe_status || 'PENDING',
+                exitPrice: d.pe_exit_price ? Number(d.pe_exit_price) : null,
+                exitTime: d.pe_exit_time || null,
+                exitReason: d.pe_exit_reason || null,
+                realizedPnl: d.pe_realized_pnl ? Number(d.pe_realized_pnl) : 0,
+              },
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn('Notice: could not hydrate NIFTY overnight state:', err);
+      }
+    }
+    hydrateNiftyOvernight();
   }, []);
 
   // First Day Start check: if date has changed since last visit, run baseline calculation & session reset
@@ -2841,6 +2956,186 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     showToast('Simulation reset! Ready to test 20D crossover latching.', 'info');
   }, [showToast]);
 
+  // =========================================================================
+  // NIFTY 09:20 Premium 62.5 Overnight Strategy Handlers
+  // =========================================================================
+  const executeNifty0920Scan = useCallback(async () => {
+    try {
+      const todayDateStr = getISTDate().dateStr;
+      const { selectedExpiry } = resolveNiftyExpiry(todayDateStr);
+
+      const sampleCandidates: RawOptionContract[] = [
+        { type: 'CE', strike: 25000, price: 55.0, symbol: `NIFTY 25000 CE`, expiry: selectedExpiry },
+        { type: 'CE', strike: 25100, price: 61.0, symbol: `NIFTY 25100 CE`, expiry: selectedExpiry },
+        { type: 'CE', strike: 25200, price: 64.0, symbol: `NIFTY 25200 CE`, expiry: selectedExpiry },
+        { type: 'CE', strike: 25300, price: 72.0, symbol: `NIFTY 25300 CE`, expiry: selectedExpiry },
+        { type: 'PE', strike: 24700, price: 71.0, symbol: `NIFTY 24700 PE`, expiry: selectedExpiry },
+        { type: 'PE', strike: 24800, price: 63.0, symbol: `NIFTY 24800 PE`, expiry: selectedExpiry },
+        { type: 'PE', strike: 24900, price: 60.0, symbol: `NIFTY 24900 PE`, expiry: selectedExpiry },
+        { type: 'PE', strike: 25000, price: 53.0, symbol: `NIFTY 25000 PE`, expiry: selectedExpiry },
+      ];
+
+      const res = await fetch('/api/strategy/nifty-overnight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'SCAN_AND_SELECT', candidates: sampleCandidates }),
+      });
+      const data = await res.json();
+
+      if (data && data.success && data.data) {
+        const d = data.data;
+        setNiftyOvernightState((prev) => ({
+          ...prev,
+          status: 'ACTIVE',
+          selectedExpiry: d.selected_expiry,
+          isTodayExpiry: Boolean(d.is_expiry_override),
+          nextTradingDay: d.next_trading_day,
+          ceLeg: {
+            ...prev.ceLeg,
+            symbol: d.ce_symbol,
+            strike: d.ce_strike,
+            expiry: d.selected_expiry,
+            refPrice: Number(d.ce_ref_price),
+            stopLoss: Number(d.ce_stop_loss),
+            currentPrice: Number(d.ce_ref_price),
+            distance: +Math.abs(Number(d.ce_ref_price) - 62.50).toFixed(2),
+            status: 'ACTIVE',
+          },
+          peLeg: {
+            ...prev.peLeg,
+            symbol: d.pe_symbol,
+            strike: d.pe_strike,
+            expiry: d.selected_expiry,
+            refPrice: Number(d.pe_ref_price),
+            stopLoss: Number(d.pe_stop_loss),
+            currentPrice: Number(d.pe_ref_price),
+            distance: +Math.abs(Number(d.pe_ref_price) - 62.50).toFixed(2),
+            status: 'ACTIVE',
+          },
+        }));
+
+        showToast(
+          `🌙 NIFTY 09:20 Selection Locked! CE: ${d.ce_symbol} @ ₹${d.ce_ref_price} (SL: ₹${d.ce_stop_loss}) | PE: ${d.pe_symbol} @ ₹${d.pe_ref_price} (SL: ₹${d.pe_stop_loss})`,
+          'emerald'
+        );
+      }
+    } catch (err: any) {
+      console.warn('Failed to execute NIFTY 09:20 scan:', err);
+    }
+  }, [showToast]);
+
+  const adjustNiftyLegPrice = useCallback((type: 'CE' | 'PE', delta: number) => {
+    setNiftyOvernightState((prev) => {
+      const leg = type === 'CE' ? prev.ceLeg : prev.peLeg;
+      if (leg.status !== 'ACTIVE' && leg.status !== 'OVERNIGHT_HOLD') return prev;
+      const newPrice = Math.max(1, +(leg.currentPrice + delta).toFixed(2));
+      const updatedLeg = { ...leg, currentPrice: newPrice };
+      return {
+        ...prev,
+        [type === 'CE' ? 'ceLeg' : 'peLeg']: updatedLeg,
+      };
+    });
+  }, []);
+
+  const forceNiftyStopLoss = useCallback(
+    async (type: 'CE' | 'PE') => {
+      setNiftyOvernightState((prev) => {
+        const leg = type === 'CE' ? prev.ceLeg : prev.peLeg;
+        if (leg.status === 'CLOSED' || leg.status === 'SL_HIT') return prev;
+        const exitPrice = leg.stopLoss;
+        const realizedPnl = +((exitPrice - leg.refPrice) * leg.quantity).toFixed(2);
+        const otherLeg = type === 'CE' ? prev.peLeg : prev.ceLeg;
+        const allClosed = otherLeg.status === 'SL_HIT' || otherLeg.status === 'CLOSED';
+
+        const updatedLeg: NiftyOptionLeg = {
+          ...leg,
+          currentPrice: exitPrice,
+          status: 'SL_HIT',
+          exitPrice,
+          exitTime: formatClockIST(clockSecondsRef.current || clockSeconds),
+          exitReason: 'SL_HIT',
+          realizedPnl,
+        };
+
+        fetch('/api/strategy/nifty-overnight', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'INTRADAY_SL_EXIT', legType: type, exitPrice }),
+        }).catch(() => {});
+
+        return {
+          ...prev,
+          status: allClosed ? 'CLOSED' : prev.status,
+          [type === 'CE' ? 'ceLeg' : 'peLeg']: updatedLeg,
+        };
+      });
+      showToast(`🚨 NIFTY ${type} Stop Loss Hit! Sold immediately @ SL price. Will NOT carry overnight.`, 'rose');
+    },
+    [clockSeconds, showToast]
+  );
+
+  const forceNiftyNextDayExit = useCallback(
+    async (isRecovery = false) => {
+      const reason = isRecovery ? 'NEXT_DAY_0925_EXIT_RECOVERY' : 'NEXT_DAY_0925_EXIT';
+      setNiftyOvernightState((prev) => {
+        const timeStr = formatClockIST(clockSecondsRef.current || clockSeconds);
+        const updatedCe = { ...prev.ceLeg };
+        const updatedPe = { ...prev.peLeg };
+
+        if (updatedCe.status === 'ACTIVE' || updatedCe.status === 'OVERNIGHT_HOLD') {
+          updatedCe.exitPrice = updatedCe.currentPrice;
+          updatedCe.exitTime = timeStr;
+          updatedCe.exitReason = reason;
+          updatedCe.status = 'CLOSED';
+          updatedCe.realizedPnl = +((updatedCe.currentPrice - updatedCe.refPrice) * updatedCe.quantity).toFixed(2);
+        }
+
+        if (updatedPe.status === 'ACTIVE' || updatedPe.status === 'OVERNIGHT_HOLD') {
+          updatedPe.exitPrice = updatedPe.currentPrice;
+          updatedPe.exitTime = timeStr;
+          updatedPe.exitReason = reason;
+          updatedPe.status = 'CLOSED';
+          updatedPe.realizedPnl = +((updatedPe.currentPrice - updatedPe.refPrice) * updatedPe.quantity).toFixed(2);
+        }
+
+        fetch('/api/strategy/nifty-overnight', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: isRecovery ? 'RECOVERY_0925_EXIT' : 'MANDATORY_0925_EXIT',
+            currentLtpCe: updatedCe.exitPrice,
+            currentLtpPe: updatedPe.exitPrice,
+          }),
+        }).catch(() => {});
+
+        return {
+          ...prev,
+          status: reason,
+          ceLeg: updatedCe,
+          peLeg: updatedPe,
+        };
+      });
+
+      showToast(
+        isRecovery
+          ? '⚠️ 09:25 Crash Recovery Exit Executed! Positions closed immediately.'
+          : '🔔 Mandatory 09:25 AM IST Next-Day Exit Executed! Overnight positions closed cleanly.',
+        isRecovery ? 'amber' : 'emerald'
+      );
+    },
+    [clockSeconds, showToast]
+  );
+
+  const resetNiftyScenario = useCallback(() => {
+    setNiftyOvernightState(initializePendingState(getISTDate().dateStr));
+    showToast('NIFTY Overnight Strategy reset to PENDING_SELECTION.', 'info');
+  }, [showToast]);
+
+  useEffect(() => {
+    executeNifty0920ScanRef.current = executeNifty0920Scan;
+    forceNiftyNextDayExitRef.current = forceNiftyNextDayExit;
+  }, [executeNifty0920Scan, forceNiftyNextDayExit]);
+
   const totalMtmPnl = positions.reduce((acc, pos) => {
     const unitPnl = pos.currentLtp - pos.entryPrice;
     return acc + unitPnl * pos.quantity;
@@ -2921,6 +3216,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         toggleAutoPilot,
         runAutoPilotStepNow,
         clearAllPositionsAndTrades,
+        activeStrategy,
+        setActiveStrategy,
+        niftyOvernightState,
+        setNiftyOvernightState,
+        executeNifty0920Scan,
+        adjustNiftyLegPrice,
+        forceNiftyStopLoss,
+        forceNiftyNextDayExit,
+        resetNiftyScenario,
       }}
     >
       {children}

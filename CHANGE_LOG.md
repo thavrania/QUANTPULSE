@@ -52,6 +52,65 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ## Change History
 
+### [2026-10-01 17:45 IST] — Implementation of NIFTY 09:20 Premium 62.5 Overnight Strategy
+- **Commit SHA / Version:** Pending (`main`) / `v2.2.0`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Feature` / `Database`
+- **Business Rationale / Objective:** 
+  Implement the institutional options trading strategy "NIFTY 09:20 Premium 62.5 Overnight Strategy" (Strategy ID: `NIFTY_0920_PREMIUM_625_OVERNIGHT`). At 09:20 AM IST every valid trading day, the strategy resolves the target NIFTY expiry (skipping today's expiry if today is expiry day), captures 09:20 reference quotes, filters options between ₹50 and ₹75, and independently selects the CE and PE contracts closest to ₹62.50. Fixes a strict 25% Stop Loss (`reference_price * 0.75`) with ZERO profit target. Monitored intraday for SL breach (`LTP <= SL` -> immediate exit). If SL is not hit, the position is held overnight (exempted from 15:35 market-close square-off) and mandatorily exited at 09:25 AM IST on the next valid NSE trading day (skipping weekends & exchange holidays), with crash recovery exit support.
+
+#### Affected Components & Files
+- `src/lib/types/quant.ts`: Added `strategyId`, `allowOvernight`, `referencePrice`, `nextTradingDay`, `exit_reason` fields to `Position` and `TradeLog`. Added `NiftyOvernightState`, `NiftyOptionLeg`, `NiftyOvernightStatus` types.
+- `src/lib/services/tradingCalendarService.ts`: New calendar utility calculating the next valid NSE trading day skipping weekends and gazetted holidays.
+- `src/lib/strategies/niftyOvernightEngine.ts`: Core pure mathematical engine handling expiry skipping, candidate filtering, closest-to-62.5 selection, fixed 25% SL, and exit validations.
+- `src/app/api/strategy/nifty-overnight/route.ts`: Serverless API route handling 09:20 scan/selection, intraday SL exits, mandatory 09:25 exits, and crash recovery.
+- `src/app/api/pipeline/market-close-archive/route.ts`: Added exemption filter to bypass auto square-off for `NIFTY_0920_PREMIUM_625_OVERNIGHT` / `allow_overnight` positions, transitioning them cleanly to `OVERNIGHT_HOLD`.
+- `src/components/strategies/Zone_NiftyOvernight.tsx`: Section 21 compliant specialized strategy control & monitoring panel.
+- `src/components/zones/ZoneA_Header.tsx`: Integrated dual-strategy toggle between `20D Crossover` and `🌙 NIFTY 09:20 Overnight`.
+- `src/components/zones/ZoneE_Positions.tsx`: Suppressed profit target displays and TSL controls for overnight positions; replaced with Fixed 25% SL and 09:25 Next-Day exit badge.
+- `src/app/page.tsx`: Dynamically toggles between 20D Crossover screener zones and NIFTY Overnight Strategy view based on selected strategy.
+- `src/context/QuantPulseContext.tsx`: Wired strategy state, automated timers (09:20 scan, 09:25 exit), and interactive simulation actions.
+- `supabase_nifty_overnight_strategy.sql`: Database migration creating `strategy_nifty_overnight` and updating `active_positions` / `trade_logs`.
+- `NewStrategy.html`: Standalone interactive single-page simulation prototype with live quote simulators and scenario buttons.
+
+#### Database & Schema Impact
+- **Tables Touched:** `public.strategy_nifty_overnight` (NEW), `public.active_positions` (ALTER), `public.trade_logs` (ALTER)
+- **Operations:** `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX`, `ROW LEVEL SECURITY`
+- **Migration Script:** `supabase_nifty_overnight_strategy.sql`
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session (20D Strategy Untouched)
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required (20D Strategy Untouched)
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch Untouched)
+- [x] Invariant 4: No Volume Fallback to Previous Day (Untouched)
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio (20D Strategy Untouched)
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+- [x] Invariant 11: Zero Round-Off & Slippage Precision Standard
+- [x] Invariant 12: Strict Zero-Target Invariant for NIFTY Overnight Strategy
+- [x] Invariant 13: Expiry Skip Rule on Expiry Day
+- [x] Invariant 14: Market-Close Square-Off Exemption for Overnight Positions
+- [x] Invariant 15: Mandatory 09:25 Next-Trading-Day Exit with Crash Recovery
+
+#### Verification & Testing Performed
+- Executed `test-nifty-engine.mjs` unit test suite verifying:
+  - Expiry day skip rule (selected next available weekly expiry).
+  - Normal day nearest expiry selection.
+  - Option candidate filtering in range `[50, 75]`.
+  - Closest distance selection to ₹62.50.
+  - Exact 25% SL calculation (`62 -> 46.50`, `64 -> 48.00`, `61 -> 45.75`, `63 -> 47.25`).
+  - SL hit detection (`LTP <= SL`).
+- Verified full TypeScript strict type checking with zero errors via `tsc --noEmit`.
+- Validated interactive prototype `NewStrategy.html` across all scenarios (Intraday SL hit, EOD overnight hold, Next-Day 09:25 exit, Server reboot recovery).
+
+#### Rollback Procedure
+- Revert git commit and drop table `public.strategy_nifty_overnight`.
+
+---
+
 ### [2026-10-01 11:28 IST] — Fix TypeScript Inferred Return Type for Watchlist Baseline Sync
 - **Commit SHA / Version:** Pending (`main`) / `v2.1.1`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)

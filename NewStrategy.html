@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QUANTPULSE — NIFTY 09:20 Premium 62.5 Overnight Strategy Prototype</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            obsidian: '#060A11',
+            panel: '#0D1422',
+            panelHover: '#152036',
+            borderSubtle: '#1E293B',
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      background-color: #060A11;
+      color: #F8FAFC;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+    .font-mono-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #060A11;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1E293B;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-obsidian flex flex-col justify-between">
+
+  <!-- ========================================== -->
+  <!-- HEADER & TOP COMMAND BAR -->
+  <!-- ========================================== -->
+  <header class="sticky top-0 z-30 bg-panel/95 backdrop-blur border-b border-slate-800 px-4 py-3 shadow-xl">
+    <div class="max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      
+      <!-- Brand & Strategy ID -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/40 flex items-center justify-center shadow-inner">
+          <span class="text-xl">🌙</span>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-bold tracking-tight text-base text-white">QUANTPULSE</span>
+            <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold">
+              STRATEGY: NIFTY 09:20 PREMIUM 62.5 OVERNIGHT
+            </span>
+            <span id="badgeStrategyStatus" class="text-[10px] font-mono uppercase px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+              PENDING_SELECTION
+            </span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5 font-mono">
+            <span>ID: <strong class="text-slate-300">NIFTY_0920_PREMIUM_625_OVERNIGHT</strong></span>
+            <span>•</span>
+            <span id="labelDailyExecutionId" class="text-cyan-400">NIFTY_0920_PREMIUM_625_OVERNIGHT_20261001</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Strategy Invariant Notice: NO TARGET -->
+      <div class="bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5 text-xs text-rose-300 flex items-center gap-2">
+        <span class="font-bold text-rose-400">⚠️ INVARIANT:</span>
+        <span>NO TARGET PRICE. Exits strictly on <strong>SL Hit (25% Loss)</strong> or <strong>Next Day 09:25 AM IST</strong>.</span>
+      </div>
+
+      <!-- Clock & Date -->
+      <div class="flex items-center gap-3 bg-obsidian/90 px-3 py-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+        <div class="flex items-center gap-1.5 text-slate-400">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>IST:</span>
+          <span id="clockIstDisplay" class="font-bold text-cyan-300">09:20:00 IST</span>
+        </div>
+        <div class="text-slate-500">|</div>
+        <div class="text-slate-300">
+          <span>📅 Date: </span><span id="dateIstDisplay" class="font-semibold text-white">2026-10-01</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================== -->
+  <!-- MAIN WORKSPACE -->
+  <!-- ========================================== -->
+  <main class="flex-1 max-w-[1920px] w-full mx-auto p-4 space-y-4">
+
+    <!-- Interactive Simulation Control Strip -->
+    <section class="bg-panel rounded-xl border border-slate-800 p-4 shadow-lg space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">🧪 Interactive Test Controller & Scenario Simulator</span>
+          <span class="text-[11px] text-slate-400">— Test all lifecycle phases directly in this prototype</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="resetSimulation()" class="px-3 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-mono transition">
+            🔄 Reset Scenario
+          </button>
+          <button onclick="simulateServerRestart()" class="px-3 py-1 text-xs rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 font-mono transition">
+            ⚡ Test Server Restart
+          </button>
+        </div>
+      </div>
+
+      <!-- Action Buttons Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs font-mono">
+        <!-- 1. Trigger 09:20 Selection -->
+        <button onclick="execute0920Selection()" class="p-2.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-left font-semibold transition flex flex-col justify-between">
+          <span class="text-[10px] text-emerald-400">STEP 1 (09:20 IST)</span>
+          <span class="text-white mt-1">1. Select CE & PE @ 09:20</span>
+        </button>
+
+        <!-- 2. Test Expiry Day Toggle -->
+        <button onclick="toggleExpiryDayMode()" id="btnToggleExpiry" class="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-left transition flex flex-col justify-between">
+          <span class="text-[10px] text-amber-400">EXPIRY CHECK</span>
+          <span id="labelExpiryMode" class="text-white mt-1 font-semibold">Today = Expiry Day? [YES]</span>
+        </button>
+
+        <!-- 3. Trigger CE Stop Loss -->
+        <button onclick="triggerCeStopLoss()" class="p-2.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-left font-semibold transition flex flex-col justify-between">
+          <span class="text-[10px] text-rose-400">INTRADAY EXIT</span>
+          <span class="text-white mt-1">2. Hit CE Stop Loss (SELL)</span>
+        </button>
+
+        <!-- 4. Trigger Market Close (15:30) -->
+        <button onclick="triggerMarketCloseOvernight()" class="p-2.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-left font-semibold transition flex flex-col justify-between">
+          <span class="text-[10px] text-amber-400">15:30 IST CLOSE</span>
+          <span class="text-white mt-1">3. Hold Overnight (Skip EOD)</span>
+        </button>
+
+        <!-- 5. Trigger Next Day 09:25 Exit -->
+        <button onclick="triggerNextDay0925Exit()" class="p-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-left font-semibold transition flex flex-col justify-between">
+          <span class="text-[10px] text-cyan-400">NEXT DAY (09:25 IST)</span>
+          <span class="text-white mt-1">4. Mandatory 09:25 Exit</span>
+        </button>
+
+        <!-- 6. Trigger 09:25 Recovery Exit -->
+        <button onclick="trigger0925RecoveryExit()" class="p-2.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-left font-semibold transition flex flex-col justify-between">
+          <span class="text-[10px] text-purple-400">CRASH RECOVERY</span>
+          <span class="text-white mt-1">5. 09:25 Recovery Exit</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- SECTION 21: PORTAL UI SPECIFICATION -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      
+      <!-- LEFT 4 COLS: Strategy Information & Overnight Card -->
+      <div class="lg:col-span-4 space-y-4">
+        
+        <!-- Strategy Information Card -->
+        <div class="bg-panel rounded-xl border border-slate-800 p-4 shadow-lg space-y-3">
+          <div class="border-b border-slate-800 pb-2">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+              Strategy Information
+            </h2>
+          </div>
+
+          <div class="space-y-2.5 text-xs font-mono">
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Trading Date</span>
+              <span id="infoTradingDate" class="font-bold text-white">2026-10-01</span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Selection Time</span>
+              <span class="font-bold text-cyan-300">09:20 AM IST</span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Selected Expiry</span>
+              <span id="infoSelectedExpiry" class="font-bold text-amber-300">08-OCT-2026</span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Expiry Override (Today is Expiry?)</span>
+              <span id="infoExpiryOverride" class="font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                YES (Next Expiry Used)
+              </span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Strategy Status</span>
+              <span id="infoStrategyStatus" class="font-bold text-emerald-400">PENDING_SELECTION</span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Target Check</span>
+              <span class="font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">NONE (Targetless)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Overnight Hold Card -->
+        <div class="bg-panel rounded-xl border border-slate-800 p-4 shadow-lg space-y-3">
+          <div class="border-b border-slate-800 pb-2">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+              Overnight Parameters &amp; Mandatory Exit
+            </h2>
+          </div>
+
+          <div class="space-y-2.5 text-xs font-mono">
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Overnight Hold Permitted</span>
+              <span id="infoOvernightHold" class="font-bold text-emerald-300">YES (Explicit Exception)</span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">15:35 Market Close Square-Off</span>
+              <span class="font-bold text-amber-300">BYPASSED (Do Not Close)</span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Next Valid Trading Day</span>
+              <span id="infoNextTradingDay" class="font-bold text-cyan-300">2026-10-05 (Monday)</span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Mandatory Exit Time</span>
+              <span class="font-bold text-rose-300 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">09:25 AM IST</span>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800/80">
+              <span class="text-slate-400">Exit Method</span>
+              <span class="text-slate-300">First Executable Market Price</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT 8 COLS: Active Leg Cards (CE & PE) and 09:20 Selection Matrix -->
+      <div class="lg:col-span-8 space-y-4">
+        
+        <!-- CE & PE ACTIVE LEG CARDS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          <!-- CE CARD -->
+          <div id="cardCeLeg" class="bg-panel rounded-xl border border-slate-800 p-4 shadow-lg space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-cyan-300">Call Option (CE) Leg</span>
+              </div>
+              <span id="badgeCeStatus" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                PENDING
+              </span>
+            </div>
+
+            <div class="space-y-2 text-xs font-mono">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Symbol:</span>
+                <span id="ceSymbol" class="font-bold text-white text-sm">NIFTY 25100 CE</span>
+              </div>
+
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Strike &amp; Expiry:</span>
+                <span id="ceStrikeExpiry" class="text-slate-300">25100 • 08-OCT-2026</span>
+              </div>
+
+              <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800">
+                <span class="text-slate-400">09:20 Reference Price:</span>
+                <span id="ceRefPrice" class="font-bold text-cyan-300 text-sm">₹61.00</span>
+              </div>
+
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Distance from ₹62.50:</span>
+                <span id="ceDistance" class="text-emerald-400 font-semibold">1.50 (Closest in Range)</span>
+              </div>
+
+              <div class="flex items-center justify-between p-2 rounded bg-rose-500/10 border border-rose-500/30">
+                <span class="text-rose-300 font-bold">Fixed Stop Loss (25%):</span>
+                <span id="ceStopLoss" class="font-bold text-rose-400 text-sm">₹45.75</span>
+              </div>
+
+              <div class="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800">
+                <span class="text-slate-400">Current Market Price:</span>
+                <span id="ceCurrentPrice" class="font-bold text-emerald-400 text-sm">₹63.20</span>
+              </div>
+
+              <!-- SL Distance Progress Bar -->
+              <div class="space-y-1 pt-1">
+                <div class="flex justify-between text-[10px] text-slate-400">
+                  <span>SL: ₹45.75</span>
+                  <span id="ceSlBufferLabel" class="text-emerald-400 font-semibold">+38.1% above SL</span>
+                  <span>Ref: ₹61.00</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+                  <div id="ceSlProgressBar" class="bg-emerald-400 h-2 rounded-full transition-all duration-300" style="width: 80%;"></div>
+                </div>
+              </div>
+
+              <div class="pt-2 flex gap-2">
+                <button onclick="adjustCePrice(2)" class="flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold border border-slate-700 transition">
+                  ▲ +₹2.00
+                </button>
+                <button onclick="adjustCePrice(-2)" class="flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold border border-slate-700 transition">
+                  ▼ -₹2.00
+                </button>
+                <button onclick="triggerCeStopLoss()" class="py-1 px-3 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold border border-rose-500/40 transition">
+                  Drop to SL
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- PE CARD -->
+          <div id="cardPeLeg" class="bg-panel rounded-xl border border-slate-800 p-4 shadow-lg space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-purple-300">Put Option (PE) Leg</span>
+              </div>
+              <span id="badgePeStatus" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                PENDING
+              </span>
+            </div>
+
+            <div class="space-y-2 text-xs font-mono">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Symbol:</span>
+                <span id="peSymbol" class="font-bold text-white text-sm">NIFTY 24800 PE</span>
+              </div>
+
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Strike &amp; Expiry:</span>
+                <span id="peStrikeExpiry" class="text-slate-300">24800 • 08-OCT-2026</span>
+              </div>
+
+              <div class="flex items-center justify-between p-2 rounded bg-obsidian border border-slate-800">
+                <span class="text-slate-400">09:20 Reference Price:</span>
+                <span id="peRefPrice" class="font-bold text-purple-300 text-sm">₹63.00</span>
+              </div>
+
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Distance from ₹62.50:</span>
+                <span id="peDistance" class="text-emerald-400 font-semibold">0.50 (Closest in Range)</span>
+              </div>
+
+              <div class="flex items-center justify-between p-2 rounded bg-rose-500/10 border border-rose-500/30">
+                <span class="text-rose-300 font-bold">Fixed Stop Loss (25%):</span>
+                <span id="peStopLoss" class="font-bold text-rose-400 text-sm">₹47.25</span>
+              </div>
+
+              <div class="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800">
+                <span class="text-slate-400">Current Market Price:</span>
+                <span id="peCurrentPrice" class="font-bold text-emerald-400 text-sm">₹65.50</span>
+              </div>
+
+              <!-- SL Distance Progress Bar -->
+              <div class="space-y-1 pt-1">
+                <div class="flex justify-between text-[10px] text-slate-400">
+                  <span>SL: ₹47.25</span>
+                  <span id="peSlBufferLabel" class="text-emerald-400 font-semibold">+38.6% above SL</span>
+                  <span>Ref: ₹63.00</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+                  <div id="peSlProgressBar" class="bg-emerald-400 h-2 rounded-full transition-all duration-300" style="width: 82%;"></div>
+                </div>
+              </div>
+
+              <div class="pt-2 flex gap-2">
+                <button onclick="adjustPePrice(2)" class="flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold border border-slate-700 transition">
+                  ▲ +₹2.00
+                </button>
+                <button onclick="adjustPePrice(-2)" class="flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold border border-slate-700 transition">
+                  ▼ -₹2.00
+                </button>
+                <button onclick="triggerPeStopLoss()" class="py-1 px-3 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold border border-rose-500/40 transition">
+                  Drop to SL
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 09:20 OPTION CHAIN SCANNER MATRIX (Filter 50 <= price <= 75) -->
+        <div class="bg-panel rounded-xl border border-slate-800 p-4 shadow-lg space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div>
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <span>📊 09:20 Option Chain Candidate Matrix (NIFTY Expiry: 08-OCT-2026)</span>
+              </h2>
+              <p class="text-[11px] text-slate-400">
+                Rule: Filter <code class="text-cyan-300">50 &le; price &le; 75</code>, pick smallest <code class="text-amber-300">|Price - 62.50|</code>
+              </p>
+            </div>
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+              Target Ideal = ₹62.50
+            </span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="bg-slate-900/90 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-2">Type</th>
+                  <th class="p-2">Strike</th>
+                  <th class="p-2">09:20 Price</th>
+                  <th class="p-2">Range [50 - 75]</th>
+                  <th class="p-2">|Price - 62.50|</th>
+                  <th class="p-2">Calculated SL (25%)</th>
+                  <th class="p-2">Selection Status</th>
+                </tr>
+              </thead>
+              <tbody id="matrixTableBody" class="divide-y divide-slate-800/60">
+                <!-- Dynamically Rendered -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- EXECUTED & CLOSED ORDERS / PERFORMANCE LEDGER -->
+    <section class="bg-panel rounded-xl border border-slate-800 p-4 shadow-lg space-y-3">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">
+            Executed Orders &amp; Realized P&amp;L Ledger (Strategy Exits)
+          </h2>
+        </div>
+        <div class="text-xs font-mono text-slate-400">
+          <span>Net Realized P&amp;L: </span>
+          <strong id="totalRealizedPnl" class="text-emerald-400 font-bold text-sm">+₹0.00</strong>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs font-mono">
+          <thead class="bg-slate-900/90 text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="p-2.5">Order ID</th>
+              <th class="p-2.5">Leg / Symbol</th>
+              <th class="p-2.5">09:20 Ref Price</th>
+              <th class="p-2.5">Stop Loss</th>
+              <th class="p-2.5">Exit Price</th>
+              <th class="p-2.5">Exit Timestamp</th>
+              <th class="p-2.5">Exit Reason</th>
+              <th class="p-2.5">Quantity</th>
+              <th class="p-2.5 text-right">Realized P&amp;L</th>
+            </tr>
+          </thead>
+          <tbody id="executedTradeLogsBody" class="divide-y divide-slate-800/60">
+            <tr>
+              <td colspan="9" class="p-4 text-center text-slate-500 italic">
+                No closed trades yet. Run simulation actions above to test intraday SL or 09:25 Next-Day Exit.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- FOOTER -->
+  <!-- ========================================== -->
+  <footer class="border-t border-slate-900 bg-obsidian/90 px-4 py-3 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <span class="font-semibold text-slate-400">QuantPulse Architecture Extension</span>
+      <span>•</span>
+      <span>NIFTY 09:20 Premium 62.5 Overnight Strategy Sandbox</span>
+    </div>
+    <div class="flex items-center gap-4 text-slate-400 font-mono">
+      <span>Zero Target Violations: <strong class="text-emerald-400">ENFORCED</strong></span>
+      <span>Overnight Hold: <strong class="text-cyan-400">ENABLED</strong></span>
+      <span>Mandatory Exit: <strong class="text-rose-400">09:25 IST</strong></span>
+    </div>
+  </footer>
+
+  <!-- ========================================== -->
+  <!-- JAVASCRIPT STATE ENGINE & SIMULATOR -->
+  <!-- ========================================== -->
+  <script>
+    // State Store (Simulating Database & Browser Context)
+    const STATE = {
+      strategyId: 'NIFTY_0920_PREMIUM_625_OVERNIGHT',
+      tradingDate: '2026-10-01',
+      dailyExecutionId: 'NIFTY_0920_PREMIUM_625_OVERNIGHT_20261001',
+      selectionTime: '09:20:00 IST',
+      isTodayExpiry: true,
+      selectedExpiry: '08-OCT-2026',
+      status: 'PENDING_SELECTION', // PENDING_SELECTION, SELECTED, ACTIVE, SL_HIT, OVERNIGHT_HOLD, NEXT_DAY_0925_EXIT, NEXT_DAY_0925_EXIT_RECOVERY, CLOSED
+      nextTradingDay: '2026-10-05',
+      ceLeg: {
+        symbol: 'NIFTY 25100 CE',
+        strike: 25100,
+        expiry: '08-OCT-2026',
+        refPrice: 61.00,
+        stopLoss: 45.75, // 61 * 0.75
+        currentPrice: 61.00,
+        distance: 1.50,
+        status: 'PENDING',
+        quantity: 75,
+        exitPrice: null,
+        exitTime: null,
+        exitReason: null,
+        realizedPnl: 0,
+      },
+      peLeg: {
+        symbol: 'NIFTY 24800 PE',
+        strike: 24800,
+        expiry: '08-OCT-2026',
+        refPrice: 63.00,
+        stopLoss: 47.25, // 63 * 0.75
+        currentPrice: 63.00,
+        distance: 0.50,
+        status: 'PENDING',
+        quantity: 75,
+        exitPrice: null,
+        exitTime: null,
+        exitReason: null,
+        realizedPnl: 0,
+      },
+      tradeLogs: [],
+      // Sample candidate options available at 09:20
+      candidates: [
+        { type: 'CE', strike: 25000, price: 55.00 },
+        { type: 'CE', strike: 25100, price: 61.00 }, // Selected (dist: 1.50)
+        { type: 'CE', strike: 25200, price: 64.00 },
+        { type: 'CE', strike: 25300, price: 72.00 },
+        { type: 'CE', strike: 25400, price: 82.00 }, // Out of range
+        { type: 'PE', strike: 24700, price: 71.00 },
+        { type: 'PE', strike: 24800, price: 63.00 }, // Selected (dist: 0.50)
+        { type: 'PE', strike: 24900, price: 60.00 },
+        { type: 'PE', strike: 25000, price: 53.00 },
+        { type: 'PE', strike: 25100, price: 46.00 }, // Out of range
+      ]
+    };
+
+    function updateUi() {
+      // Top Bar & Info Card
+      document.getElementById('badgeStrategyStatus').textContent = STATE.status;
+      document.getElementById('infoStrategyStatus').textContent = STATE.status;
+      document.getElementById('infoTradingDate').textContent = STATE.tradingDate;
+      document.getElementById('infoSelectedExpiry').textContent = STATE.selectedExpiry;
+      document.getElementById('infoExpiryOverride').textContent = STATE.isTodayExpiry 
+        ? 'YES (Skip Today -> 08-OCT-2026)' 
+        : 'NO (Using 01-OCT-2026)';
+      document.getElementById('infoNextTradingDay').textContent = `${STATE.nextTradingDay} (Monday)`;
+
+      // CE UI
+      document.getElementById('ceSymbol').textContent = STATE.ceLeg.symbol;
+      document.getElementById('ceStrikeExpiry').textContent = `${STATE.ceLeg.strike} • ${STATE.ceLeg.expiry}`;
+      document.getElementById('ceRefPrice').textContent = `₹${STATE.ceLeg.refPrice.toFixed(2)}`;
+      document.getElementById('ceDistance').textContent = `${STATE.ceLeg.distance.toFixed(2)} (Closest to ₹62.50)`;
+      document.getElementById('ceStopLoss').textContent = `₹${STATE.ceLeg.stopLoss.toFixed(2)}`;
+      document.getElementById('ceCurrentPrice').textContent = `₹${STATE.ceLeg.currentPrice.toFixed(2)}`;
+      document.getElementById('badgeCeStatus').textContent = STATE.ceLeg.status;
+
+      // CE Buffer / Progress Bar
+      const ceBufferPct = ((STATE.ceLeg.currentPrice - STATE.ceLeg.stopLoss) / STATE.ceLeg.stopLoss) * 100;
+      document.getElementById('ceSlBufferLabel').textContent = ceBufferPct >= 0 
+        ? `+${ceBufferPct.toFixed(1)}% above SL` 
+        : `${ceBufferPct.toFixed(1)}% (SL BREACHED)`;
+      const ceBarWidth = Math.max(0, Math.min(100, (STATE.ceLeg.currentPrice / STATE.ceLeg.refPrice) * 100));
+      document.getElementById('ceSlProgressBar').style.width = `${ceBarWidth}%`;
+      document.getElementById('ceSlProgressBar').className = STATE.ceLeg.currentPrice <= STATE.ceLeg.stopLoss
+        ? 'bg-rose-500 h-2 rounded-full transition-all'
+        : 'bg-emerald-400 h-2 rounded-full transition-all';
+
+      // PE UI
+      document.getElementById('peSymbol').textContent = STATE.peLeg.symbol;
+      document.getElementById('peStrikeExpiry').textContent = `${STATE.peLeg.strike} • ${STATE.peLeg.expiry}`;
+      document.getElementById('peRefPrice').textContent = `₹${STATE.peLeg.refPrice.toFixed(2)}`;
+      document.getElementById('peDistance').textContent = `${STATE.peLeg.distance.toFixed(2)} (Closest to ₹62.50)`;
+      document.getElementById('peStopLoss').textContent = `₹${STATE.peLeg.stopLoss.toFixed(2)}`;
+      document.getElementById('peCurrentPrice').textContent = `₹${STATE.peLeg.currentPrice.toFixed(2)}`;
+      document.getElementById('badgePeStatus').textContent = STATE.peLeg.status;
+
+      // PE Buffer / Progress Bar
+      const peBufferPct = ((STATE.peLeg.currentPrice - STATE.peLeg.stopLoss) / STATE.peLeg.stopLoss) * 100;
+      document.getElementById('peSlBufferLabel').textContent = peBufferPct >= 0 
+        ? `+${peBufferPct.toFixed(1)}% above SL` 
+        : `${peBufferPct.toFixed(1)}% (SL BREACHED)`;
+      const peBarWidth = Math.max(0, Math.min(100, (STATE.peLeg.currentPrice / STATE.peLeg.refPrice) * 100));
+      document.getElementById('peSlProgressBar').style.width = `${peBarWidth}%`;
+      document.getElementById('peSlProgressBar').className = STATE.peLeg.currentPrice <= STATE.peLeg.stopLoss
+        ? 'bg-rose-500 h-2 rounded-full transition-all'
+        : 'bg-emerald-400 h-2 rounded-full transition-all';
+
+      // Render Matrix Table
+      renderCandidateMatrix();
+
+      // Render Trade Logs
+      renderTradeLogs();
+    }
+
+    function renderCandidateMatrix() {
+      const tbody = document.getElementById('matrixTableBody');
+      tbody.innerHTML = '';
+
+      STATE.candidates.forEach(c => {
+        const inRange = c.price >= 50 && c.price <= 75;
+        const dist = Math.abs(c.price - 62.50).toFixed(2);
+        const sl = (c.price * 0.75).toFixed(2);
+        const isSelectedCe = c.type === 'CE' && c.strike === STATE.ceLeg.strike;
+        const isSelectedPe = c.type === 'PE' && c.strike === STATE.peLeg.strike;
+        const isSelected = isSelectedCe || isSelectedPe;
+
+        const row = document.createElement('tr');
+        row.className = isSelected 
+          ? 'bg-emerald-500/10 border-l-2 border-emerald-400 font-semibold' 
+          : inRange ? 'hover:bg-slate-800/40' : 'opacity-40 bg-slate-950';
+
+        row.innerHTML = `
+          <td class="p-2.5 ${c.type === 'CE' ? 'text-cyan-400 font-bold' : 'text-purple-400 font-bold'}">${c.type}</td>
+          <td class="p-2.5 text-white">${c.strike}</td>
+          <td class="p-2.5 font-bold">₹${c.price.toFixed(2)}</td>
+          <td class="p-2.5">
+            ${inRange 
+              ? '<span class="text-emerald-400 font-bold">✓ IN RANGE [50-75]</span>' 
+              : '<span class="text-rose-400">✗ OUT OF RANGE</span>'}
+          </td>
+          <td class="p-2.5 ${inRange ? 'text-amber-300 font-bold' : 'text-slate-500'}">${dist}</td>
+          <td class="p-2.5 text-rose-300">₹${sl}</td>
+          <td class="p-2.5">
+            ${isSelected 
+              ? '<span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">SELECTED & LOCKED</span>' 
+              : inRange ? '<span class="text-slate-400 text-[11px]">Eligible Candidate</span>' : '<span class="text-slate-600 text-[11px]">Filtered Out</span>'}
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function renderTradeLogs() {
+      const tbody = document.getElementById('executedTradeLogsBody');
+      if (STATE.tradeLogs.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="9" class="p-4 text-center text-slate-500 italic">
+              No closed trades yet. Run simulation actions above to test intraday SL or 09:25 Next-Day Exit.
+            </td>
+          </tr>
+        `;
+        document.getElementById('totalRealizedPnl').textContent = '+₹0.00';
+        return;
+      }
+
+      tbody.innerHTML = '';
+      let netPnl = 0;
+
+      STATE.tradeLogs.forEach(trade => {
+        netPnl += trade.realizedPnl;
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-slate-800/40';
+        row.innerHTML = `
+          <td class="p-2.5 text-slate-400">${trade.orderId}</td>
+          <td class="p-2.5 font-bold text-white">${trade.symbol}</td>
+          <td class="p-2.5 text-cyan-300">₹${trade.refPrice.toFixed(2)}</td>
+          <td class="p-2.5 text-rose-300">₹${trade.stopLoss.toFixed(2)}</td>
+          <td class="p-2.5 font-bold text-white">₹${trade.exitPrice.toFixed(2)}</td>
+          <td class="p-2.5 text-slate-400">${trade.exitTime}</td>
+          <td class="p-2.5 font-bold ${trade.exitReason === 'SL_HIT' ? 'text-rose-400' : 'text-cyan-400'}">
+            ${trade.exitReason}
+          </td>
+          <td class="p-2.5 text-slate-300">${trade.quantity}</td>
+          <td class="p-2.5 text-right font-bold ${trade.realizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+            ${trade.realizedPnl >= 0 ? '+' : ''}₹${trade.realizedPnl.toFixed(2)}
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      const pnlEl = document.getElementById('totalRealizedPnl');
+      pnlEl.textContent = `${netPnl >= 0 ? '+' : ''}₹${netPnl.toFixed(2)}`;
+      pnlEl.className = netPnl >= 0 ? 'text-emerald-400 font-bold text-sm' : 'text-rose-400 font-bold text-sm';
+    }
+
+    // ==========================================
+    // SIMULATION ACTIONS
+    // ==========================================
+    function execute0920Selection() {
+      STATE.status = 'ACTIVE';
+      STATE.ceLeg.status = 'ACTIVE';
+      STATE.peLeg.status = 'ACTIVE';
+      STATE.ceLeg.currentPrice = STATE.ceLeg.refPrice;
+      STATE.peLeg.currentPrice = STATE.peLeg.refPrice;
+      alert("✅ 09:20 AM IST Selection Executed!\n\n1. Expiry selected: " + STATE.selectedExpiry + "\n2. Selected CE: " + STATE.ceLeg.symbol + " @ Ref ₹" + STATE.ceLeg.refPrice.toFixed(2) + " (SL: ₹" + STATE.ceLeg.stopLoss.toFixed(2) + ")\n3. Selected PE: " + STATE.peLeg.symbol + " @ Ref ₹" + STATE.peLeg.refPrice.toFixed(2) + " (SL: ₹" + STATE.peLeg.stopLoss.toFixed(2) + ")\n\nPosition ACTIVE and monitoring Stop Loss.");
+      updateUi();
+    }
+
+    function toggleExpiryDayMode() {
+      STATE.isTodayExpiry = !STATE.isTodayExpiry;
+      STATE.selectedExpiry = STATE.isTodayExpiry ? '08-OCT-2026' : '01-OCT-2026';
+      STATE.ceLeg.expiry = STATE.selectedExpiry;
+      STATE.peLeg.expiry = STATE.selectedExpiry;
+      document.getElementById('labelExpiryMode').textContent = `Today = Expiry Day? [${STATE.isTodayExpiry ? 'YES' : 'NO'}]`;
+      updateUi();
+    }
+
+    function adjustCePrice(delta) {
+      if (STATE.ceLeg.status !== 'ACTIVE' && STATE.ceLeg.status !== 'OVERNIGHT_HOLD') return;
+      STATE.ceLeg.currentPrice = Math.max(1, +(STATE.ceLeg.currentPrice + delta).toFixed(2));
+      checkStopLosses();
+      updateUi();
+    }
+
+    function adjustPePrice(delta) {
+      if (STATE.peLeg.status !== 'ACTIVE' && STATE.peLeg.status !== 'OVERNIGHT_HOLD') return;
+      STATE.peLeg.currentPrice = Math.max(1, +(STATE.peLeg.currentPrice + delta).toFixed(2));
+      checkStopLosses();
+      updateUi();
+    }
+
+    function checkStopLosses() {
+      // CE Check
+      if (STATE.ceLeg.status === 'ACTIVE' && STATE.ceLeg.currentPrice <= STATE.ceLeg.stopLoss) {
+        triggerCeStopLoss();
+      }
+      // PE Check
+      if (STATE.peLeg.status === 'ACTIVE' && STATE.peLeg.currentPrice <= STATE.peLeg.stopLoss) {
+        triggerPeStopLoss();
+      }
+    }
+
+    function triggerCeStopLoss() {
+      if (STATE.ceLeg.status === 'CLOSED' || STATE.ceLeg.status === 'SL_HIT') return;
+      STATE.ceLeg.currentPrice = STATE.ceLeg.stopLoss;
+      STATE.ceLeg.status = 'SL_HIT';
+      STATE.ceLeg.exitPrice = STATE.ceLeg.stopLoss;
+      STATE.ceLeg.exitTime = '11:42:15 IST';
+      STATE.ceLeg.exitReason = 'SL_HIT';
+      STATE.ceLeg.realizedPnl = +((STATE.ceLeg.exitPrice - STATE.ceLeg.refPrice) * STATE.ceLeg.quantity).toFixed(2);
+
+      STATE.tradeLogs.push({
+        orderId: 'ORD-NIFTY-CE-01',
+        symbol: STATE.ceLeg.symbol,
+        refPrice: STATE.ceLeg.refPrice,
+        stopLoss: STATE.ceLeg.stopLoss,
+        exitPrice: STATE.ceLeg.exitPrice,
+        exitTime: STATE.ceLeg.exitTime,
+        exitReason: STATE.ceLeg.exitReason,
+        quantity: STATE.ceLeg.quantity,
+        realizedPnl: STATE.ceLeg.realizedPnl,
+      });
+
+      if (STATE.peLeg.status === 'SL_HIT' || STATE.peLeg.status === 'CLOSED') {
+        STATE.status = 'CLOSED';
+      }
+
+      alert("🚨 CE STOP LOSS HIT!\nCurrent price fell to SL: ₹" + STATE.ceLeg.stopLoss.toFixed(2) + ".\nPosition SOLD immediately. Status: SL_HIT.\nWill NOT carry overnight.");
+      updateUi();
+    }
+
+    function triggerPeStopLoss() {
+      if (STATE.peLeg.status === 'CLOSED' || STATE.peLeg.status === 'SL_HIT') return;
+      STATE.peLeg.currentPrice = STATE.peLeg.stopLoss;
+      STATE.peLeg.status = 'SL_HIT';
+      STATE.peLeg.exitPrice = STATE.peLeg.stopLoss;
+      STATE.peLeg.exitTime = '13:15:20 IST';
+      STATE.peLeg.exitReason = 'SL_HIT';
+      STATE.peLeg.realizedPnl = +((STATE.peLeg.exitPrice - STATE.peLeg.refPrice) * STATE.peLeg.quantity).toFixed(2);
+
+      STATE.tradeLogs.push({
+        orderId: 'ORD-NIFTY-PE-01',
+        symbol: STATE.peLeg.symbol,
+        refPrice: STATE.peLeg.refPrice,
+        stopLoss: STATE.peLeg.stopLoss,
+        exitPrice: STATE.peLeg.exitPrice,
+        exitTime: STATE.peLeg.exitTime,
+        exitReason: STATE.peLeg.exitReason,
+        quantity: STATE.peLeg.quantity,
+        realizedPnl: STATE.peLeg.realizedPnl,
+      });
+
+      if (STATE.ceLeg.status === 'SL_HIT' || STATE.ceLeg.status === 'CLOSED') {
+        STATE.status = 'CLOSED';
+      }
+
+      alert("🚨 PE STOP LOSS HIT!\nCurrent price fell to SL: ₹" + STATE.peLeg.stopLoss.toFixed(2) + ".\nPosition SOLD immediately. Status: SL_HIT.\nWill NOT carry overnight.");
+      updateUi();
+    }
+
+    function triggerMarketCloseOvernight() {
+      if (STATE.status === 'CLOSED') {
+        alert("Positions are already closed.");
+        return;
+      }
+      STATE.status = 'OVERNIGHT_HOLD';
+      if (STATE.ceLeg.status === 'ACTIVE') STATE.ceLeg.status = 'OVERNIGHT_HOLD';
+      if (STATE.peLeg.status === 'ACTIVE') STATE.peLeg.status = 'OVERNIGHT_HOLD';
+
+      alert("🌙 MARKET CLOSE REACHED (15:30 IST)!\n\nNormal intraday square-off was BYPASSED for this strategy.\nSL was not hit. Carrying position overnight.\n\nStatus set to: OVERNIGHT_HOLD\nNext Trading Day Mandatory Exit: " + STATE.nextTradingDay + " at 09:25 AM IST.");
+      updateUi();
+    }
+
+    function triggerNextDay0925Exit() {
+      if (STATE.status !== 'OVERNIGHT_HOLD' && STATE.status !== 'ACTIVE') {
+        alert("Must be in ACTIVE or OVERNIGHT_HOLD status to test 09:25 Exit.");
+        return;
+      }
+
+      // Next day sample opening ticks at 09:25
+      const ceNextDayPrice = 72.00;
+      const peNextDayPrice = 58.00;
+
+      if (STATE.ceLeg.status === 'OVERNIGHT_HOLD' || STATE.ceLeg.status === 'ACTIVE') {
+        STATE.ceLeg.currentPrice = ceNextDayPrice;
+        STATE.ceLeg.exitPrice = ceNextDayPrice;
+        STATE.ceLeg.exitTime = '09:25:02 IST';
+        STATE.ceLeg.exitReason = 'NEXT_DAY_0925_EXIT';
+        STATE.ceLeg.status = 'CLOSED';
+        STATE.ceLeg.realizedPnl = +((ceNextDayPrice - STATE.ceLeg.refPrice) * STATE.ceLeg.quantity).toFixed(2);
+
+        STATE.tradeLogs.push({
+          orderId: 'ORD-NIFTY-CE-0925',
+          symbol: STATE.ceLeg.symbol,
+          refPrice: STATE.ceLeg.refPrice,
+          stopLoss: STATE.ceLeg.stopLoss,
+          exitPrice: ceNextDayPrice,
+          exitTime: STATE.ceLeg.exitTime,
+          exitReason: STATE.ceLeg.exitReason,
+          quantity: STATE.ceLeg.quantity,
+          realizedPnl: STATE.ceLeg.realizedPnl,
+        });
+      }
+
+      if (STATE.peLeg.status === 'OVERNIGHT_HOLD' || STATE.peLeg.status === 'ACTIVE') {
+        STATE.peLeg.currentPrice = peNextDayPrice;
+        STATE.peLeg.exitPrice = peNextDayPrice;
+        STATE.peLeg.exitTime = '09:25:02 IST';
+        STATE.peLeg.exitReason = 'NEXT_DAY_0925_EXIT';
+        STATE.peLeg.status = 'CLOSED';
+        STATE.peLeg.realizedPnl = +((peNextDayPrice - STATE.peLeg.refPrice) * STATE.peLeg.quantity).toFixed(2);
+
+        STATE.tradeLogs.push({
+          orderId: 'ORD-NIFTY-PE-0925',
+          symbol: STATE.peLeg.symbol,
+          refPrice: STATE.peLeg.refPrice,
+          stopLoss: STATE.peLeg.stopLoss,
+          exitPrice: peNextDayPrice,
+          exitTime: STATE.peLeg.exitTime,
+          exitReason: STATE.peLeg.exitReason,
+          quantity: STATE.peLeg.quantity,
+          realizedPnl: STATE.peLeg.realizedPnl,
+        });
+      }
+
+      STATE.status = 'NEXT_DAY_0925_EXIT';
+      alert("🔔 MANDATORY 09:25 AM IST EXIT EXECUTED!\n\nNext valid trading day reached (" + STATE.nextTradingDay + ").\nCE Exit @ ₹" + ceNextDayPrice.toFixed(2) + "\nPE Exit @ ₹" + peNextDayPrice.toFixed(2) + "\n\nExit reason: NEXT_DAY_0925_EXIT\nPositions CLOSED cleanly.");
+      updateUi();
+    }
+
+    function trigger0925RecoveryExit() {
+      if (STATE.status === 'CLOSED') {
+        alert("Positions already closed.");
+        return;
+      }
+      const exitP = 66.00;
+      if (STATE.ceLeg.status !== 'CLOSED' && STATE.ceLeg.status !== 'SL_HIT') {
+        STATE.ceLeg.currentPrice = exitP;
+        STATE.ceLeg.exitPrice = exitP;
+        STATE.ceLeg.exitTime = '09:34:10 IST (Recovery)';
+        STATE.ceLeg.exitReason = 'NEXT_DAY_0925_EXIT_RECOVERY';
+        STATE.ceLeg.status = 'CLOSED';
+        STATE.ceLeg.realizedPnl = +((exitP - STATE.ceLeg.refPrice) * STATE.ceLeg.quantity).toFixed(2);
+
+        STATE.tradeLogs.push({
+          orderId: 'ORD-REC-CE-01',
+          symbol: STATE.ceLeg.symbol,
+          refPrice: STATE.ceLeg.refPrice,
+          stopLoss: STATE.ceLeg.stopLoss,
+          exitPrice: exitP,
+          exitTime: STATE.ceLeg.exitTime,
+          exitReason: STATE.ceLeg.exitReason,
+          quantity: STATE.ceLeg.quantity,
+          realizedPnl: STATE.ceLeg.realizedPnl,
+        });
+      }
+
+      STATE.status = 'NEXT_DAY_0925_EXIT_RECOVERY';
+      alert("⚠️ RECOVERY EXIT EXECUTED!\nServer rebooted after 09:25 AM. Found open position with expired exit window.\nExecuted market sell immediately.\nStatus marked: NEXT_DAY_0925_EXIT_RECOVERY.");
+      updateUi();
+    }
+
+    function simulateServerRestart() {
+      // Simulate reading persistent state from database / storage
+      alert("🔄 SERVER RESTART SIMULATION:\n\n1. Hydrating strategy state from DB (public.active_positions & public.strategy_nifty_overnight).\n2. Restoring locked 09:20 Reference Prices (CE: ₹" + STATE.ceLeg.refPrice.toFixed(2) + ", PE: ₹" + STATE.peLeg.refPrice.toFixed(2) + ").\n3. Preserving fixed Stop Losses without recalculation.\n4. Preserving Overnight Hold status and 09:25 exit schedule.\n\nState safely restored with 0 duplicate orders!");
+      updateUi();
+    }
+
+    function resetSimulation() {
+      STATE.status = 'PENDING_SELECTION';
+      STATE.ceLeg.status = 'PENDING';
+      STATE.peLeg.status = 'PENDING';
+      STATE.ceLeg.currentPrice = 61.00;
+      STATE.peLeg.currentPrice = 63.00;
+      STATE.tradeLogs = [];
+      updateUi();
+    }
+
+    // Initialize UI on load
+    updateUi();
+  </script>
+</body>
+</html>

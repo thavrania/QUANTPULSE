@@ -883,6 +883,60 @@ Whenever an AI agent or engineer is asked to modify this repository, they **MUST
 
 ---
 
+## 26. Strategy Specification: NIFTY 09:20 Premium 62.5 Overnight Strategy
+
+### 26.1 Strategy Designation & Identity
+- **Strategy Name:** NIFTY 09:20 Premium 62.5 Overnight Strategy
+- **Strategy ID:** `NIFTY_0920_PREMIUM_625_OVERNIGHT`
+- **Daily Execution Key:** `NIFTY_0920_PREMIUM_625_OVERNIGHT_YYYYMMDD`
+- **Asset Class:** NSE Derivatives — NIFTY 50 Weekly / Monthly Options (CE and PE)
+
+### 26.2 Core Invariant: STRICTLY ZERO TARGET
+> **CRITICAL INVARIANT:** This strategy has **NO TARGET PRICE**. Under no circumstances may target fields, profit target calculations, target monitoring loops, or target UI displays be added to this strategy.
+>
+> The strategy lifecycle has only **two** possible exit events:
+> 1. **Intraday Stop Loss Hit:** Fixed 25% SL is breached (`LTP <= SL`) $\to$ SELL immediately (`SL_HIT`).
+> 2. **Overnight Hold to Mandatory Next-Day Exit:** SL is not hit $\to$ Hold overnight through 15:30 close $\to$ SELL at **09:25 AM IST on next valid trading day** (`NEXT_DAY_0925_EXIT`).
+
+### 26.3 Selection Mechanics (09:20 AM IST Daily)
+1. **Expiry Resolution:**
+   - On a normal trading day: Select the nearest valid NIFTY 50 options expiry date.
+   - On an expiry day (today is expiry): **Do NOT use today's expiry.** Skip today and select the **next available** weekly expiry date. Both CE and PE legs must share this exact same expiry.
+2. **Candidate Filtering & Selection:**
+   - Filter all CE and PE options for the resolved expiry with quotes in the range:
+     $$\text{₹}50.00 \le \text{Price}_{09:20} \le \text{₹}75.00$$
+   - From eligible candidates, calculate distance to ₹62.50:
+     $$\text{distance} = |\text{Price}_{09:20} - 62.50|$$
+   - Independently select one CE and one PE with the minimum distance. CE and PE do not need to share the same strike or premium.
+3. **Reference Price & Fixed Stop Loss:**
+   - Lock `reference_price_0920 = price at 09:20 AM IST`. Never recalculate.
+   - Fixed Stop Loss:
+     $$\text{SL} = \text{reference\_price\_0920} \times 0.75 \quad (\text{Strict 25\% Loss})$$
+   - Stop Loss is permanent and never trails or ratchets.
+
+### 26.4 Position Lifecycle & Market-Close Exemption
+- **Intraday Monitoring ($09:20 - 15:30$ IST):** If `current_price <= SL`, fire immediate SELL order and mark leg as `SL_HIT`.
+- **EOD Market-Close Exemption ($15:30 - 15:35$ IST):**
+  - Standard intraday positions in QUANTPULSE are auto-squared off at 15:35 IST by `/api/pipeline/market-close-archive`.
+  - Positions tagged with `strategy_id = 'NIFTY_0920_PREMIUM_625_OVERNIGHT'` or `allow_overnight = true` are **EXEMPT** from square-off.
+  - Open legs transition to state `OVERNIGHT_HOLD`.
+- **Next Trading Day Mandatory Exit ($09:25$ AM IST):**
+  - Next trading day is determined strictly by `tradingCalendarService.ts` (skipping Saturdays, Sundays, and gazetted NSE trading holidays).
+  - At or immediately after 09:25 AM IST, open legs are sold at executable market price with exit reason `NEXT_DAY_0925_EXIT`.
+- **Server Reboot & Crash Recovery:**
+  - If the server restarts after 09:20, positions are restored from `strategy_nifty_overnight` without recalculating reference price or SL.
+  - If the application boots after 09:25 AM IST on the next trading day and open overnight positions remain, it immediately triggers an emergency liquidation with exit reason `NEXT_DAY_0925_EXIT_RECOVERY`.
+
+### 26.5 Architecture & Integration Touchpoints
+- **Domain Engine:** `src/lib/strategies/niftyOvernightEngine.ts`
+- **Trading Calendar:** `src/lib/services/tradingCalendarService.ts`
+- **API Endpoint:** `src/app/api/strategy/nifty-overnight/route.ts`
+- **UI Terminal Component:** `src/components/strategies/Zone_NiftyOvernight.tsx`
+- **Database Vault:** `public.strategy_nifty_overnight` table defined in `supabase_nifty_overnight_strategy.sql`.
+- **Interactive Simulator:** `NewStrategy.html`
+
+---
+
 # QUICK CHANGE GUIDE
 
 Use this reference table to find the exact files to check for common future change requests:
