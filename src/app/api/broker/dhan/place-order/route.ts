@@ -94,10 +94,39 @@ export async function POST(req: NextRequest) {
 
     if (!dhanResponse.ok || dhanData.status === 'failure') {
       const errorMsg = dhanData.remarks || dhanData.errorMessage || JSON.stringify(dhanData);
+      const isInvalidIp =
+        errorMsg.toLowerCase().includes('invalid ip') ||
+        errorMsg.includes('DH-905') ||
+        errorMsg.includes('905');
+
+      let detailedMessage = `Dhan Order Rejected: ${errorMsg}`;
+
+      if (isInvalidIp) {
+        let serverIp = 'UNKNOWN';
+        try {
+          const ipRes = await fetch('https://api.ipify.org?format=json', {
+            signal: AbortSignal.timeout(2000),
+            cache: 'no-store',
+          });
+          if (ipRes.ok) {
+            const d = await ipRes.json();
+            if (d?.ip) serverIp = d.ip;
+          }
+        } catch {}
+
+        const isVercel = Boolean(process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV);
+        if (isVercel) {
+          detailedMessage = `Dhan Order Rejected: Invalid IP (Serverless IP ${serverIp}). Dhan requires a static whitelisted IP in Dhan Web -> Profile -> Trading & Data API -> IP Setup. Note: Vercel serverless IPs rotate dynamically. For live trading with Dhan, run QuantPulse locally (npm run dev) with your broadband static IP whitelisted, or switch to Paper Trading mode.`;
+        } else {
+          detailedMessage = `Dhan Order Rejected: Invalid IP. Server outbound IP is '${serverIp}'. Please whitelist '${serverIp}' in Dhan Web Portal (Profile > Get Trading & Data API > IP Setup).`;
+        }
+      }
+
       return NextResponse.json({
         success: false,
         mode: 'LIVE_DHAN',
-        message: `Dhan Order Rejected: ${errorMsg}`,
+        message: detailedMessage,
+        isInvalidIp,
       });
     }
 

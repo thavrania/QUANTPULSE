@@ -26,6 +26,20 @@ export function BrokerSettingsModal() {
   const [isPullingVault, setIsPullingVault] = useState(false);
   const [testResult, setTestResult] = useState<BrokerConnectionTestResult | null>(null);
   const [liveQuotePreview, setLiveQuotePreview] = useState<Record<string, any> | null>(null);
+  const [isCheckingIp, setIsCheckingIp] = useState(false);
+  const [isSettingIp, setIsSettingIp] = useState(false);
+  const [ipData, setIpData] = useState<{
+    serverIp: string;
+    isVercel: boolean;
+    dhanConfig: {
+      primaryIP: string | null;
+      secondaryIP: string | null;
+      modifyDatePrimary: string | null;
+      modifyDateSecondary: string | null;
+    } | null;
+    isMatched: boolean;
+    message: string;
+  } | null>(null);
 
   // Load saved credentials from localStorage
   useEffect(() => {
@@ -259,6 +273,68 @@ export function BrokerSettingsModal() {
     }
   };
 
+  const handleCheckIpStatus = async () => {
+    setIsCheckingIp(true);
+    try {
+      const q = new URLSearchParams();
+      if (clientId.trim()) q.set('clientId', clientId.trim());
+      if (accessToken.trim()) q.set('accessToken', accessToken.trim());
+
+      const res = await fetch(`/api/broker/dhan/ip-status?${q.toString()}`);
+      const data = await res.json();
+      if (data.success) {
+        setIpData(data);
+        if (data.isMatched) {
+          showToast('✅ IP Whitelist Verified: Server IP matches Dhan configuration!', 'emerald');
+        } else {
+          showToast('⚠️ IP Mismatch: Current server IP is not whitelisted on Dhan.', 'amber');
+        }
+      } else {
+        showToast(data.message || 'Failed to check IP status', 'rose');
+      }
+    } catch (err: any) {
+      showToast(`IP check error: ${err.message}`, 'rose');
+    } finally {
+      setIsCheckingIp(false);
+    }
+  };
+
+  const handleSetDhanIp = async (flag: 'PRIMARY' | 'SECONDARY') => {
+    if (!ipData?.serverIp || ipData.serverIp === 'UNKNOWN') {
+      showToast('No valid server IP detected to whitelist.', 'amber');
+      return;
+    }
+    if (!clientId.trim() || !accessToken.trim()) {
+      showToast('Dhan Client ID and Access Token required.', 'rose');
+      return;
+    }
+
+    setIsSettingIp(true);
+    try {
+      const res = await fetch('/api/broker/dhan/ip-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: ipData.serverIp,
+          ipFlag: flag,
+          clientId: clientId.trim(),
+          accessToken: accessToken.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`✅ Whitelisted ${ipData.serverIp} as ${flag} IP on Dhan!`, 'emerald');
+        await handleCheckIpStatus();
+      } else {
+        showToast(data.message || 'Failed to update IP on Dhan', 'rose');
+      }
+    } catch (err: any) {
+      showToast(`Failed to set IP: ${err.message}`, 'rose');
+    } finally {
+      setIsSettingIp(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-panel border border-slate-700 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
@@ -431,8 +507,8 @@ export function BrokerSettingsModal() {
                 />
               </div>
 
-              {/* Action Buttons: Ping, Baseline Sync, Live Quotes */}
-              <div className="grid grid-cols-3 gap-2 pt-1">
+              {/* Action Buttons: Ping, IP Check, Baseline Sync, Live Quotes */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                 <button
                   type="button"
                   onClick={handleTestConnection}
@@ -440,6 +516,16 @@ export function BrokerSettingsModal() {
                   className="py-2 px-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center justify-center gap-1"
                 >
                   {isTesting ? 'Pinging...' : '⚡ Test Auth'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCheckIpStatus}
+                  disabled={isCheckingIp}
+                  className="py-2 px-2 rounded-lg text-xs font-semibold bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 transition flex items-center justify-center gap-1"
+                  title="Checks if current server IP is whitelisted on Dhan for order placement"
+                >
+                  {isCheckingIp ? 'Checking...' : '🛡️ Check IP'}
                 </button>
 
                 <button
@@ -459,9 +545,96 @@ export function BrokerSettingsModal() {
                   className="py-2 px-2 rounded-lg text-xs font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 transition flex items-center justify-center gap-1"
                   title="Test fetching live marketfeed quote data from Dhan HQ"
                 >
-                  {isTestingQuote ? 'Fetching...' : '📈 Test Live Feed'}
+                  {isTestingQuote ? 'Fetching...' : '📈 Live Feed'}
                 </button>
               </div>
+
+              {/* IP Whitelist & Order Authorization Status Card */}
+              {ipData && (
+                <div
+                  className={`p-3.5 rounded-xl border text-xs space-y-2.5 ${
+                    ipData.isMatched
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <span>{ipData.isMatched ? '🛡️ Dhan Static IP Whitelisted' : '⚠️ Dhan IP Mismatch (Invalid IP)'}</span>
+                    </span>
+                    <span
+                      className={`font-mono text-[10px] px-2 py-0.5 rounded font-semibold ${
+                        ipData.isMatched
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      }`}
+                    >
+                      {ipData.isMatched ? '🟢 LIVE ORDERS ALLOWED' : '🔴 LIVE ORDERS BLOCKED'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 text-slate-300">
+                    <div>
+                      <span className="block text-[10px] text-slate-500 uppercase">Server Outbound IP</span>
+                      <span className="font-bold text-white text-xs">{ipData.serverIp}</span>
+                      {ipData.isVercel && (
+                        <span className="block text-[9px] text-amber-400 mt-0.5 font-sans font-medium">
+                          ⚠️ Vercel Dynamic Cloud IP
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="block text-[10px] text-slate-500 uppercase">Dhan Whitelisted IP</span>
+                      <span className="font-bold text-white text-xs">
+                        {ipData.dhanConfig?.primaryIP || 'Not Set'}
+                      </span>
+                      {ipData.dhanConfig?.secondaryIP && (
+                        <span className="block text-[10px] text-slate-400">
+                          Sec: {ipData.dhanConfig.secondaryIP}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] leading-relaxed opacity-95">
+                    {ipData.message}
+                  </p>
+
+                  {!ipData.isMatched && ipData.serverIp !== 'UNKNOWN' && (
+                    <div className="pt-1 flex flex-wrap gap-2 items-center">
+                      <button
+                        type="button"
+                        onClick={() => handleSetDhanIp('PRIMARY')}
+                        disabled={isSettingIp}
+                        className="py-1.5 px-3 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition flex items-center gap-1 shadow"
+                      >
+                        {isSettingIp ? 'Updating...' : `Whitelist '${ipData.serverIp}' as Primary IP on Dhan`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetDhanIp('SECONDARY')}
+                        disabled={isSettingIp}
+                        className="py-1.5 px-3 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                      >
+                        Set as Secondary IP
+                      </button>
+                    </div>
+                  )}
+
+                  {ipData.isVercel && (
+                    <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[10px] text-amber-300 leading-relaxed space-y-1">
+                      <div className="font-bold">Important for Vercel Deployments:</div>
+                      <div>
+                        Vercel serverless functions use dynamic AWS IP pools that rotate with each execution.
+                        Under SEBI rules, Dhan blocks order placement from dynamic IPs.
+                      </div>
+                      <div>
+                        💡 <strong>Recommended:</strong> To execute live orders with real Dhan capital, run QuantPulse locally (<code className="bg-slate-900 px-1 py-0.5 rounded text-amber-200">npm run dev</code>) on your PC and whitelist your broadband IP in Dhan. Or use <strong>Paper Trading Mode</strong> for complete virtual algorithm testing on Vercel.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Live Quote Preview Table */}
               {liveQuotePreview && (
@@ -534,11 +707,17 @@ export function BrokerSettingsModal() {
           )}
 
           {/* Quick instructions box */}
-          <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <div className="font-semibold text-slate-200">How to get your Dhan API keys in 30 seconds:</div>
+          <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1.5">
+            <div className="font-semibold text-slate-200">How to configure DhanHQ Live API:</div>
             <div>1. Log in to <strong className="text-white">web.dhan.co</strong>.</div>
-            <div>2. Click your profile avatar (top-right) $\rightarrow$ <strong className="text-white">DhanHQ API &amp; Access Token</strong>.</div>
-            <div>3. Click <strong className="text-emerald-300">Generate Access Token</strong> and copy the token.</div>
+            <div>2. Click profile avatar (top-right) $\rightarrow$ <strong className="text-white">DhanHQ API &amp; Access Token</strong>.</div>
+            <div>3. Click <strong className="text-emerald-300">Generate Access Token</strong> and paste it above.</div>
+            <div>
+              4. <strong>Static IP Setup:</strong> In Dhan Web, navigate to <strong>IP Setup</strong> (or use the <strong>🛡️ Check IP</strong> button above) to whitelist your server IP.
+            </div>
+            <div className="text-[10px] text-slate-500 pt-0.5">
+              ⚠️ <em>Note:</em> Dhan strictly rejects live orders with &apos;Invalid IP&apos; if the IP doesn&apos;t match. If deployed on Vercel, run locally (<code className="text-slate-400">npm run dev</code>) or use Paper Trading.
+            </div>
           </div>
         </div>
 

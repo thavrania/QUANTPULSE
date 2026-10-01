@@ -71,10 +71,35 @@ export async function POST(req: NextRequest) {
     const data = await dhanRes.json();
 
     if (!dhanRes.ok || data.status === 'failure') {
+      const errorMsg = data.remarks || data.errorMessage || JSON.stringify(data);
+      const isInvalidIp =
+        errorMsg.toLowerCase().includes('invalid ip') ||
+        errorMsg.includes('DH-905') ||
+        errorMsg.includes('905');
+
+      let detailedMessage = `Dhan square-off failed: ${errorMsg}`;
+
+      if (isInvalidIp) {
+        let serverIp = 'UNKNOWN';
+        try {
+          const ipRes = await fetch('https://api.ipify.org?format=json', {
+            signal: AbortSignal.timeout(2000),
+            cache: 'no-store',
+          });
+          if (ipRes.ok) {
+            const d = await ipRes.json();
+            if (d?.ip) serverIp = d.ip;
+          }
+        } catch {}
+
+        detailedMessage = `Dhan square-off failed: Invalid IP. Server IP '${serverIp}' is not whitelisted on Dhan.`;
+      }
+
       return NextResponse.json({
         success: false,
         mode: 'LIVE_DHAN',
-        message: `Dhan square-off failed: ${data.remarks || JSON.stringify(data)}`,
+        message: detailedMessage,
+        isInvalidIp,
       });
     }
 
