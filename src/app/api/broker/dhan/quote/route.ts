@@ -7,6 +7,7 @@ import { hasTodayMarketSessionStarted, getISTDate } from '@/lib/services/marketH
 export interface LiveQuoteRecord {
   ltp: number;
   volumeM: number;
+  volume?: number; // Exact count of physical traded shares today
   high: number;
   low: number;
   open: number;
@@ -123,7 +124,8 @@ export async function POST(req: NextRequest) {
 
           quotes[sym] = {
             ltp: +(ltp).toFixed(2),
-            volumeM: +((effectiveVolume) / 1_000_000).toFixed(3),
+            volumeM: effectiveVolume / 1_000_000,
+            volume: effectiveVolume,
             high: +(item.high || ltp).toFixed(2),
             low: +(item.low || ltp).toFixed(2),
             open: +(item.open || ltp).toFixed(2),

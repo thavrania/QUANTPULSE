@@ -969,6 +969,7 @@ export interface ResolvedStockMetadata {
   lotSize: number;
   strikeStep: number;
   avgVol20DM: number;
+  avg20DTradedShares: number;
   approxLtp: number;
   isFnO: boolean;
   indices: string[];
@@ -997,8 +998,12 @@ export function resolveStockMetadata(
     is_fno?: boolean;
     avgVol20DM?: number;
     avg_vol_20d_m?: number;
+    avg20DTradedShares?: number;
+    avg_20d_traded_shares?: number;
     todayVolM?: number;
     today_vol_m?: number;
+    todayTradedShares?: number;
+    today_traded_shares?: number;
     spotLtp?: number;
     spot_ltp?: number;
     approxLtp?: number;
@@ -1013,6 +1018,12 @@ export function resolveStockMetadata(
 
   // Explicit corporate restructuring & rebranding overrides
   if (cleanTicker === 'TMCV' || cleanTicker === 'TATAMOTORS') {
+    const avgShares = Number(
+      dbMasterItem?.avg20DTradedShares ??
+      input.avg20DTradedShares ??
+      input.avg_20d_traded_shares ??
+      Math.round(Number(input.avgVol20DM || input.avg_vol_20d_m || 8.90) * 1_000_000)
+    );
     return {
       ticker: 'TMCV',
       shortName: 'TMCV',
@@ -1024,12 +1035,19 @@ export function resolveStockMetadata(
       securityId: '3456',
       lotSize: 550,
       strikeStep: 20,
-      avgVol20DM: input.avgVol20DM || input.avg_vol_20d_m || 8.90,
+      avgVol20DM: avgShares / 1_000_000,
+      avg20DTradedShares: avgShares,
       approxLtp: input.spotLtp || input.spot_ltp || input.approxLtp || 984.40,
       indices: ['NIFTY 50', 'SENSEX'],
     };
   }
   if (cleanTicker === 'ETERNAL' || cleanTicker === 'ZOMATO') {
+    const avgShares = Number(
+      dbMasterItem?.avg20DTradedShares ??
+      input.avg20DTradedShares ??
+      input.avg_20d_traded_shares ??
+      Math.round(Number(input.avgVol20DM || input.avg_vol_20d_m || 19.00) * 1_000_000)
+    );
     return {
       ticker: 'ETERNAL',
       shortName: 'ETERNAL',
@@ -1041,12 +1059,19 @@ export function resolveStockMetadata(
       securityId: '5097',
       lotSize: 2500,
       strikeStep: 5,
-      avgVol20DM: input.avgVol20DM || input.avg_vol_20d_m || 19.00,
+      avgVol20DM: avgShares / 1_000_000,
+      avg20DTradedShares: avgShares,
       approxLtp: input.spotLtp || input.spot_ltp || input.approxLtp || 264.80,
       indices: ['NIFTY 50'],
     };
   }
   if (cleanTicker === 'LTM' || cleanTicker === 'LTIM') {
+    const avgShares = Number(
+      dbMasterItem?.avg20DTradedShares ??
+      input.avg20DTradedShares ??
+      input.avg_20d_traded_shares ??
+      Math.round(Number(input.avgVol20DM || input.avg_vol_20d_m || 0.65) * 1_000_000)
+    );
     return {
       ticker: 'LTM',
       shortName: 'LTM',
@@ -1058,7 +1083,8 @@ export function resolveStockMetadata(
       securityId: '17818',
       lotSize: 150,
       strikeStep: 50,
-      avgVol20DM: input.avgVol20DM || input.avg_vol_20d_m || 0.65,
+      avgVol20DM: avgShares / 1_000_000,
+      avg20DTradedShares: avgShares,
       approxLtp: input.spotLtp || input.spot_ltp || input.approxLtp || 6150.00,
       indices: ['NIFTY 50'],
     };
@@ -1108,7 +1134,13 @@ export function resolveStockMetadata(
   const securityId = master?.securityId || input.securityId || input.security_id || '1330';
   const lotSize = Number(master?.lotSize ?? input.lotSize ?? input.lot_size ?? 1);
   const strikeStep = Number(master?.strikeStep ?? input.strikeStep ?? input.strike_step ?? 50);
-  const avgVol20DM = Number(master?.avgVol20DM ?? input.avgVol20DM ?? input.avg_vol_20d_m ?? 1.0);
+  const avg20DTradedShares = Number(
+    master?.avg20DTradedShares ??
+    input.avg20DTradedShares ??
+    input.avg_20d_traded_shares ??
+    Math.round(Number(master?.avgVol20DM ?? input.avgVol20DM ?? input.avg_vol_20d_m ?? 1.0) * 1_000_000)
+  );
+  const avgVol20DM = avg20DTradedShares / 1_000_000;
   const approxLtp = Number(
     master?.approxLtp ??
       input.approxLtp ??
@@ -1130,6 +1162,7 @@ export function resolveStockMetadata(
     lotSize,
     strikeStep,
     avgVol20DM,
+    avg20DTradedShares,
     approxLtp,
     isFnO,
     indices,
@@ -1154,7 +1187,9 @@ export function convertMasterToStock(master: StockMasterItem | Partial<StockMast
     strikeStep: meta.strikeStep,
     spotLtp: meta.approxLtp,
     todayVolM: 0.0,
+    todayTradedShares: 0,
     avgVol20DM: meta.avgVol20DM,
+    avg20DTradedShares: meta.avg20DTradedShares,
     hasCrossed20D: false,
     crossoverTime: null,
     crossoverSpotPrice: null,

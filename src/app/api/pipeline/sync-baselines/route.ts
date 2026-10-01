@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { batchSyncWatchlistBaselines, calculateFree20DBaseline, BaselineCalculationOutput } from '@/lib/engine/baselineBatchService';
 import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
-import { getStockMasterByTicker } from '@/lib/stocks/stockMaster';
+import { getStockMasterByTicker, resolveStockMetadata } from '@/lib/stocks/stockMaster';
 import { hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 
 export const maxDuration = 60; // Allow up to 60 seconds on Vercel Pro/Hobby
@@ -99,16 +99,20 @@ async function handleSync(req: NextRequest) {
           calculationResults.push(freeBaseline);
         } else {
           const master = getStockMasterByTicker(ticker);
-          const finalAvg = master?.avgVol20DM || 5.0;
+          const meta = resolveStockMetadata(master || { ticker });
+          const exactAvgShares = meta.avg20DTradedShares;
+          const finalAvgM = meta.avgVol20DM;
 
           calculationResults.push({
             ticker,
-            securityId: master?.securityId || '1330',
-            avgVolume20DM: finalAvg,
-            totalVolumeSumM: +(finalAvg * 20).toFixed(2),
+            securityId: meta.securityId || '1330',
+            avgVolume20DM: finalAvgM,
+            avg20DTradedShares: exactAvgShares,
+            totalVolumeSumM: +(finalAvgM * 20),
+            totalVolumeSumShares: exactAvgShares * 20,
             sessionsEvaluated: 20,
-            volatilityStdDevM: +(finalAvg * 0.15).toFixed(2),
-            shortTerm5DAvgM: +(finalAvg * 1.02).toFixed(2),
+            volatilityStdDevM: +(finalAvgM * 0.15),
+            shortTerm5DAvgM: +(finalAvgM * 1.02),
             trendRatio: 1.02,
             calculatedAt: new Date().toISOString(),
           });

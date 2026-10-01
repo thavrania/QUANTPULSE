@@ -15,7 +15,9 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     strikeStep: 50,
     spotLtp: 2968.50,
     todayVolM: 0.0,
+    todayTradedShares: 0,
     avgVol20DM: 5.20,
+    avg20DTradedShares: 5200000,
     hasCrossed20D: false,
     crossoverTime: null,
     crossoverSpotPrice: null,
@@ -41,7 +43,9 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     strikeStep: 50,
     spotLtp: 4126.00,
     todayVolM: 0.0,
+    todayTradedShares: 0,
     avgVol20DM: 1.50,
+    avg20DTradedShares: 1500000,
     hasCrossed20D: false,
     crossoverTime: null,
     crossoverSpotPrice: null,
@@ -67,7 +71,9 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     strikeStep: 20,
     spotLtp: 1644.20,
     todayVolM: 0.0,
+    todayTradedShares: 0,
     avgVol20DM: 6.00,
+    avg20DTradedShares: 6000000,
     hasCrossed20D: false,
     crossoverTime: null,
     crossoverSpotPrice: null,
@@ -93,7 +99,9 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     strikeStep: 20,
     spotLtp: 1258.00,
     todayVolM: 0.0,
+    todayTradedShares: 0,
     avgVol20DM: 7.00,
+    avg20DTradedShares: 7000000,
     hasCrossed20D: false,
     crossoverTime: null,
     crossoverSpotPrice: null,
@@ -120,7 +128,9 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     strikeStep: 20,
     spotLtp: 984.40,
     todayVolM: 0.0,
+    todayTradedShares: 0,
     avgVol20DM: 8.90,
+    avg20DTradedShares: 8900000,
     hasCrossed20D: false,
     crossoverTime: null,
     crossoverSpotPrice: null,
@@ -147,7 +157,9 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
     strikeStep: 5,
     spotLtp: 264.80,
     todayVolM: 0.0,
+    todayTradedShares: 0,
     avgVol20DM: 19.00,
+    avg20DTradedShares: 19000000,
     hasCrossed20D: false,
     crossoverTime: null,
     crossoverSpotPrice: null,
@@ -174,19 +186,22 @@ export function formatClockIST(totalSeconds: number): string {
 }
 
 export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
-  const progressPct = +((stock.todayVolM / Math.max(stock.avgVol20DM, 0.001)) * 100).toFixed(1);
-  const rvolRatio = +(stock.todayVolM / Math.max(stock.avgVol20DM, 0.001)).toFixed(2);
-  const deficitM = Math.max(0, +(stock.avgVol20DM - stock.todayVolM).toFixed(3));
-  const deficitShares = Math.max(0, Math.round((stock.avgVol20DM - stock.todayVolM) * 1_000_000));
-  const surplusShares = Math.max(0, Math.round((stock.todayVolM - stock.avgVol20DM) * 1_000_000));
+  const todayShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
+  const avgShares = stock.avg20DTradedShares !== undefined ? stock.avg20DTradedShares : Math.round(stock.avgVol20DM * 1_000_000);
+
+  const progressPct = avgShares > 0 ? +((todayShares / avgShares) * 100).toFixed(1) : 0;
+  const rvolRatio = avgShares > 0 ? +(todayShares / avgShares).toFixed(2) : 0;
+  const deficitShares = Math.max(0, avgShares - todayShares);
+  const surplusShares = Math.max(0, todayShares - avgShares);
+  const deficitM = +(deficitShares / 1_000_000).toFixed(3);
 
   // Rule 5: Strict Day Start Integrity - traded shares must genuinely meet/exceed 20D average (> 0) during active market
   const sessionStarted = hasTodayMarketSessionStarted();
   const hasVolumeCrossed =
     sessionStarted &&
-    (stock.hasCrossed20D || stock.todayVolM >= stock.avgVol20DM) &&
-    stock.todayVolM >= stock.avgVol20DM &&
-    stock.todayVolM > 0;
+    (stock.hasCrossed20D || todayShares >= avgShares) &&
+    todayShares >= avgShares &&
+    todayShares > 0;
 
   // Rule 1: Bullish Price / Candle Filter (Spot LTP >= Day Open or changePct >= 0)
   const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
@@ -232,6 +247,9 @@ export function checkAndLatchVolumeCrossover(
     return { newlyCrossed: false, event: null };
   }
 
+  const todayShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
+  const avgShares = stock.avg20DTradedShares !== undefined ? stock.avg20DTradedShares : Math.round(stock.avgVol20DM * 1_000_000);
+
   // 2. Opening Stabilization Gate (09:15:00 to 09:16:00 IST):
   // Broker quote feeds often carry yesterday's cumulative EOD volume during the first 60 seconds.
   // In genuine market trading, it is physically impossible for a stock to trade 100% of its 20-day average volume
@@ -239,7 +257,7 @@ export function checkAndLatchVolumeCrossover(
   const ist = getISTDate();
   const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
   if (secsSinceOpen >= 0 && secsSinceOpen < 60) {
-    if (stock.todayVolM >= stock.avgVol20DM * 0.5) {
+    if (todayShares >= avgShares * 0.5) {
       // Suppress anomalous opening spike (residual EOD cached volume)
       stock.hasCrossed20D = false;
       stock.crossoverTime = null;
@@ -250,10 +268,10 @@ export function checkAndLatchVolumeCrossover(
   }
 
   // Volume condition: Today volume must meet or exceed 20D average (> 0)
-  const volumeCrossed = stock.todayVolM >= stock.avgVol20DM && stock.todayVolM > 0;
+  const volumeCrossed = todayShares >= avgShares && todayShares > 0;
 
-  // Rule 5: If volume has not crossed (e.g. Day Start or 0.0M before session start), clear any stale crossover latch
-  if (stock.todayVolM < stock.avgVol20DM || stock.todayVolM === 0) {
+  // Rule 5: If volume has not crossed (e.g. Day Start or 0 before session start), clear any stale crossover latch
+  if (todayShares < avgShares || todayShares === 0) {
     stock.hasCrossed20D = false;
     stock.crossoverTime = null;
     stock.crossoverSpotPrice = null;
@@ -281,6 +299,8 @@ export function checkAndLatchVolumeCrossover(
       ticker: stock.ticker,
       time: currentTimeStr,
       avgVol20DM: stock.avgVol20DM,
+      avg20DTradedShares: avgShares,
+      todayTradedShares: todayShares,
       crossPrice: stock.spotLtp,
       isFnO: stock.isFnO,
     };

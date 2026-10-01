@@ -70,8 +70,8 @@ export function ZoneC_Screener() {
               const isSelectedRow = stock.ticker === selectedTicker;
               const barWidth = Math.min(100, Math.round(m.progressPct));
               const isTraded = idempotencyLocks.includes(stock.ticker);
-              const todayShares = Math.round(stock.todayVolM * 1_000_000);
-              const avg20DShares = Math.round(stock.avgVol20DM * 1_000_000);
+              const todayShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
+              const avg20DShares = stock.avg20DTradedShares !== undefined ? stock.avg20DTradedShares : Math.round(stock.avgVol20DM * 1_000_000);
               const deficitShares = Math.max(0, avg20DShares - todayShares);
               const surplusShares = Math.max(0, todayShares - avg20DShares);
 
@@ -159,7 +159,7 @@ export function ZoneC_Screener() {
 
                   {/* Exact Crossover Time (HH:MM:SS) */}
                   <td className="py-2.5 px-3 font-mono">
-                    {stock.hasCrossed20D && stock.crossoverTime && stock.todayVolM >= stock.avgVol20DM ? (
+                    {stock.hasCrossed20D && stock.crossoverTime && todayShares >= avg20DShares ? (
                       <div>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-[11px]">
                           ⏱️ {stock.crossoverTime} IST
@@ -187,7 +187,7 @@ export function ZoneC_Screener() {
                       )}
                     </div>
                     <div className="text-[10px] mt-0.5">
-                      {stock.hasCrossed20D && stock.crossoverSpotPrice && stock.todayVolM >= stock.avgVol20DM ? (
+                      {stock.hasCrossed20D && stock.crossoverSpotPrice && todayShares >= avg20DShares ? (
                         <span className="text-amber-300 font-bold font-mono bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20">
                           Crossed @ ₹{stock.crossoverSpotPrice.toFixed(2)}
                         </span>

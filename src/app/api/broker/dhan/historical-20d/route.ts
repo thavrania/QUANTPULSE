@@ -71,16 +71,18 @@ export async function POST(req: NextRequest) {
     // Take the last 20 completed trading sessions
     const last20Bars = volumes.slice(-20);
     const sumVolume = last20Bars.reduce((sum, v) => sum + (v || 0), 0);
-    const avgVolume20D = sumVolume / last20Bars.length;
-    const avgVolume20DM = +(avgVolume20D / 1_000_000).toFixed(3);
+    const avgVolume20D = Math.round(sumVolume / last20Bars.length);
+    const avgVolume20DM = avgVolume20D / 1_000_000;
 
     return NextResponse.json({
       success: true,
       ticker,
       securityId,
       avgVolume20DM,
+      avg20DTradedShares: avgVolume20D,
+      totalVolumeSumShares: sumVolume,
       barsEvaluated: last20Bars.length,
-      sampleVolumesM: last20Bars.slice(-5).map((v) => +(v / 1_000_000).toFixed(2)),
+      sampleVolumesM: last20Bars.slice(-5).map((v) => +(v / 1_000_000).toFixed(3)),
       calculatedAt: new Date().toISOString(),
     });
   } catch (err: any) {

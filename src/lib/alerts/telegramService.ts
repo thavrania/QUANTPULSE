@@ -53,15 +53,23 @@ export async function sendTelegramMessage(
   }
 }
 
-export function formatCrossoverAlert(ticker: string, todayVolM: number, avgVol20DM: number, spotLtp: number, timeIST: string): string {
-  const todayShares = Math.round(todayVolM * 1_000_000).toLocaleString('en-IN');
-  const avgShares = Math.round(avgVol20DM * 1_000_000).toLocaleString('en-IN');
+export function formatCrossoverAlert(
+  ticker: string,
+  todayVolM: number,
+  avgVol20DM: number,
+  spotLtp: number,
+  timeIST: string,
+  todaySharesCount?: number,
+  avgSharesCount?: number
+): string {
+  const todayShares = (todaySharesCount !== undefined ? todaySharesCount : Math.round(todayVolM * 1_000_000)).toLocaleString('en-IN');
+  const avgShares = (avgSharesCount !== undefined ? avgSharesCount : Math.round(avgVol20DM * 1_000_000)).toLocaleString('en-IN');
   return `🚀 *QUANTPULSE — 20D TRADED SHARES CROSSOVER!*
 ──────────────────────
 • *Symbol:* \`${ticker}\`
 • *Exact Cross Time:* \`${timeIST} IST\`
-• *Today Traded Shares:* \`${todayVolM.toFixed(2)}M\` (\`${todayShares} shares\`)
-• *20D Avg Benchmark:* \`${avgVol20DM.toFixed(2)}M\` (\`${avgShares} shares\`)
+• *Today Traded Shares:* \`${todayShares} shares\` (\`${todayVolM.toFixed(2)}M\`)
+• *20D Avg Benchmark:* \`${avgShares} shares\` (\`${avgVol20DM.toFixed(2)}M\`)
 • *Spot Price:* \`₹${spotLtp.toFixed(2)}\`
 • *Eligibility:* 🟢 *ELIGIBLE FOR BUY*
 ──────────────────────

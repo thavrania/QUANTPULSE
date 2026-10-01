@@ -331,7 +331,7 @@ export function ZoneB_Watchlist() {
                   <div className="flex items-center justify-between text-[10px] font-mono mt-1.5 text-slate-300">
                     <span>₹{stock.spotLtp.toFixed(1)}</span>
                     <span className="text-cyan-300">
-                      {Math.round(stock.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares
+                      {(stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares
                     </span>
                   </div>
                   <div className="mt-1 flex items-center justify-between text-[9px]">
@@ -446,7 +446,7 @@ export function ZoneB_Watchlist() {
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-300 font-mono">
-                    Crossed 20D Avg (<span className="text-white">{Math.round(ev.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares</span>) @ Spot{' '}
+                    Crossed 20D Avg (<span className="text-white">{(ev.avg20DTradedShares || Math.round(ev.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares</span>) @ Spot{' '}
                     <span className="text-emerald-300 font-semibold">₹{ev.crossPrice.toFixed(2)}</span>
                   </div>
                 </div>
@@ -647,7 +647,7 @@ export function ZoneB_Watchlist() {
                       <div className="text-[10px] font-mono text-slate-300 mt-1 flex items-center gap-2 flex-wrap">
                         <span className="text-slate-400">20D Avg:</span>
                         <strong className="text-slate-100">
-                          {Math.round(stock.avgVol20DM * 1_000_000).toLocaleString('en-IN')} shares
+                          {(stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares
                         </strong>
                         {stock.approxLtp && (
                           <span className="text-emerald-400 font-semibold">

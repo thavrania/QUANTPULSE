@@ -43,7 +43,8 @@ export function processLiveMarketfeedBatch(
     if (!q) return stock;
 
     const spotLtp = Number(q.ltp) || stock.spotLtp;
-    const todayVolM = q.volumeM !== undefined ? Number(q.volumeM) : stock.todayVolM;
+    const todayShares = q.volume !== undefined ? Number(q.volume) : (stock.todayTradedShares ?? Math.round(Number(q.volumeM || 0) * 1_000_000));
+    const todayVolM = q.volumeM !== undefined ? Number(q.volumeM) : todayShares / 1_000_000;
     const dayHigh = q.high !== undefined ? Number(q.high) : stock.dayHigh;
     const dayLow = q.low !== undefined ? Number(q.low) : stock.dayLow;
     const dayOpen = q.open !== undefined ? Number(q.open) : stock.dayOpen;
@@ -54,6 +55,8 @@ export function processLiveMarketfeedBatch(
       ...stock,
       spotLtp,
       todayVolM,
+      todayTradedShares: todayShares,
+      avg20DTradedShares: stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000),
       dayHigh,
       dayLow,
       dayOpen,

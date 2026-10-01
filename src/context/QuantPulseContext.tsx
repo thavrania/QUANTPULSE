@@ -461,7 +461,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           }
         }
 
-        const baselineMap = new Map<string, number>();
+        const baselineMap = new Map<string, { avgVol20DM: number; avg20DTradedShares: number }>();
         let dataSource = 'QUANT_BASELINE_ENGINE';
 
         try {
@@ -474,7 +474,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           const data = await res.json();
           if (data && data.success && data.baselines && data.baselines.length > 0) {
             data.baselines.forEach((b: any) => {
-              baselineMap.set(b.ticker, b.avgVolume20DM);
+              const shares = b.avg20DTradedShares || Math.round((b.avgVolume20DM || 1.0) * 1_000_000);
+              const volM = b.avgVolume20DM || (shares / 1_000_000);
+              baselineMap.set(b.ticker, { avgVol20DM: volM, avg20DTradedShares: shares });
             });
             dataSource = data.dataSource || 'DHAN_HISTORICAL_API';
           }
@@ -487,8 +489,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           if (!baselineMap.has(ticker)) {
             const master = getStockMasterByTicker(ticker);
             const existingStock = watchlistRef.current.find((s) => s.ticker === ticker);
-            const baseAvg = master?.avgVol20DM || existingStock?.avgVol20DM || 5.0;
-            baselineMap.set(ticker, baseAvg);
+            const baseShares = master?.avg20DTradedShares || existingStock?.avg20DTradedShares || Math.round((master?.avgVol20DM || existingStock?.avgVol20DM || 5.0) * 1_000_000);
+            const baseAvgM = baseShares / 1_000_000;
+            baselineMap.set(ticker, { avgVol20DM: baseAvgM, avg20DTradedShares: baseShares });
           }
         });
 
@@ -499,17 +502,23 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         // Update baselines for all active stocks WITHOUT removing or resetting any stocks!
         setWatchlist((prevWl) => {
           const updated = prevWl.map((stock) => {
-            const newAvg20D = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
+            const bInfo = baselineMap.get(stock.ticker);
+            const newAvg20DM = bInfo?.avgVol20DM ?? stock.avgVol20DM;
+            const newAvg20DShares = bInfo?.avg20DTradedShares ?? stock.avg20DTradedShares ?? Math.round(newAvg20DM * 1_000_000);
+
             if (isDateChange || !sessionStarted) {
               // Day Start / Pre-Market Sync:
               // If continuous trading has not started today (e.g. pre-market or closed), Traded Shares is strictly 0.0
               // Do not retain previous trading day's traded shares or stale flags.
               const dayStartVol = sessionStarted ? stock.todayVolM : 0.0;
-              const hasCrossed = sessionStarted && dayStartVol >= newAvg20D && dayStartVol > 0;
+              const dayStartShares = sessionStarted ? (stock.todayTradedShares ?? Math.round(dayStartVol * 1_000_000)) : 0;
+              const hasCrossed = sessionStarted && dayStartShares >= newAvg20DShares && dayStartShares > 0;
               return {
                 ...stock,
-                avgVol20DM: newAvg20D,
+                avgVol20DM: newAvg20DM,
+                avg20DTradedShares: newAvg20DShares,
                 todayVolM: dayStartVol,
+                todayTradedShares: dayStartShares,
                 hasCrossed20D: hasCrossed,
                 crossoverTime: hasCrossed ? stock.crossoverTime : null,
                 crossoverSpotPrice: hasCrossed ? stock.crossoverSpotPrice : null,
@@ -517,10 +526,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               };
             } else {
               // Mid-day refresh: keep today's traded shares and re-evaluate crossover eligibility against new 20D baseline
-              const hasCrossed = sessionStarted && stock.todayVolM >= newAvg20D && stock.todayVolM > 0;
+              const currentShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
+              const hasCrossed = sessionStarted && currentShares >= newAvg20DShares && currentShares > 0;
               return {
                 ...stock,
-                avgVol20DM: newAvg20D,
+                avgVol20DM: newAvg20DM,
+                avg20DTradedShares: newAvg20DShares,
+                todayTradedShares: currentShares,
                 hasCrossed20D: hasCrossed,
                 crossoverTime: hasCrossed ? (stock.crossoverTime || currentClockStr) : null,
                 crossoverSpotPrice: hasCrossed ? (stock.crossoverSpotPrice || stock.spotLtp) : null,
@@ -535,7 +547,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               const master = getStockMasterByTicker(t);
               if (master) {
                 const stock = convertMasterToStock(master);
-                stock.avgVol20DM = baselineMap.get(t) ?? stock.avgVol20DM;
+                const bInfo = baselineMap.get(t);
+                if (bInfo) {
+                  stock.avgVol20DM = bInfo.avgVol20DM;
+                  stock.avg20DTradedShares = bInfo.avg20DTradedShares;
+                }
                 updated.push(stock);
                 existingTickersSet.add(normalizeTicker(t));
               }
@@ -751,6 +767,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             // Today's traded volume must remain 0.00M, and crossover cannot trigger!
             const todayVol = (sessionStarted && isUpdatedToday) ? (Number(d.today_vol_m) || 0) : 0;
             const avgVol = Number(d.avg_vol_20d_m) || meta.avgVol20DM || 1.0;
+            const avgShares = Number(d.avg_20d_traded_shares) || meta.avg20DTradedShares || Math.round(avgVol * 1_000_000);
+            const todayShares = (sessionStarted && isUpdatedToday)
+              ? (d.today_traded_shares !== undefined && d.today_traded_shares !== null ? Number(d.today_traded_shares) : Math.round(todayVol * 1_000_000))
+              : 0;
             const spot = Number(d.spot_ltp) || meta.approxLtp || 1000;
             const dayOpen = d.day_open ? Number(d.day_open) : spot;
             const chgPct = d.change_pct !== undefined ? Number(d.change_pct) : 0;
@@ -765,8 +785,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               isUpdatedToday &&
               Boolean(d.has_crossed_20d) &&
               hasVerifiedEventToday &&
-              todayVol >= avgVol &&
-              todayVol > 0;
+              todayShares >= avgShares &&
+              todayShares > 0;
 
             const existingLocal = (watchlistRef.current || []).find((s) => normalizeTicker(s.ticker) === cleanTicker);
             const localVol = existingLocal?.todayVolM || 0;
@@ -848,7 +868,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               strikeStep: meta.strikeStep,
               spotLtp: preferLocal && existingLocal ? existingLocal.spotLtp : spot,
               todayVolM: preferLocal && existingLocal ? existingLocal.todayVolM : todayVol,
+              todayTradedShares: preferLocal && existingLocal ? (existingLocal.todayTradedShares ?? Math.round(existingLocal.todayVolM * 1_000_000)) : todayShares,
               avgVol20DM: avgVol,
+              avg20DTradedShares: avgShares,
               hasCrossed20D: finalHasCrossed,
               crossoverTime: finalCrossoverTime,
               crossoverSpotPrice: finalCrossoverSpot,
@@ -967,17 +989,21 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         // Also check active watchlist in memory: If a stock has crossed with crossoverTime, guarantee it has an entry
         (watchlistRef.current || []).forEach((stock) => {
+          const todayShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
+          const avgShares = stock.avg20DTradedShares !== undefined ? stock.avg20DTradedShares : Math.round(stock.avgVol20DM * 1_000_000);
           if (
             stock.hasCrossed20D &&
             stock.crossoverTime &&
-            stock.todayVolM >= stock.avgVol20DM &&
-            stock.todayVolM > 0 &&
+            todayShares >= avgShares &&
+            todayShares > 0 &&
             !dedupedMap.has(stock.ticker)
           ) {
             dedupedMap.set(stock.ticker, {
               ticker: stock.ticker,
               time: stock.crossoverTime,
               avgVol20DM: stock.avgVol20DM,
+              avg20DTradedShares: avgShares,
+              todayTradedShares: todayShares,
               crossPrice: stock.crossoverSpotPrice || stock.spotLtp,
               isFnO: stock.isFnO,
             });
@@ -1248,16 +1274,21 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
     setWatchlist((prevWl) => {
       const updatedWl = prevWl.map((stock) => {
-        const volStep = +(stock.avgVol20DM * (0.012 + Math.random() * 0.018)).toFixed(3);
-        const newTodayVol = +(stock.todayVolM + volStep).toFixed(3);
+        const avgShares = stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000);
+        const currentTodayShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
+        const stepShares = Math.max(1, Math.round(avgShares * (0.012 + Math.random() * 0.018)));
+        const newTodayShares = currentTodayShares + stepShares;
+        const newTodayVol = newTodayShares / 1_000_000;
         const priceDeltaPct = (Math.random() - 0.42) * 0.006;
         const newSpotLtp = Math.max(10, +(stock.spotLtp * (1 + priceDeltaPct)).toFixed(2));
         const dayOpen = stock.dayOpen || stock.spotLtp;
         const newChangePct = +(((newSpotLtp - dayOpen) / dayOpen) * 100).toFixed(2);
 
-        const updated = {
+        const updated: Stock = {
           ...stock,
           todayVolM: newTodayVol,
+          todayTradedShares: newTodayShares,
+          avg20DTradedShares: avgShares,
           spotLtp: newSpotLtp,
           changePct: newChangePct,
         };
@@ -1445,14 +1476,20 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
             // Before 09:15 IST on trading days or on weekends, today's regular session has not traded.
             // Today's traded volume must remain 0.00M, and crossover cannot trigger!
+            const safeTodayShares = sessionStarted
+              ? (q.volume !== undefined ? Number(q.volume) : (stock.todayTradedShares ?? Math.round(Number(q.volumeM || 0) * 1_000_000)))
+              : 0;
             const safeTodayVol = sessionStarted
-              ? (q.volumeM !== undefined ? Number(q.volumeM) : stock.todayVolM)
+              ? (q.volumeM !== undefined ? Number(q.volumeM) : safeTodayShares / 1_000_000)
               : 0.0;
+            const currentAvgShares = stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000);
 
             const updated: Stock = {
               ...stock,
               spotLtp: q.ltp || stock.spotLtp,
               todayVolM: safeTodayVol,
+              todayTradedShares: safeTodayShares,
+              avg20DTradedShares: currentAvgShares,
               dayHigh: sessionStarted ? (q.high || stock.dayHigh) : (q.ltp || stock.spotLtp),
               dayLow: sessionStarted ? (q.low || stock.dayLow) : (q.ltp || stock.spotLtp),
               dayOpen: sessionStarted ? (q.open || stock.dayOpen) : (q.ltp || stock.spotLtp),
@@ -1464,7 +1501,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               crossoverSpotPrice: sessionStarted ? stock.crossoverSpotPrice : null,
             };
 
-            if (sessionStarted && safeTodayVol > 0) {
+            if (sessionStarted && safeTodayShares > 0) {
               const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, nowTime);
               if (newlyCrossed && event) {
                 setCrossoverEvents((prevEv) => {
@@ -1960,9 +1997,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             const newSpot = +(stock.spotLtp * 1.008).toFixed(2);
             const dayOpen = stock.dayOpen || stock.spotLtp;
             const newChangePct = +(((newSpot - dayOpen) / dayOpen) * 100).toFixed(2);
-            const updated = {
+            const avgShares = stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000);
+            const forcedShares = Math.round(avgShares * 1.035);
+            const updated: Stock = {
               ...stock,
-              todayVolM: +(stock.avgVol20DM * 1.035).toFixed(2),
+              todayTradedShares: forcedShares,
+              todayVolM: forcedShares / 1_000_000,
+              avg20DTradedShares: avgShares,
               spotLtp: newSpot,
               changePct: newChangePct,
             };
@@ -2014,9 +2055,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             return updated;
           } else {
             showToast(`${stock.ticker} already crossed at ${stock.crossoverTime} IST.`, 'info');
+            const currentShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
+            const avgShares = stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000);
+            const incrementedShares = currentShares + Math.round(avgShares * 0.05);
             return {
               ...stock,
-              todayVolM: +(stock.todayVolM + stock.avgVol20DM * 0.05).toFixed(2),
+              todayTradedShares: incrementedShares,
+              todayVolM: incrementedShares / 1_000_000,
             };
           }
         });

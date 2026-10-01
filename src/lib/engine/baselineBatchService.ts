@@ -10,7 +10,9 @@ export interface BaselineCalculationOutput {
   ticker: string;
   securityId: string;
   avgVolume20DM: number;
+  avg20DTradedShares: number; // Exact count of 20-day average traded shares with zero round-off
   totalVolumeSumM: number;
+  totalVolumeSumShares: number; // Exact sum of physical traded shares across evaluated sessions
   sessionsEvaluated: number;
   volatilityStdDevM: number;
   shortTerm5DAvgM: number;
@@ -59,24 +61,26 @@ export async function calculateFree20DBaseline(
 
     const last20 = completedVolumes.slice(-20);
     const sumVol = last20.reduce((acc, v) => acc + v, 0);
-    const avgVol = sumVol / last20.length;
-    const avgVolume20DM = +(avgVol / 1_000_000).toFixed(3);
+    const avgVolExact = Math.round(sumVol / last20.length);
+    const avgVolume20DM = avgVolExact / 1_000_000;
 
     const last5 = last20.slice(-5);
     const sum5D = last5.reduce((acc, v) => acc + v, 0);
-    const shortTerm5DAvgM = +(sum5D / last5.length / 1_000_000).toFixed(3);
+    const shortTerm5DAvgM = +(sum5D / last5.length / 1_000_000);
 
     const variance =
       last20.reduce((acc, v) => acc + Math.pow(v / 1_000_000 - avgVolume20DM, 2), 0) /
       last20.length;
     const volatilityStdDevM = +Math.sqrt(variance).toFixed(3);
-    const trendRatio = +(shortTerm5DAvgM / Math.max(avgVolume20DM, 0.001)).toFixed(2);
+    const trendRatio = +(shortTerm5DAvgM / Math.max(avgVolume20DM, 0.000001)).toFixed(2);
 
     return {
       ticker,
       securityId: getDhanSecurityId(ticker),
       avgVolume20DM,
-      totalVolumeSumM: +(sumVol / 1_000_000).toFixed(2),
+      avg20DTradedShares: avgVolExact,
+      totalVolumeSumM: +(sumVol / 1_000_000).toFixed(4),
+      totalVolumeSumShares: sumVol,
       sessionsEvaluated: last20.length,
       volatilityStdDevM,
       shortTerm5DAvgM,
@@ -136,13 +140,13 @@ export async function calculateSingle20DBaseline(
   // Extract exactly the last 20 completed daily sessions
   const last20 = rawVolumes.slice(-20);
   const sumVol = last20.reduce((acc, v) => acc + (v || 0), 0);
-  const avgVol = sumVol / last20.length;
-  const avgVolume20DM = +(avgVol / 1_000_000).toFixed(3);
+  const avgVolExact = Math.round(sumVol / last20.length);
+  const avgVolume20DM = avgVolExact / 1_000_000;
 
   // Short term 5D moving average
   const last5 = last20.slice(-5);
   const sum5D = last5.reduce((acc, v) => acc + (v || 0), 0);
-  const shortTerm5DAvgM = +(sum5D / last5.length / 1_000_000).toFixed(3);
+  const shortTerm5DAvgM = +(sum5D / last5.length / 1_000_000);
 
   // Volume Volatility (Standard Deviation of Daily Volume)
   const variance =
@@ -150,13 +154,15 @@ export async function calculateSingle20DBaseline(
     last20.length;
   const volatilityStdDevM = +Math.sqrt(variance).toFixed(3);
 
-  const trendRatio = +(shortTerm5DAvgM / Math.max(avgVolume20DM, 0.001)).toFixed(2);
+  const trendRatio = +(shortTerm5DAvgM / Math.max(avgVolume20DM, 0.000001)).toFixed(2);
 
   return {
     ticker,
     securityId,
     avgVolume20DM,
-    totalVolumeSumM: +(sumVol / 1_000_000).toFixed(2),
+    avg20DTradedShares: avgVolExact,
+    totalVolumeSumM: +(sumVol / 1_000_000).toFixed(4),
+    totalVolumeSumShares: sumVol,
     sessionsEvaluated: last20.length,
     volatilityStdDevM,
     shortTerm5DAvgM,

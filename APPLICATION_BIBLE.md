@@ -543,8 +543,10 @@ erDiagram
 | `stock.name` | `string` | Legal registered corporate name | Stock Master Catalog | Master Metadata |
 | `stock.spotLtp` | `number` | Last Traded Price (LTP) | Dhan Quote API / Yahoo | **LIVE DATA** |
 | `stock.todayVolM` | `number` | Cumulative shares traded today (Millions) | Dhan `volume` / 1,000,000 | **CURRENT DAY DATA** |
+| `stock.todayTradedShares`| `number` | Exact count of shares traded today | Raw exchange quote volume | **CURRENT DAY DATA** |
 | `stock.avgVol20DM`| `number` | 20-Day average traded shares (Millions) | Completed 20 sessions math | **HISTORICAL DATA** |
-| `stock.hasCrossed20D`| `boolean`| True if todayVolM $\ge$ avgVol20DM today | `crossoverEngine.ts` | **LIVE COMPUTED** |
+| `stock.avg20DTradedShares`| `number`| Exact count of 20-day average shares | Unrounded integer average | **HISTORICAL DATA** |
+| `stock.hasCrossed20D`| `boolean`| True if todayTradedShares $\ge$ avg20DTradedShares | `crossoverEngine.ts` | **LIVE COMPUTED** |
 | `stock.crossoverTime`| `string` | Exact IST timestamp of crossover | Latched at trigger moment | **LIVE LATCHED** |
 | `stock.crossoverSpotPrice`| `number`| Spot LTP when crossover occurred | Latched at trigger moment | **LIVE LATCHED** |
 | `position.riskPerUnit`| `number`| 1R distance in Rupees | 1% of Spot or 20% of Option | **COMPUTED** |
@@ -613,14 +615,16 @@ flowchart TD
 ## 13. Trading & Crossover Signal Engine
 
 ### 13.1 Mathematical Formulas
-1. **Cumulative Volume Crossover Condition:**
-   $$\text{VolumeCondition} = (\text{todayVolM} \ge \text{avgVol20DM}) \land (\text{todayVolM} > 0)$$
+1. **Cumulative Volume Crossover Condition (Exact Shares, Zero Round-Off):**
+   $$\text{todayShares} = \text{stock.todayTradedShares} \lor \text{round}(\text{todayVolM} \times 10^6)$$
+   $$\text{avgShares} = \text{stock.avg20DTradedShares} \lor \text{round}(\text{avgVol20DM} \times 10^6)$$
+   $$\text{VolumeCondition} = (\text{todayShares} \ge \text{avgShares}) \land (\text{todayShares} > 0)$$
 2. **Bullish Price Action Filter (Rule 1):**
    $$\text{PriceCondition} = (\text{spotLtp} \ge \text{dayOpen}) \lor (\text{changePct} \ge 0)$$
 3. **Full Buy Eligibility:**
-   $$\text{EligibleForBuy} = \text{VolumeCondition} \land \text{PriceCondition} \land (\text{SessionTime} \ge \text{09:15:00 IST})$$
+   $$\text{EligibleForBuy} = \text{VolumeCondition} \land \text{PriceCondition} \land (\text{SessionTime} \ge \text{09:16:00 IST})$$
 4. **Relative Volume (RVOL):**
-   $$\text{RVOL} = \frac{\text{todayVolM}}{\max(\text{avgVol20DM}, 0.001)}$$
+   $$\text{RVOL} = \frac{\text{todayShares}}{\max(\text{avgShares}, 1)}$$
 5. **Position Sizing (Equity):**
    $$\text{Quantity}_{\text{EQ}} = \max\left(1, \left\lfloor \frac{\text{CapitalPerTrade}}{\text{spotLtp}} \right\rfloor\right)$$
 6. **Position Sizing (Options):**
@@ -771,6 +775,7 @@ Throughout QuantPulse, **Traded Shares** is the foundational quantitative metric
 8. **Zone E Clean Slate Invariant:** Closed positions (`state_index = 4`) and cancelled orders (`status = 'CANCELLED'`) must never be loaded as active open positions or lock symbols.
 9. **Option Fallback Invariant:** If a cash-only equity (non-F&O) is selected with Option toggle enabled, the engine must fall back to Equity Stock mode.
 10. **Database Source of Truth Invariant:** For multi-device synchronization and headless crons, the Supabase PostgreSQL database takes precedence over browser `localStorage`.
+11. **Zero Round-Off & Slippage Invariant:** Average Traded Shares and Today's Traded Shares must maintain full physical share precision. Crossover comparisons must evaluate exact physical shares (`todayShares >= avgShares && todayShares > 0`) without floating-point or 3-decimal rounding truncation (`toFixed(3)`), preventing false triggers and slippage at the crossover breakout boundary.
 
 ---
 
@@ -789,6 +794,11 @@ Throughout QuantPulse, **Traded Shares** is the foundational quantitative metric
 ### BUG-003: Supabase RLS Anonymous DELETE Restriction
 - **Root Cause:** Original schema defined `SELECT`, `INSERT`, and `UPDATE` for `anon`, but omitted `DELETE` policies on `active_positions` and `trade_logs`.
 - **Proper Fix Applied (`ccf1fbc`):** Created `supabase_session_clean_slate.sql` with `CREATE POLICY ... FOR DELETE TO anon`. Implemented dual `delete()` and `update({ state_index: 4, status: 'CANCELLED' })` fallback in code.
+
+### BUG-004: Average Traded Shares Round-Off and Crossover Slippage
+- **Root Cause:** `baselineBatchService.ts`, `historical-20d/route.ts`, and `quote/route.ts` were applying `+(val / 1_000_000).toFixed(3)`. In millions, 3 decimal places rounds off up to 999 physical shares. This caused trailing `.000` zeros in UI share counts and caused slippage/premature crossovers when comparing rounded numbers.
+- **Proper Fix Applied:** Preserved exact integer share counts (`todayTradedShares`, `avg20DTradedShares`), unrounded division for millions (`val / 1_000_000`), integer share crossover evaluation (`todayShares >= avgShares`), and created `supabase_exact_shares_precision.sql` to expand DB precision to 6 decimals.
+- **Regression Risk:** Re-introducing `.toFixed(3)` or `.toFixed(2)` on volume numbers before crossover evaluation will re-introduce slippage.
 
 ---
 

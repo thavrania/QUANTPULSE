@@ -89,9 +89,9 @@ export function ZoneD_NextAction() {
               </div>
               <div className="text-[11px] text-slate-300 font-medium mt-0.5">{stock.name}</div>
               <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-                Today Shares: <span className="text-white font-semibold">{stock.todayVolM.toFixed(2)}M</span>
+                Today Shares: <span className="text-white font-semibold">{(stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000)).toLocaleString('en-IN')} shares</span>
                 {' '}/ 20D Avg:{' '}
-                <span className="text-cyan-300 font-semibold">{stock.avgVol20DM.toFixed(2)}M</span>
+                <span className="text-cyan-300 font-semibold">{(stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares</span>
                 {' '}({payload.volumeTracking.crossoverProgressPct}%)
               </div>
             </div>
@@ -134,8 +134,8 @@ export function ZoneD_NextAction() {
                 <span className="font-mono">{payload.volumeTracking.crossoverProgressPct}%</span>
               </div>
               <p className="text-[11px] text-slate-300">
-                Needs <strong className="font-mono text-white">+{payload.volumeTracking.remainingDeficitM.toFixed(2)}M</strong>{' '}
-                more traded shares today to beat the 20-day average (<strong className="font-mono">{stock.avgVol20DM.toFixed(2)}M</strong>) and unlock buying.
+                Needs <strong className="font-mono text-white">+{Math.max(0, (stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000)) - (stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000))).toLocaleString('en-IN')}</strong>{' '}
+                more traded shares today to beat the 20-day average (<strong className="font-mono text-cyan-300">{(stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares</strong>) and unlock buying.
               </p>
               <button
                 type="button"

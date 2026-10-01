@@ -47,6 +47,7 @@ export interface StockMasterItem {
   lotSize: number;
   strikeStep: number;
   avgVol20DM: number;
+  avg20DTradedShares?: number; // Exact count of 20-day average traded shares
   approxLtp?: number;
   isFnO: boolean;
   indices?: string[];
@@ -57,6 +58,8 @@ export interface CrossoverEvent {
   ticker: string;
   time: string;
   avgVol20DM: number;
+  avg20DTradedShares?: number; // Exact count of 20-day average traded shares
+  todayTradedShares?: number; // Exact count of shares traded at crossover
   crossPrice: number;
   isFnO: boolean;
 }

@@ -52,6 +52,57 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ## Change History
 
+### [2026-10-01 11:20 IST] — Zero Round-Off & Slippage Precision for Average Traded Shares & Crossovers
+- **Commit SHA / Version:** Pending (`main`) / `v2.1.0`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Fix` / `Feature` / `Database`
+- **Business Rationale / Objective:** 
+  Previously, 20-Day Average Traded Shares and Today's Live Traded Shares were truncated to 3 decimal places in millions (`toFixed(3)`). In 1 Million, a 3-decimal truncation (`0.001M`) loses up to 999 physical shares of precision, causing rounded artificial numbers (e.g. `1,234,000` or `2,600,000` shares) with `.000` trailing zeros in Zone B, Zone C, and Zone D. Furthermore, comparing floating-point volume in millions caused slippage/premature crossover triggers at the breakout boundary. This update establishes exact physical share precision (`todayTradedShares`, `avg20DTradedShares`), unrounded division, integer crossover comparison (`todayShares >= avgShares && todayShares > 0`), and a database migration script to expand volume columns to `NUMERIC(16, 6)`.
+
+#### Affected Components & Files
+- `src/lib/types/quant.ts`: Added `avg20DTradedShares?: number` and `todayTradedShares?: number` to `StockMasterItem` and `CrossoverEvent`.
+- `src/lib/stocks/stockMaster.ts`: Updated `ResolvedStockMetadata`, `resolveStockMetadata()`, and `convertMasterToStock()` to compute and preserve exact unrounded integer share averages.
+- `src/lib/engine/baselineBatchService.ts`: In `calculateFree20DBaseline()` and `calculateSingle20DBaseline()`, eliminated `.toFixed(3)` round-off and returned exact `avg20DTradedShares: Math.round(sumVol / 20)`.
+- `src/app/api/broker/dhan/historical-20d/route.ts`: Returned unrounded `avgVolume20DM` and exact `avg20DTradedShares`.
+- `src/app/api/broker/dhan/quote/route.ts`: Included raw `volume: effectiveVolume` in `LiveQuoteRecord` and unrounded `volumeM`.
+- `src/lib/market/freeLiveMarketService.ts`: Included raw `volume: rawVol` in `LiveQuoteRecord` and unrounded `volumeM`.
+- `src/lib/services/liveIngestionEngine.ts`: Propagated exact `todayTradedShares` and `avg20DTradedShares`.
+- `src/lib/engine/crossoverEngine.ts`: Evaluated crossovers using exact integer shares (`todayShares >= avgShares && todayShares > 0`) in `getVolumeScreenerMetrics()` and `checkAndLatchVolumeCrossover()`. Added exact shares to `INITIAL_WATCHLIST_DATA`.
+- `src/components/zones/ZoneC_Screener.tsx`: Rendered exact `todayShares` and `avg20DShares` without round-off or trailing `.000`.
+- `src/components/zones/ZoneB_Watchlist.tsx`: Displayed exact `avg20DTradedShares`.
+- `src/components/zones/ZoneD_NextAction.tsx`: Displayed exact share counts and deficit/surplus.
+- `src/context/QuantPulseContext.tsx`: Maintained exact `avg20DTradedShares` and `todayTradedShares` across `syncBaselines`, `loadFromSupabase`, live quote polling, tick simulation, and `forceCrossover`.
+- `src/lib/alerts/telegramService.ts`: Supported exact share counts in `formatCrossoverAlert`.
+- `supabase_exact_shares_precision.sql`: Created SQL migration script to expand `avg_vol_20d_m` and `today_vol_m` to `NUMERIC(16, 6)` and add `BIGINT` share columns.
+- `APPLICATION_BIBLE.md`: Documented Invariant 11 (Zero Round-Off & Slippage) and BUG-004.
+
+#### Database & Schema Impact
+- **Tables Touched:** `watchlist`, `stock_master`, `crossover_events`, `live_tick_snapshots`
+- **Operations:** Expanded precision to 6 decimals, added `BIGINT` share columns.
+- **Migration Script:** `supabase_exact_shares_precision.sql`
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+- [x] Invariant 11: Zero Round-Off & Slippage Invariant (Exact Physical Shares)
+
+#### Verification & Testing Performed
+- Static code analysis across all 14 affected files. Verified exact integer share comparisons (`todayShares >= avgShares`).
+- Verified UI formatting with `.toLocaleString('en-IN')` on exact share values across Zone B, Zone C, and Zone D.
+
+#### Rollback Procedure
+- `git revert <commit_sha>`
+
+---
+
 ### [2026-10-01 10:45 IST] — System Specification & Bible Publication
 - **Commit SHA / Version:** Pending (`main`) / `v2.0.0`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)

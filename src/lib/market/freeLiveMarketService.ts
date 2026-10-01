@@ -71,7 +71,7 @@ export async function fetchFreeLiveQuotes(
            0)
         : 0;
 
-      const volumeM = +(rawVol / 1_000_000).toFixed(3);
+      const volumeM = rawVol / 1_000_000;
       const dayHigh = isTodayVolumeValid ? (Number(meta.regularMarketDayHigh) || ltp) : ltp;
       const dayLow = isTodayVolumeValid ? (Number(meta.regularMarketDayLow) || ltp) : ltp;
       const dayOpen = isTodayVolumeValid
@@ -88,6 +88,7 @@ export async function fetchFreeLiveQuotes(
       const record: LiveQuoteRecord = {
         ltp: +ltp.toFixed(2),
         volumeM,
+        volume: rawVol,
         high: +dayHigh.toFixed(2),
         low: +dayLow.toFixed(2),
         open: +dayOpen.toFixed(2),
