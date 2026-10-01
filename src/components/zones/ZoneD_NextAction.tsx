@@ -16,9 +16,27 @@ export function ZoneD_NextAction() {
     showToast,
   } = useQuantPulse();
 
-  const [isPaperMode, setIsPaperMode] = useState<boolean>(true);
+  const [isPaperMode, setIsPaperMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('qp_order_routing_mode') !== 'LIVE';
+    }
+    return true;
+  });
   const [previewOrder, setPreviewOrder] = useState<OrderPreviewDetails | null>(null);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+
+  const handleToggleRoutingMode = (paper: boolean) => {
+    setIsPaperMode(paper);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qp_order_routing_mode', paper ? 'PAPER' : 'LIVE');
+      showToast(
+        paper
+          ? '📝 Order Routing set to Paper Virtual Engine (Zero Risk).'
+          : '⚡ Order Routing set to Live Dhan Exchange API.',
+        paper ? 'info' : 'amber'
+      );
+    }
+  };
 
   const stock =
     watchlist.find((s) => s.ticker === selectedTicker) || watchlist[0];
@@ -237,7 +255,7 @@ export function ZoneD_NextAction() {
             <div className="inline-flex items-center p-0.5 rounded-md bg-slate-900 border border-slate-700">
               <button
                 type="button"
-                onClick={() => setIsPaperMode(true)}
+                onClick={() => handleToggleRoutingMode(true)}
                 className={`px-2 py-0.5 rounded font-semibold transition ${
                   isPaperMode
                     ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
@@ -248,7 +266,7 @@ export function ZoneD_NextAction() {
               </button>
               <button
                 type="button"
-                onClick={() => setIsPaperMode(false)}
+                onClick={() => handleToggleRoutingMode(false)}
                 className={`px-2 py-0.5 rounded font-semibold transition ${
                   !isPaperMode
                     ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'

@@ -1230,40 +1230,59 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         target_achievement_time: null,
       };
 
-      setPositions((prev) => [newPos, ...prev]);
-      setIdempotencyLocks((prev) => (prev.includes(stock.ticker) ? prev : [...prev, stock.ticker]));
-
-      showToast(
-        `✅ ${triggeredBy} BUY EXECUTED: ${activeLeg.symbol} (${activeLeg.quantity} Qty) @ ₹${activeLeg.entryPrice.toFixed(
-          2
-        )} [Crossed @ ${newPos.crossoverTime}]`,
-        'emerald'
-      );
-
       const isLiveRouting = typeof window !== 'undefined' && localStorage.getItem('qp_order_routing_mode') === 'LIVE';
 
       // 1. If Live Dhan routing mode is enabled, dispatch live market order to Dhan HQ API
       if (isLiveRouting) {
         const clientId = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_client_id') || '' : '';
         const accessToken = typeof window !== 'undefined' ? localStorage.getItem('qp_dhan_access_token') || '' : '';
-        fetch('/api/broker/dhan/place-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ticker: stock.ticker,
-            instrumentType: activeLeg.instrumentType,
-            symbol: activeLeg.symbol,
-            action: 'BUY',
-            quantity: activeLeg.quantity,
-            price: activeLeg.entryPrice,
-            stopLossPrice: activeLeg.stopLossPrice,
-            targetPrice: activeLeg.targetPrice,
-            isPaper: false,
-            clientId,
-            accessToken,
-          }),
-        }).catch((err) => console.warn('Dhan live order dispatch notification:', err));
+
+        try {
+          const res = await fetch('/api/broker/dhan/place-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ticker: stock.ticker,
+              instrumentType: activeLeg.instrumentType,
+              symbol: activeLeg.symbol,
+              action: 'BUY',
+              quantity: activeLeg.quantity,
+              price: activeLeg.entryPrice,
+              stopLossPrice: activeLeg.stopLossPrice,
+              targetPrice: activeLeg.targetPrice,
+              isPaper: false,
+              clientId,
+              accessToken,
+            }),
+          });
+          const dhanData = await res.json();
+          if (!dhanData.success) {
+            showToast(`⚠️ Live Dhan Order Rejected: ${dhanData.message || 'Check credentials / IP'}`, 'rose');
+            // Do NOT record a phantom position if the exchange rejected the order
+            return;
+          }
+          if (dhanData.orderId) {
+            newPos.id = dhanData.orderId;
+          }
+          showToast(
+            `🟢 Live Dhan Order Filled: ${activeLeg.quantity}x ${activeLeg.symbol} (ID: ${dhanData.orderId || newPos.id})`,
+            'emerald'
+          );
+        } catch (err: any) {
+          showToast(`⚠️ Dhan Live Order dispatch failure: ${err.message}`, 'rose');
+          return;
+        }
+      } else {
+        showToast(
+          `✅ ${triggeredBy} PAPER BUY EXECUTED: ${activeLeg.symbol} (${activeLeg.quantity} Qty) @ ₹${activeLeg.entryPrice.toFixed(
+            2
+          )} [Crossed @ ${newPos.crossoverTime}]`,
+          'emerald'
+        );
       }
+
+      setPositions((prev) => [newPos, ...prev]);
+      setIdempotencyLocks((prev) => (prev.includes(stock.ticker) ? prev : [...prev, stock.ticker]));
 
       // 2. Persist to Supabase immediately (public.active_positions & public.trade_logs)
       if (isSupabaseConfigured && supabase) {
