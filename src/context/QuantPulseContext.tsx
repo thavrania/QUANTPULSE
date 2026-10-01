@@ -171,7 +171,33 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     capitalPerTrade: 100000,
     maxOpenPositions: 5,
   });
-  const [selectedTicker, setSelectedTicker] = useState<string>('RELIANCE');
+  const [selectedTicker, setSelectedTickerState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedSel = localStorage.getItem('qp_selected_ticker');
+        const savedTickersRaw = localStorage.getItem('qp_active_watchlist_tickers');
+        if (savedTickersRaw) {
+          const tickers: string[] = JSON.parse(savedTickersRaw);
+          if (Array.isArray(tickers) && tickers.length > 0) {
+            if (savedSel && tickers.includes(savedSel)) {
+              return savedSel;
+            }
+            return tickers[0];
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    return 'RELIANCE';
+  });
+
+  const setSelectedTicker = useCallback((ticker: string) => {
+    setSelectedTickerState(ticker);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qp_selected_ticker', ticker);
+    }
+  }, []);
 
   // Market-Day State Machine (NSE IST standard lifecycle)
   const stateMachineRef = useRef<MarketLifecycleStateMachine>(
@@ -294,7 +320,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           crossover_time: s.crossoverTime || null,
           crossover_spot_price: s.crossoverSpotPrice || null,
           iv_pct: s.ivPct || 0,
-          is_active_watchlist: true,
           updated_at: new Date().toISOString(),
         }));
 
@@ -319,18 +344,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           if (toInsert.length > 0) {
             const { error: insertErr } = await supabase.from('watchlist').insert(toInsert);
             if (insertErr) {
-              console.warn('Batch insert notice, retrying without optional is_active_watchlist column:', insertErr.message);
-              const fallbackInsert = toInsert.map(({ is_active_watchlist, ...rest }) => rest);
-              const { error: retryInsertErr } = await supabase.from('watchlist').insert(fallbackInsert);
-              if (retryInsertErr) {
-                console.warn('Batch insert retry notice, attempting individual inserts:', retryInsertErr.message);
-                const results = await Promise.allSettled(
-                  fallbackInsert.map((item) => supabase!.from('watchlist').insert(item))
-                );
-                const failed = results.filter((r) => r.status === 'rejected');
-                if (failed.length === fallbackInsert.length) {
-                  allSuccessful = false;
-                }
+              console.warn('Batch insert notice, attempting individual inserts:', insertErr.message);
+              const results = await Promise.allSettled(
+                toInsert.map((item) => supabase!.from('watchlist').insert(item))
+              );
+              const failed = results.filter((r) => r.status === 'rejected');
+              if (failed.length === toInsert.length) {
+                allSuccessful = false;
               }
             }
           }
@@ -977,39 +997,79 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             };
           });
 
-          // PRESERVE USER'S WATCHLIST: Do NOT overwrite with a smaller subset or lose added stocks
+          // PRESERVE USER'S WATCHLIST: Respect the user's active watchlist selection in localStorage
           setWatchlist((prevWl) => {
             if (isLiveStreamingRef.current || isBaselineSyncingRef.current) {
               return prevWl;
             }
 
-            // Database is the primary source of truth for all records present in DB
             const mappedMap = new Map<string, Stock>();
             mapped.forEach((s) => mappedMap.set(normalizeTicker(s.ticker), s));
 
-            // Preserve any stocks currently in memory that might not be in DB yet
-            const preserved: Stock[] = [...mapped];
-            prevWl.forEach((stock) => {
-              if (!mappedMap.has(normalizeTicker(stock.ticker))) {
-                preserved.push(stock);
+            // Check if user has an explicit active watchlist saved in localStorage
+            let savedActiveTickers: string[] | null = null;
+            if (typeof window !== 'undefined') {
+              try {
+                const raw = localStorage.getItem('qp_active_watchlist_tickers');
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    savedActiveTickers = parsed;
+                  }
+                }
+              } catch (e) {
+                console.warn('Error reading qp_active_watchlist_tickers:', e);
               }
-            });
-
-            // If in-memory watchlist had stocks not in DB, sync them to DB asynchronously
-            if (preserved.length > mapped.length) {
-              saveStocksToWatchlistDb(preserved).catch(() => {});
             }
 
-            watchlistRef.current = preserved;
-            return preserved;
-          });
+            // Determine active tickers to preserve:
+            // Prefer the user's explicit saved list in localStorage, or current in-memory state
+            const targetTickers = savedActiveTickers || prevWl.map((s) => s.ticker);
 
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(
-              'qp_active_watchlist_tickers',
-              JSON.stringify(watchlistRef.current.map((s) => s.ticker))
-            );
-          }
+            if (targetTickers && targetTickers.length > 0) {
+              const updatedActiveWatchlist: Stock[] = [];
+
+              targetTickers.forEach((t) => {
+                const norm = normalizeTicker(t);
+                if (mappedMap.has(norm)) {
+                  // Stock exists in DB - hydrate with latest DB metrics/prices/crossover status
+                  updatedActiveWatchlist.push(mappedMap.get(norm)!);
+                } else {
+                  // Stock was in active list but not in DB yet (or custom stock)
+                  const existing = prevWl.find((s) => normalizeTicker(s.ticker) === norm);
+                  if (existing) {
+                    updatedActiveWatchlist.push(existing);
+                  } else {
+                    const master = getStockMasterByTicker(t);
+                    if (master) {
+                      updatedActiveWatchlist.push(convertMasterToStock(master));
+                    }
+                  }
+                }
+              });
+
+              if (updatedActiveWatchlist.length > 0) {
+                watchlistRef.current = updatedActiveWatchlist;
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem(
+                    'qp_active_watchlist_tickers',
+                    JSON.stringify(updatedActiveWatchlist.map((s) => s.ticker))
+                  );
+                }
+                return updatedActiveWatchlist;
+              }
+            }
+
+            // Fallback only if no active tickers were ever saved by the user
+            watchlistRef.current = mapped;
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(
+                'qp_active_watchlist_tickers',
+                JSON.stringify(mapped.map((s) => s.ticker))
+              );
+            }
+            return mapped;
+          });
         }
 
         const sessionStarted = hasTodayMarketSessionStarted();
