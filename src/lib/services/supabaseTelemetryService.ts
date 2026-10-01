@@ -65,8 +65,8 @@ export async function closeTradeOrderInCloud(
   orderId: string,
   exitPrice: number,
   realizedPnl: number,
-  highestTarget?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4',
-  targetAchievementTime?: string
+  highestTarget?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4' | null,
+  targetAchievementTime?: string | null
 ): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
 
@@ -78,7 +78,7 @@ export async function closeTradeOrderInCloud(
       closed_at: new Date().toISOString(),
     };
     if (highestTarget) updateObj.highest_target_achieved = highestTarget;
-    if (targetAchievementTime) updateObj.target_achievement_time = targetAchievementTime;
+    if (targetAchievementTime !== undefined) updateObj.target_achievement_time = targetAchievementTime;
 
     const { error } = await supabase
       .from('trade_logs')
@@ -101,8 +101,8 @@ export async function closeTradeOrderInCloud(
  */
 export async function updateTradeTargetMilestoneInCloud(
   orderId: string,
-  highestTarget: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4',
-  targetAchievementTime: string
+  highestTarget: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4' | null,
+  targetAchievementTime?: string | null
 ): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
 

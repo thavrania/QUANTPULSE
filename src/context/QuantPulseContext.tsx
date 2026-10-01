@@ -1512,8 +1512,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               pos.id,
               nextPos.currentLtp,
               finalPnl,
-              nextPos.highest_target_achieved,
-              nextPos.target_achievement_time
+              nextPos.highest_target_achieved || nextPos.highestTargetAchieved || null,
+              nextPos.target_achievement_time || nextPos.targetAchievementTimestamp || null
             );
           }
 
