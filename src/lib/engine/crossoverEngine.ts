@@ -1,4 +1,5 @@
 import { Stock, CrossoverEvent, VolumeMetrics, VolumeStatusCode } from '../types/quant';
+import { hasTodayMarketSessionStarted, getISTDate } from '../services/marketHoursService';
 
 export const INITIAL_WATCHLIST_DATA: Stock[] = [
   {
@@ -179,8 +180,10 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
   const deficitShares = Math.max(0, Math.round((stock.avgVol20DM - stock.todayVolM) * 1_000_000));
   const surplusShares = Math.max(0, Math.round((stock.todayVolM - stock.avgVol20DM) * 1_000_000));
 
-  // Rule 5: Strict Day Start Integrity - traded shares must genuinely meet/exceed 20D average (> 0)
+  // Rule 5: Strict Day Start Integrity - traded shares must genuinely meet/exceed 20D average (> 0) during active market
+  const sessionStarted = hasTodayMarketSessionStarted();
   const hasVolumeCrossed =
+    sessionStarted &&
     (stock.hasCrossed20D || stock.todayVolM >= stock.avgVol20DM) &&
     stock.todayVolM >= stock.avgVol20DM &&
     stock.todayVolM > 0;
@@ -220,6 +223,32 @@ export function checkAndLatchVolumeCrossover(
   stock: Stock,
   currentTimeStr: string
 ): { newlyCrossed: boolean; event: CrossoverEvent | null } {
+  // 1. Session Gate: Continuous regular market session MUST be active (>= 09:15:00 IST)
+  if (!hasTodayMarketSessionStarted()) {
+    stock.hasCrossed20D = false;
+    stock.crossoverTime = null;
+    stock.crossoverSpotPrice = null;
+    stock.justCrossedHighlight = false;
+    return { newlyCrossed: false, event: null };
+  }
+
+  // 2. Opening Stabilization Gate (09:15:00 to 09:16:00 IST):
+  // Broker quote feeds often carry yesterday's cumulative EOD volume during the first 60 seconds.
+  // In genuine market trading, it is physically impossible for a stock to trade 100% of its 20-day average volume
+  // within the first 60 seconds of open.
+  const ist = getISTDate();
+  const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
+  if (secsSinceOpen >= 0 && secsSinceOpen < 60) {
+    if (stock.todayVolM >= stock.avgVol20DM * 0.5) {
+      // Suppress anomalous opening spike (residual EOD cached volume)
+      stock.hasCrossed20D = false;
+      stock.crossoverTime = null;
+      stock.crossoverSpotPrice = null;
+      stock.justCrossedHighlight = false;
+      return { newlyCrossed: false, event: null };
+    }
+  }
+
   // Volume condition: Today volume must meet or exceed 20D average (> 0)
   const volumeCrossed = stock.todayVolM >= stock.avgVol20DM && stock.todayVolM > 0;
 

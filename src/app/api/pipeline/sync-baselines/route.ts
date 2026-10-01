@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { batchSyncWatchlistBaselines, calculateFree20DBaseline, BaselineCalculationOutput } from '@/lib/engine/baselineBatchService';
 import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 import { getStockMasterByTicker } from '@/lib/stocks/stockMaster';
+import { hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 
 export const maxDuration = 60; // Allow up to 60 seconds on Vercel Pro/Hobby
 
@@ -124,9 +125,10 @@ async function handleSync(req: NextRequest) {
           updated_at: new Date().toISOString(),
         };
 
-        // ONLY reset today's volume & clear crossover flags during Day Start date rollover!
-        // Intraday 20D Sync MUST NOT zero out volume or clear crossover latches!
-        if (isDateChange) {
+        // If continuous regular trading has NOT opened today (e.g. pre-market 09:00 AM) OR it's a date rollover,
+        // ALWAYS reset today's volume & clear crossover flags so yesterday's EOD data NEVER bleeds into the new day!
+        const sessionStarted = hasTodayMarketSessionStarted();
+        if (!sessionStarted || isDateChange) {
           updatePayload.today_vol_m = 0.0;
           updatePayload.has_crossed_20d = false;
           updatePayload.crossover_time = null;

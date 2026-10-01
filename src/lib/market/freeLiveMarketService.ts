@@ -48,17 +48,23 @@ export async function fetchFreeLiveQuotes(
       const todayDateStr = ist.dateStr;
       const sessionStarted = hasTodayMarketSessionStarted();
 
-      // Check whether Yahoo's quote timestamp corresponds to today's date in IST
+      // Check whether Yahoo's quote timestamp corresponds to today's date in IST and after 09:15
       let isQuoteFromToday = false;
       if (meta.regularMarketTime) {
         const quoteDate = new Date(meta.regularMarketTime * 1000);
-        isQuoteFromToday = getISTDate(quoteDate).dateStr === todayDateStr;
+        const quoteIst = getISTDate(quoteDate);
+        isQuoteFromToday =
+          quoteIst.dateStr === todayDateStr &&
+          (quoteIst.hours * 60 + quoteIst.minutes >= 9 * 60 + 15);
       }
 
-      // Today's traded volume is only valid if regular trading has opened today (>= 09:15 IST)
-      // AND the quote timestamp is genuinely from today's session.
-      // Outside market hours or before 09:15 IST, volume for today is strictly 0.00M.
-      const isTodayVolumeValid = sessionStarted && isQuoteFromToday;
+      // Yahoo Finance is 15-minutes delayed; between 09:15 and 09:30 IST, regularMarketVolume carries
+      // yesterday's EOD volume. We must reject volume until 09:30 IST to prevent massive false crossovers.
+      const isYahooDelayedWindow = ist.hours === 9 && ist.minutes >= 15 && ist.minutes < 30;
+
+      // Today's traded volume is only valid if regular trading has opened today (>= 09:15 IST),
+      // the quote timestamp is genuinely from today's regular session, and not in the 15-min delay trap.
+      const isTodayVolumeValid = sessionStarted && isQuoteFromToday && !isYahooDelayedWindow;
       const rawVol = isTodayVolumeValid
         ? (Number(meta.regularMarketVolume) ||
            (Array.isArray(quoteIndicator?.volume) && quoteIndicator.volume[0]) ||

@@ -121,6 +121,7 @@ interface QuantPulseContextType {
   setIsAutoPilotModalOpen: (open: boolean) => void;
   toggleAutoPilot: () => void;
   runAutoPilotStepNow: (stepId: AutoPilotStepId) => Promise<void>;
+  clearAllPositionsAndTrades: () => Promise<void>;
 }
 
 const QuantPulseContext = createContext<QuantPulseContextType | undefined>(undefined);
@@ -499,10 +500,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setWatchlist((prevWl) => {
           const updated = prevWl.map((stock) => {
             const newAvg20D = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
-            if (isDateChange) {
-              // Day Start / Date Rollover:
+            if (isDateChange || !sessionStarted) {
+              // Day Start / Pre-Market Sync:
               // If continuous trading has not started today (e.g. pre-market or closed), Traded Shares is strictly 0.0
-              // Do not fall back to previous trading day's traded shares or mock data.
+              // Do not retain previous trading day's traded shares or stale flags.
               const dayStartVol = sessionStarted ? stock.todayVolM : 0.0;
               const hasCrossed = sessionStarted && dayStartVol >= newAvg20D && dayStartVol > 0;
               return {
@@ -684,10 +685,22 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       try {
         const todayDateStr = getISTDate().dateStr;
         // 1. Fetch both watchlist and dedicated stock_master table concurrently
-        const [wlRes, smRes] = await Promise.all([
+        const [wlRes, smRes, evRes] = await Promise.all([
           supabase!.from('watchlist').select('*'),
           supabase!.from('stock_master').select('*'),
+          supabase!.from('crossover_events').select('*').gte('created_at', `${todayDateStr}T00:00:00`).order('created_at', { ascending: true }),
         ]);
+
+        const validTodayCrossedTickers = new Set<string>();
+        if (evRes.data && Array.isArray(evRes.data)) {
+          evRes.data.forEach((e: any) => {
+            const timeIst = e.time_ist || '';
+            // Only count genuine events that occurred at or after 09:15:00 IST today
+            if (timeIst >= '09:15:00') {
+              validTodayCrossedTickers.add(normalizeTicker(e.ticker));
+            }
+          });
+        }
 
         const smMap = new Map<string, any>();
         if (smRes.data && Array.isArray(smRes.data)) {
@@ -743,30 +756,35 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             const chgPct = d.change_pct !== undefined ? Number(d.change_pct) : 0;
             const isBullish = spot >= dayOpen || chgPct >= 0;
 
-            // Rule 5: Volume must genuinely meet/exceed 20D average (>0) and DB must flag it crossed
+            const hasVerifiedEventToday = validTodayCrossedTickers.has(cleanTicker);
+
+            // Volume must genuinely meet/exceed 20D average (>0), market session must be active,
+            // and must be backed by a verified event recorded after 09:15:00 AM today!
             const hasCrossed =
               sessionStarted &&
               isUpdatedToday &&
               Boolean(d.has_crossed_20d) &&
+              hasVerifiedEventToday &&
               todayVol >= avgVol &&
               todayVol > 0;
 
             const existingLocal = (watchlistRef.current || []).find((s) => normalizeTicker(s.ticker) === cleanTicker);
             const localVol = existingLocal?.todayVolM || 0;
 
-            // Rule 5: Auto-clean stale DB records if volume is below 20D average
-            // Guard: Only clean if NOT streaming live and in-memory volume is also below avgVol
+            // Auto-clean stale DB records if session not started OR flagged crossed without a verified event today
             if (
               !isLiveStreamingRef.current &&
-              d.has_crossed_20d &&
-              (todayVol < avgVol || todayVol === 0) &&
-              localVol < avgVol
+              (
+                (!sessionStarted && (d.has_crossed_20d || d.today_vol_m > 0)) ||
+                (d.has_crossed_20d && (!hasVerifiedEventToday || todayVol < avgVol || todayVol === 0))
+              )
             ) {
               markSelfUpdating();
               const client = supabase;
               client!
                 .from('watchlist')
                 .update({
+                  today_vol_m: sessionStarted ? todayVol : 0.0,
                   has_crossed_20d: false,
                   crossover_time: null,
                   crossover_spot_price: null,
@@ -808,13 +826,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               (existingLocal !== undefined && existingLocal.todayVolM > todayVol);
 
             // Once latched, a stock must stay latched unless volume drops below 20D baseline (Day Start)
-            const finalHasCrossed = (existingLocal?.hasCrossed20D && localVol >= avgVol) || hasCrossed;
-            const finalCrossoverTime =
-              existingLocal?.crossoverTime ||
-              (finalHasCrossed ? (d.crossover_time || getISTDate().timeStr) : null);
-            const finalCrossoverSpot =
-              existingLocal?.crossoverSpotPrice ??
-              (finalHasCrossed ? Number(d.crossover_spot_price || spot) : null);
+            // Stale flags before session start must NEVER be latched!
+            const finalHasCrossed = sessionStarted && ((existingLocal?.hasCrossed20D && localVol >= avgVol) || hasCrossed);
+            const finalCrossoverTime = sessionStarted
+              ? (existingLocal?.crossoverTime || (finalHasCrossed ? (d.crossover_time || getISTDate().timeStr) : null))
+              : null;
+            const finalCrossoverSpot = sessionStarted
+              ? (existingLocal?.crossoverSpotPrice ?? (finalHasCrossed ? Number(d.crossover_spot_price || spot) : null))
+              : null;
 
             return {
               ticker: meta.ticker,
@@ -904,11 +923,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           }
         }
 
-        const { data: evData } = await supabase!
-          .from('crossover_events')
-          .select('*')
-          .gte('created_at', `${todayDateStr}T00:00:00`)
-          .order('created_at', { ascending: true }); // Earliest first to capture the true initial crossover timestamp
+        const sessionStarted = hasTodayMarketSessionStarted();
+        if (!sessionStarted) {
+          setCrossoverEvents([]);
+          return;
+        }
+
+        const evData = evRes.data;
 
         const activeCrossedTickers = new Set(
           (watchlistRef.current || [])
@@ -1189,21 +1210,33 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     [watchlist, positions, config, clockSeconds, showToast]
   );
 
-  // Auto-scan trigger
-  const runAutoScan = useCallback(
-    (currentWl: Stock[], currentLocks: string[], currentPos: Position[]) => {
+  // Event-driven Auto-Buy trigger: ONLY called when a stock newly crosses in real-time
+  const dispatchAutoBuyOnCrossover = useCallback(
+    (tickerSymbol: string) => {
       if (config.executionMode !== 'AUTO') return;
-      currentWl.forEach((stock) => {
-        if (stock.hasCrossed20D) {
-          if (currentLocks.includes(stock.ticker)) return;
-          const openCount = currentPos.filter((p) => p.stateIndex < 4).length;
-          if (openCount >= config.maxOpenPositions) return;
+      if (!hasTodayMarketSessionStarted()) return;
 
-          executeBuy(stock.ticker, 'AUTO');
-        }
-      });
+      const ist = getISTDate();
+      const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
+      // Guard: Opening 30s stabilization buffer to prevent broker cache anomalies
+      if (secsSinceOpen >= 0 && secsSinceOpen < 30) {
+        console.warn(`[AutoTrade] Held order for ${tickerSymbol} during opening 30s stabilization buffer.`);
+        return;
+      }
+
+      if (idempotencyLocksRef.current.includes(tickerSymbol)) return;
+      const openCount = positionsRef.current.filter((p) => p.stateIndex < 4).length;
+      if (openCount >= config.maxOpenPositions) {
+        showToast(
+          `Auto Trade: Max Open Positions ceiling (${config.maxOpenPositions}) reached. Skipped ${tickerSymbol}.`,
+          'amber'
+        );
+        return;
+      }
+
+      executeBuy(tickerSymbol, 'AUTO');
     },
-    [config.executionMode, config.maxOpenPositions, executeBuy]
+    [config.executionMode, config.maxOpenPositions, executeBuy, showToast]
   );
 
   // 4. Tick Simulation
@@ -1238,6 +1271,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${newSpotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
             'emerald'
           );
+
+          // Dispatch auto-order only on new verified crossover event
+          dispatchAutoBuyOnCrossover(stock.ticker);
 
           if (isSupabaseConfigured && supabase) {
             markSelfUpdating();
@@ -1292,8 +1328,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         return updated;
       });
 
-      // Check auto-mode dispatch
-      runAutoScan(updatedWl, idempotencyLocksRef.current, positionsRef.current);
       return updatedWl;
     });
 
@@ -1360,7 +1394,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         return nextPos;
       })
     );
-  }, [runAutoScan, showToast, markSelfUpdating]);
+  }, [dispatchAutoBuyOnCrossover, showToast, markSelfUpdating]);
 
   const fetchLiveDhanQuotes = useCallback(
     async (isManualTrigger = false): Promise<boolean> => {
@@ -1484,6 +1518,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                     .then();
                 }
 
+                // Dispatch auto-order only on new verified crossover event
+                dispatchAutoBuyOnCrossover(stock.ticker);
+
                 // Telegram push
                 if (typeof window !== 'undefined') {
                   const botToken = localStorage.getItem('qp_telegram_bot_token');
@@ -1507,10 +1544,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             return updated;
           });
 
-          // Run auto-mode scan only if regular market has opened today
-          if (sessionStarted) {
-            runAutoScan(updatedWl, idempotencyLocksRef.current, positionsRef.current);
-          }
           return updatedWl;
         });
 
@@ -1672,7 +1705,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
     return res ?? false;
   },
-  [runAutoScan, showToast, markSelfUpdating]
+  [dispatchAutoBuyOnCrossover, showToast, markSelfUpdating]
 );
 
   const refreshLiveQuotesNow = useCallback(async () => {
@@ -1680,13 +1713,28 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   }, [fetchLiveDhanQuotes]);
 
   const resetToDayStart = useCallback(async () => {
+    setIdempotencyLocks([]);
+    setCrossoverEvents([]);
+    if (isSupabaseConfigured && supabase) {
+      markSelfUpdating();
+      await supabase
+        .from('watchlist')
+        .update({
+          today_vol_m: 0.0,
+          has_crossed_20d: false,
+          crossover_time: null,
+          crossover_spot_price: null,
+          updated_at: new Date().toISOString(),
+        })
+        .neq('ticker', 'DUMMY_NEVER_MATCH');
+    }
     await syncDailyBaselines(true, true);
     // If continuous trading has already started today, initialize Traded Shares with today's live feed
     if (hasTodayMarketSessionStarted()) {
       await fetchLiveDhanQuotes(true);
     }
-    showToast('🔄 Watchlist initialized for Day Start (Traded Shares set to today\'s session).', 'info');
-  }, [syncDailyBaselines, fetchLiveDhanQuotes, showToast]);
+    showToast('🔄 Watchlist initialized for Day Start (Traded Shares set to today\'s session 0.00M).', 'info');
+  }, [syncDailyBaselines, fetchLiveDhanQuotes, isSupabaseConfigured, markSelfUpdating, showToast]);
 
   const executeAutoPilotStep = useCallback(
     async (stepId: AutoPilotStepId) => {
@@ -1697,7 +1745,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       try {
         if (stepId === 'STEP_1_SYNC_20D') {
           showToast('🤖 Auto-Pilot: Step 1 (09:00 AM) — 20D Baseline Sync starting...', 'info');
-          await syncDailyBaselines(false, true);
+          await syncDailyBaselines(true, true);
           saveStepCompleted('STEP_1_SYNC_20D', ist.timeStr, ist.dateStr);
           showToast('✅ Step 1 Done: 20D Baselines synced for today.', 'emerald');
 
@@ -1792,6 +1840,42 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     },
     [executeAutoPilotStep]
   );
+
+  const clearAllPositionsAndTrades = useCallback(async () => {
+    try {
+      // 1. Reset client memory states immediately
+      setPositions([]);
+      setIdempotencyLocks([]);
+      setCrossoverEvents([]);
+
+      // 2. Reset watchlist in memory to 0.00M volume and uncrossed state
+      setWatchlist((prevWl) =>
+        prevWl.map((stock) => ({
+          ...stock,
+          todayVolM: 0.0,
+          hasCrossed20D: false,
+          crossoverTime: null,
+          crossoverSpotPrice: null,
+          justCrossedHighlight: false,
+        }))
+      );
+
+      // 3. Call backend clear pipeline to wipe active_positions, trade_logs, tsl_audit_trail, crossover_events, and reset watchlist in Supabase
+      markSelfUpdating();
+      const res = await fetch('/api/pipeline/clear-session', {
+        method: 'POST',
+      });
+      const data = await res.json();
+
+      showToast(
+        data.message || '🧹 Clean Slate Activated: All Positions, Trades & Stale Crossovers Cleared!',
+        'emerald'
+      );
+    } catch (err: any) {
+      console.warn('Error clearing session:', err);
+      showToast('Clean slate reset completed (local state reset).', 'emerald');
+    }
+  }, [markSelfUpdating, showToast]);
 
   const toggleLiveStream = useCallback(() => {
     setIsLiveStreaming((prev) => {
@@ -2332,6 +2416,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setIsAutoPilotModalOpen,
         toggleAutoPilot,
         runAutoPilotStepNow,
+        clearAllPositionsAndTrades,
       }}
     >
       {children}

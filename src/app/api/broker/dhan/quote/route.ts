@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
 import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
 import { fetchFreeLiveQuotes } from '@/lib/market/freeLiveMarketService';
-import { hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
+import { hasTodayMarketSessionStarted, getISTDate } from '@/lib/services/marketHoursService';
 
 export interface LiveQuoteRecord {
   ltp: number;
@@ -96,9 +96,30 @@ export async function POST(req: NextRequest) {
           const close = item.close || ltp;
           const calcChange = close > 0 ? +(((ltp - close) / close) * 100).toFixed(2) : 0;
 
-          // Before 09:15 IST, Dhan quotes carry yesterday's accumulated volume.
-          // Zero it out if regular market continuous trading has not opened today.
-          const effectiveVolume = sessionStarted ? (item.volume || 0) : 0;
+          // Sanitize volume: Verify that trades are genuinely from today's regular session (>= 09:15 IST)
+          let isTradeFromToday = true;
+          if (item.last_trade_time) {
+            const tVal = item.last_trade_time;
+            const epochMs = typeof tVal === 'number'
+              ? (tVal < 1e11 ? tVal * 1000 : tVal)
+              : Date.parse(String(tVal));
+            if (!isNaN(epochMs)) {
+              const tradeDate = getISTDate(new Date(epochMs));
+              const todayDate = getISTDate();
+              isTradeFromToday = tradeDate.dateStr === todayDate.dateStr && (tradeDate.hours * 60 + tradeDate.minutes >= 9 * 60 + 15);
+            }
+          }
+
+          const istNow = getISTDate();
+          const secsSinceOpen = (istNow.hours * 3600 + istNow.minutes * 60 + istNow.seconds) - (9 * 3600 + 15 * 60);
+
+          let rawVol = (sessionStarted && isTradeFromToday) ? (item.volume || 0) : 0;
+          // In the first 60 seconds of open (09:15:00 - 09:16:00), broker cache can retain yesterday's volume if trade is unconfirmed
+          if (secsSinceOpen >= 0 && secsSinceOpen < 60 && rawVol > 500_000 && !isTradeFromToday) {
+            rawVol = 0;
+          }
+
+          const effectiveVolume = rawVol;
 
           quotes[sym] = {
             ltp: +(ltp).toFixed(2),

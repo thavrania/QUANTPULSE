@@ -12,6 +12,7 @@ export function ZoneE_Positions() {
     idempotencyLocks,
     advancePositionState,
     setIsCloudLogsModalOpen,
+    clearAllPositionsAndTrades,
   } = useQuantPulse();
 
   const [subTab, setSubTab] = useState<'ACTIVE' | 'TRADE_LOGS' | 'TSL_TRAIL'>('ACTIVE');
@@ -68,6 +69,14 @@ export function ZoneE_Positions() {
             <span className="text-[11px] font-mono px-2.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700">
               Auto-Trade Locks: {idempotencyLocks.length} Tickers
             </span>
+            <button
+              type="button"
+              onClick={clearAllPositionsAndTrades}
+              className="text-[11px] font-mono px-2.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 font-semibold transition flex items-center gap-1 cursor-pointer"
+              title="Wipe all open positions, trade logs, and stale crossovers for a clean fresh start"
+            >
+              <span>🧹 Reset Positions &amp; Trades</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsCloudLogsModalOpen(true)}
