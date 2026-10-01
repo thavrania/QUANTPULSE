@@ -81,6 +81,14 @@ export interface Position {
   targetPrice: number;
   stateIndex: 1 | 2 | 3 | 4; // 1: Initial SL (1R), 2: Breakeven, 3: +2R Trail, 4: Closed
   stateLabel: string;
+  buyValue?: number;
+  piPct?: number;
+  target1?: number;
+  target2?: number;
+  target3?: number;
+  target4?: number;
+  highestTargetAchieved?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4';
+  targetAchievementTimestamp?: string | null;
 }
 
 export interface SystemConfig {
@@ -176,6 +184,27 @@ export interface TradeLog {
   status: 'OPEN' | 'CLOSED' | 'CANCELLED';
   closed_at?: string | null;
   created_at?: string;
+  buy_value?: number;
+  pi_pct?: number;
+  target_1?: number;
+  target_2?: number;
+  target_3?: number;
+  target_4?: number;
+  highest_target_achieved?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4';
+  target_achievement_time?: string | null;
+}
+
+export interface TargetPerformanceReport {
+  timeframe: 'DAILY' | 'WEEKLY' | 'YEARLY';
+  totalTrades: number;
+  t1AchievedCount: number;
+  t2AchievedCount: number;
+  t3AchievedCount: number;
+  t4AchievedCount: number;
+  highestTargetAchieved: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4';
+  noTargetTradesCount: number;
+  grossPnl: number;
+  targetAchievementPercentage: number;
 }
 
 export interface TslAuditTrailEntry {

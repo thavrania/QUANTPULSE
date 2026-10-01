@@ -335,7 +335,14 @@ export function CloudAuditLogsModal() {
                         </td>
                         <td className="py-2 px-2.5 text-white font-bold">₹{log.entry_price}</td>
                         <td className="py-2 px-2.5 text-rose-400">₹{log.stop_loss}</td>
-                        <td className="py-2 px-2.5 text-emerald-400">₹{log.target_price}</td>
+                        <td className="py-2 px-2.5 text-emerald-400">
+                          <div>₹{log.target_price}</div>
+                          {log.highest_target_achieved && log.highest_target_achieved !== 'NONE' && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30 text-[9px]">
+                              🎯 {log.highest_target_achieved}
+                            </span>
+                          )}
+                        </td>
                         <td className="py-2 px-2.5">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold ${

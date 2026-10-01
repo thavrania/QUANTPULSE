@@ -35,6 +35,7 @@ export function ZoneA_Header() {
     ingestionTelemetry,
     autoPilotStatus,
     setIsAutoPilotModalOpen,
+    marketLifecycle,
   } = useQuantPulse();
 
   return (
@@ -78,33 +79,36 @@ export function ZoneA_Header() {
                 <span>{marketSession.statusLabel}</span>
               </span>
 
-              {/* Pre-Market Auto-Pilot Status Pill */}
-              {autoPilotStatus && (
-                <button
-                  type="button"
-                  onClick={() => setIsAutoPilotModalOpen(true)}
-                  className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold border transition flex items-center gap-1.5 cursor-pointer shadow-sm ${
-                    autoPilotStatus.enabled
-                      ? autoPilotStatus.isPreMarketWindow
-                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 animate-pulse'
-                        : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
-                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-white'
+              {/* Auto Market-Day Lifecycle Stage Monitor */}
+              {marketLifecycle && (
+                <div
+                  className={`text-[10px] font-mono px-2.5 py-0.5 rounded font-semibold border flex items-center gap-2 shadow-sm ${
+                    marketLifecycle.currentState === 'LIVE_FEED_ACTIVE'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      : marketLifecycle.currentState === 'MARKET_CLOSED'
+                      ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   }`}
-                  title="Pre-Market Auto-Pilot (09:00 20D Sync → Day Start → 09:07 Live Sync → 09:14 Feed Start). Click to configure."
+                  title={`Market-Day Lifecycle State: ${marketLifecycle.stepDescription}`}
                 >
-                  <span className="text-xs">🤖</span>
-                  <span className="font-sans font-bold">Auto-Pilot:</span>
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      autoPilotStatus.enabled
-                        ? autoPilotStatus.isPreMarketWindow
-                          ? 'bg-cyan-400 animate-ping'
-                          : 'bg-emerald-400'
-                        : 'bg-slate-500'
-                    }`}
-                  ></span>
-                  <span>{autoPilotStatus.statusBadge}</span>
-                </button>
+                  <span className="font-sans font-bold flex items-center gap-1">
+                    <span className="text-xs">⚡</span>
+                    <span className="text-white">{marketLifecycle.tradeMode} MODE:</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className={marketLifecycle.liveSyncStatus === 'SUCCESS' ? 'text-emerald-400 font-bold' : marketLifecycle.liveSyncStatus === 'RUNNING' ? 'text-amber-400 animate-spin' : 'text-slate-400'}>
+                      {marketLifecycle.liveSyncStatus === 'SUCCESS' ? '✓' : marketLifecycle.liveSyncStatus === 'RUNNING' ? '⏳' : '○'} Live Sync
+                    </span>
+                    <span className="text-slate-600">→</span>
+                    <span className={marketLifecycle.twentyDaySyncStatus === 'SUCCESS' ? 'text-emerald-400 font-bold' : marketLifecycle.twentyDaySyncStatus === 'RUNNING' ? 'text-amber-400 animate-spin' : 'text-slate-400'}>
+                      {marketLifecycle.twentyDaySyncStatus === 'SUCCESS' ? '✓' : marketLifecycle.twentyDaySyncStatus === 'RUNNING' ? '⏳' : '○'} 20D Avg
+                    </span>
+                    <span className="text-slate-600">→</span>
+                    <span className={isLiveStreaming ? 'text-emerald-400 font-bold animate-pulse' : 'text-slate-400'}>
+                      {isLiveStreaming ? '🟢 Feed: ACTIVE' : '○ Feed: STOPPED'}
+                    </span>
+                  </span>
+                </div>
               )}
 
               {/* Live Ingestion Telemetry Packet Monitor */}
@@ -304,11 +308,12 @@ export function ZoneA_Header() {
               className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 ${
                 isLiveStreaming
                   ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/40'
-                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
               }`}
+              title={isLiveStreaming ? 'Click to pause live feed stream' : 'Auto Trade connects live feed automatically at 09:15 market open. Click to manually start feed.'}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${isLiveStreaming ? 'bg-rose-400 animate-pulse' : 'bg-emerald-400'}`}></span>
-              <span>{isLiveStreaming ? '⏸ Pause Stream' : feedMode === 'DHAN_LIVE' ? '▶ Start Live Feed' : '▶ Start Vol Stream'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isLiveStreaming ? 'bg-rose-400 animate-pulse' : 'bg-slate-400'}`}></span>
+              <span>{isLiveStreaming ? '⏸ Pause Feed' : '▶ Start Feed (Override)'}</span>
             </button>
 
             {feedMode === 'SIMULATION' && (

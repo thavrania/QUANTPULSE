@@ -36,6 +36,14 @@ export async function logTradeOrderToCloud(trade: TradeLog): Promise<boolean> {
         realized_pnl: 0,
         crossover_ref_time: trade.crossover_ref_time,
         status: 'OPEN',
+        buy_value: trade.buy_value || null,
+        pi_pct: trade.pi_pct || 3.1416,
+        target_1: trade.target_1 || null,
+        target_2: trade.target_2 || null,
+        target_3: trade.target_3 || null,
+        target_4: trade.target_4 || null,
+        highest_target_achieved: trade.highest_target_achieved || 'NONE',
+        target_achievement_time: trade.target_achievement_time || null,
       },
     ]);
 
@@ -56,19 +64,25 @@ export async function logTradeOrderToCloud(trade: TradeLog): Promise<boolean> {
 export async function closeTradeOrderInCloud(
   orderId: string,
   exitPrice: number,
-  realizedPnl: number
+  realizedPnl: number,
+  highestTarget?: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4',
+  targetAchievementTime?: string
 ): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
 
   try {
+    const updateObj: Record<string, any> = {
+      status: 'CLOSED',
+      exit_price: exitPrice,
+      realized_pnl: realizedPnl,
+      closed_at: new Date().toISOString(),
+    };
+    if (highestTarget) updateObj.highest_target_achieved = highestTarget;
+    if (targetAchievementTime) updateObj.target_achievement_time = targetAchievementTime;
+
     const { error } = await supabase
       .from('trade_logs')
-      .update({
-        status: 'CLOSED',
-        exit_price: exitPrice,
-        realized_pnl: realizedPnl,
-        closed_at: new Date().toISOString(),
-      })
+      .update(updateObj)
       .eq('order_id', orderId);
 
     if (error) {
@@ -78,6 +92,36 @@ export async function closeTradeOrderInCloud(
     return true;
   } catch (err: any) {
     console.error('Error in closeTradeOrderInCloud:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Updates an order's highest achieved Pi% target level.
+ */
+export async function updateTradeTargetMilestoneInCloud(
+  orderId: string,
+  highestTarget: 'NONE' | 'T1' | 'T2' | 'T3' | 'T4',
+  targetAchievementTime: string
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+
+  try {
+    const { error } = await supabase
+      .from('trade_logs')
+      .update({
+        highest_target_achieved: highestTarget,
+        target_achievement_time: targetAchievementTime,
+      })
+      .eq('order_id', orderId);
+
+    if (error) {
+      console.warn('Supabase trade_logs milestone update error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('Error in updateTradeTargetMilestoneInCloud:', err.message);
     return false;
   }
 }

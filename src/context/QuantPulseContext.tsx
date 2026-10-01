@@ -35,6 +35,7 @@ import {
   logTradeOrderToCloud,
   logTslTransitionToCloud,
   closeTradeOrderInCloud,
+  updateTradeTargetMilestoneInCloud,
   logBatchTickSnapshotsToCloud,
 } from '@/lib/services/supabaseTelemetryService';
 import { MarketSessionInfo, getIndianMarketSession, getISTDate, hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
@@ -48,6 +49,13 @@ import {
   setStoredAutoPilotEnabled,
   saveStepCompleted,
 } from '@/lib/services/preMarketAutoPilotService';
+import {
+  MarketDayState,
+  MarketLifecycleSnapshot,
+  MarketLifecycleStateMachine,
+} from '@/lib/services/marketLifecycleStateMachine';
+import { validateLiveSyncBatch } from '@/lib/services/dataValidationService';
+import { calculateTargetLevels, evaluateTargetMilestone } from '@/lib/engine/targetTrackingEngine';
 
 export interface ToastMessage {
   id: string;
@@ -83,6 +91,7 @@ interface QuantPulseContextType {
   refreshBrokerVaultStatus: () => Promise<void>;
   marketSession: MarketSessionInfo;
   ingestionTelemetry: IngestionTelemetry;
+  marketLifecycle: MarketLifecycleSnapshot;
 
   // Actions
   setSelectedTicker: (ticker: string) => void;
@@ -157,11 +166,20 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [positions, setPositions] = useState<Position[]>([]);
   const [config, setConfig] = useState<SystemConfig>({
     instrumentMode: 'STOCK',
-    executionMode: 'MANUAL',
+    executionMode: 'AUTO', // Standard AUTO TRADE by default
     capitalPerTrade: 100000,
     maxOpenPositions: 5,
   });
   const [selectedTicker, setSelectedTicker] = useState<string>('RELIANCE');
+
+  // Market-Day State Machine (NSE IST standard lifecycle)
+  const stateMachineRef = useRef<MarketLifecycleStateMachine>(
+    new MarketLifecycleStateMachine(getISTDate().dateStr, 'AUTO')
+  );
+  const [marketLifecycle, setMarketLifecycle] = useState<MarketLifecycleSnapshot>(() =>
+    stateMachineRef.current.getSnapshot()
+  );
+  const executeLifecycleActionRef = useRef<((action: string, delayMs?: number) => Promise<void>) | null>(null);
 
   // Exact real-time Indian Standard Time (IST) initialization
   const getNowIstSeconds = () => {
@@ -619,8 +637,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             'info'
           );
         }
+        stateMachineRef.current.mark20DSyncSuccess(watchlistRef.current.length);
+        setMarketLifecycle(stateMachineRef.current.getSnapshot());
       } catch (err: any) {
         console.error('Failed to sync daily baselines:', err);
+        if (stateMachineRef.current.getSnapshot().currentState === '20D_SYNC_RUNNING') {
+          stateMachineRef.current.mark20DSyncFailure(err?.message || '20D baseline calculation failed');
+          setMarketLifecycle(stateMachineRef.current.getSnapshot());
+        }
         showToast(`Baseline Sync Notice: Local quantitative models active (${err.message})`, 'amber');
       } finally {
         setIsBaselineSyncing(false);
@@ -666,6 +690,22 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         executeAutoPilotStepRef.current(shouldTriggerStep);
       }
 
+      // Auto Market-Day Lifecycle State Machine Evaluation
+      const transitionAction = stateMachineRef.current.evaluateTick(secs);
+      setMarketLifecycle(stateMachineRef.current.getSnapshot());
+
+      if (transitionAction.action === 'TRIGGER_LIVE_SYNC' && executeLifecycleActionRef.current) {
+        executeLifecycleActionRef.current('LIVE_SYNC');
+      } else if (transitionAction.action === 'TRIGGER_20D_SYNC' && executeLifecycleActionRef.current) {
+        executeLifecycleActionRef.current('20D_SYNC');
+      } else if (transitionAction.action === 'START_LIVE_FEED' && executeLifecycleActionRef.current) {
+        executeLifecycleActionRef.current('START_FEED');
+      } else if (transitionAction.action === 'STOP_LIVE_FEED' && executeLifecycleActionRef.current) {
+        executeLifecycleActionRef.current('STOP_FEED');
+      } else if (transitionAction.action === 'RETRY_STAGE' && executeLifecycleActionRef.current) {
+        executeLifecycleActionRef.current('RETRY_STAGE', transitionAction.delayMs);
+      }
+
       // Midnight date change rollover detection
       if (ist.dateStr !== currentTradingDateRef.current) {
         currentTradingDateRef.current = ist.dateStr;
@@ -679,6 +719,26 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     const timer = setInterval(updateClockAndDate, 1000);
     return () => clearInterval(timer);
   }, [syncDailyBaselines]);
+
+  // Hydrate persistent market session state on initial load
+  useEffect(() => {
+    async function hydrateSession() {
+      try {
+        const res = await fetch('/api/pipeline/market-session');
+        const data = await res.json();
+        if (data && data.success && data.session) {
+          stateMachineRef.current.hydrateFromDatabase(data.session);
+          setMarketLifecycle(stateMachineRef.current.getSnapshot());
+          if (data.session.market_state === 'LIVE_FEED_ACTIVE') {
+            setIsLiveStreaming(true);
+          }
+        }
+      } catch (err) {
+        console.warn('Notice: could not hydrate market_session from DB:', err);
+      }
+    }
+    hydrateSession();
+  }, []);
 
   // First Day Start check: if date has changed since last visit, run baseline calculation & session reset
   useEffect(() => {
@@ -1115,6 +1175,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       const activeLeg = useOption ? payload.optionBuyDetails! : payload.stockBuyDetails;
 
       const orderTime = formatClockIST(clockSeconds);
+      const targetLevels = calculateTargetLevels(activeLeg.entryPrice, activeLeg.quantity);
       const newPos: Position = {
         id: `ORD-${Math.floor(100000 + Math.random() * 900000)}`,
         orderTime,
@@ -1129,9 +1190,17 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         currentLtp: activeLeg.entryPrice,
         riskPerUnit: 'riskPerUnit' in activeLeg ? activeLeg.riskPerUnit : activeLeg.riskPerShare,
         activeTrailingSl: activeLeg.stopLossPrice,
-        targetPrice: activeLeg.targetPrice,
+        targetPrice: targetLevels.target2Price,
         stateIndex: 1,
         stateLabel: 'State 1: Initial SL (1R)',
+        buyValue: targetLevels.buyValue,
+        piPct: targetLevels.piPct,
+        target1: targetLevels.target1Price,
+        target2: targetLevels.target2Price,
+        target3: targetLevels.target3Price,
+        target4: targetLevels.target4Price,
+        highestTargetAchieved: 'NONE',
+        targetAchievementTimestamp: null,
       };
 
       setPositions((prev) => [newPos, ...prev]);
@@ -1192,7 +1261,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           state_label: newPos.stateLabel,
         }).then();
 
-        // Also append permanent audit log to trade_logs
+        // Also append permanent audit log to trade_logs with target tracking levels
         logTradeOrderToCloud({
           order_id: newPos.id,
           ticker: newPos.ticker,
@@ -1207,6 +1276,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           target_price: newPos.targetPrice,
           crossover_ref_time: newPos.crossoverTime,
           status: 'OPEN',
+          buy_value: newPos.buyValue,
+          pi_pct: newPos.piPct,
+          target_1: newPos.target1,
+          target_2: newPos.target2,
+          target_3: newPos.target3,
+          target_4: newPos.target4,
+          highest_target_achieved: 'NONE',
+          target_achievement_time: null,
         });
       }
 
@@ -1243,6 +1320,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const dispatchAutoBuyOnCrossover = useCallback(
     (tickerSymbol: string) => {
       if (config.executionMode !== 'AUTO') return;
+      if (stateMachineRef.current.getSnapshot().currentState !== 'LIVE_FEED_ACTIVE') {
+        console.warn(`[AutoTrade] Skipped buy for ${tickerSymbol}: Market-Day State is not LIVE_FEED_ACTIVE (${stateMachineRef.current.getSnapshot().currentState}).`);
+        return;
+      }
       if (!hasTodayMarketSessionStarted()) return;
 
       const ist = getISTDate();
@@ -1368,6 +1449,38 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     setPositions((prevPos) =>
       prevPos.map((pos) => {
         const nextPos = autoUpdatePositionFromTick(pos);
+
+        // Mathematical Pi% Target Milestones Evaluation
+        if (nextPos.target_1) {
+          const evalRes = evaluateTargetMilestone(
+            nextPos.currentLtp,
+            {
+              piPct: nextPos.pi_pct || 3.1416,
+              buyValue: nextPos.buy_value || nextPos.entryPrice * nextPos.quantity,
+              entryPrice: nextPos.entryPrice,
+              quantity: nextPos.quantity,
+              target1Price: nextPos.target_1,
+              target2Price: nextPos.target_2 || nextPos.target_1,
+              target3Price: nextPos.target_3 || nextPos.target_1,
+              target4Price: nextPos.target_4 || nextPos.target_1,
+              target1Value: 0,
+              target2Value: 0,
+              target3Value: 0,
+              target4Value: 0,
+            },
+            nextPos.highest_target_achieved || 'NONE'
+          );
+          if (evalRes.isNewMilestone) {
+            nextPos.highest_target_achieved = evalRes.highestTargetAchieved;
+            nextPos.target_achievement_time = evalRes.achievedTimestamp;
+            updateTradeTargetMilestoneInCloud(
+              pos.id,
+              evalRes.highestTargetAchieved,
+              evalRes.achievedTimestamp || `${timeStr} IST`
+            );
+          }
+        }
+
         if (nextPos.stateIndex !== pos.stateIndex) {
           logTslTransitionToCloud({
             position_id: pos.id,
@@ -1384,7 +1497,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
           if (nextPos.stateIndex === 4) {
             const finalPnl = (nextPos.currentLtp - pos.entryPrice) * pos.quantity;
-            closeTradeOrderInCloud(pos.id, nextPos.currentLtp, finalPnl);
+            closeTradeOrderInCloud(
+              pos.id,
+              nextPos.currentLtp,
+              finalPnl,
+              nextPos.highest_target_achieved,
+              nextPos.target_achievement_time
+            );
           }
 
           if (isSupabaseConfigured && supabase) {
@@ -1455,6 +1574,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             errorCount: prev.errorCount + 1,
             lastLatencyMs: latencyMs,
           }));
+          if (stateMachineRef.current.getSnapshot().currentState === 'LIVE_SYNC_RUNNING') {
+            stateMachineRef.current.markLiveSyncFailure(data.message || 'Data feed unavailable');
+            setMarketLifecycle(stateMachineRef.current.getSnapshot());
+          }
           if (!data.isConfigured) {
             if (isManualTrigger) {
               showToast('Dhan credentials not configured. Open "🔌 Broker: Dhan HQ" to configure keys.', 'amber');
@@ -1468,6 +1591,18 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         const quotesMap = data.quotes;
         const nowTime = formatClockIST(clockSecondsRef.current);
         const sessionStarted = hasTodayMarketSessionStarted();
+
+        // Strict 8-Point Data Validation Gate for Live Sync
+        const currentTickers = (watchlistRef.current.length > 0 ? watchlistRef.current : watchlist).map((s) => s.ticker);
+        const batchValidation = validateLiveSyncBatch(currentTickers, quotesMap, data.source || 'DHAN_HQ', Date.now());
+
+        if (batchValidation.isValid) {
+          stateMachineRef.current.markLiveSyncSuccess(batchValidation.validCount);
+          setLastLiveSyncTime(nowTime);
+        } else if (stateMachineRef.current.getSnapshot().currentState === 'LIVE_SYNC_RUNNING') {
+          stateMachineRef.current.markLiveSyncFailure(batchValidation.criticalErrors[0] || 'Live sync data validation rejected');
+        }
+        setMarketLifecycle(stateMachineRef.current.getSnapshot());
 
         setWatchlist((prevWl) => {
           const updatedWl = prevWl.map((stock) => {
@@ -1605,6 +1740,25 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             const updatedPos = { ...pos, currentLtp: updatedLtp };
             const nextPos = autoUpdatePositionFromTick(updatedPos);
 
+            // Evaluate Pi% target progression milestone
+            const targetLevels = calculateTargetLevels(pos.entryPrice, pos.quantity, pos.piPct);
+            const { highestTargetAchieved, isNewMilestone, achievedTimestamp } = evaluateTargetMilestone(
+              updatedLtp,
+              targetLevels,
+              pos.highestTargetAchieved || 'NONE'
+            );
+            if (isNewMilestone) {
+              nextPos.highestTargetAchieved = highestTargetAchieved;
+              nextPos.targetAchievementTimestamp = achievedTimestamp;
+              showToast(`🎯 ${pos.symbol} Achieved Target ${highestTargetAchieved} (₹${updatedLtp.toFixed(2)})!`, 'emerald');
+              if (isSupabaseConfigured && supabase) {
+                supabase.from('trade_logs').update({
+                  highest_target_achieved: highestTargetAchieved,
+                  target_achievement_time: achievedTimestamp,
+                }).eq('order_id', pos.id).then();
+              }
+            }
+
             if (nextPos.stateIndex !== pos.stateIndex) {
               logTslTransitionToCloud({
                 position_id: pos.id,
@@ -1621,7 +1775,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
               if (nextPos.stateIndex === 4) {
                 const finalPnl = (nextPos.currentLtp - pos.entryPrice) * pos.quantity;
-                closeTradeOrderInCloud(pos.id, nextPos.currentLtp, finalPnl);
+                closeTradeOrderInCloud(
+                  pos.id,
+                  nextPos.currentLtp,
+                  finalPnl,
+                  nextPos.highest_target_achieved || nextPos.highestTargetAchieved,
+                  nextPos.target_achievement_time || nextPos.targetAchievementTimestamp
+                );
               }
 
               if (isSupabaseConfigured && supabase) {
@@ -1858,6 +2018,81 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     executeAutoPilotStepRef.current = executeAutoPilotStep;
   }, [executeAutoPilotStep]);
 
+  const syncMarketSessionToDb = useCallback(async () => {
+    try {
+      const snap = stateMachineRef.current.getSnapshot();
+      await fetch('/api/pipeline/market-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trading_date: snap.tradingDate,
+          market_state: snap.currentState,
+          initialization_status: snap.initializationStatus,
+          live_sync_status: snap.liveSyncStatus,
+          twenty_day_sync_status: snap.twentyDaySyncStatus,
+          live_feed_status: snap.liveFeedStatus,
+          trade_mode: snap.tradeMode,
+          last_error: snap.lastError,
+          retry_increment: snap.currentState === 'RECOVERY',
+        }),
+      });
+    } catch (e) {
+      console.warn('Error syncing market session to DB:', e);
+    }
+  }, []);
+
+  const isExecutingLifecycleActionRef = useRef<boolean>(false);
+
+  const executeLifecycleAction = useCallback(async (actionType: string, delayMs?: number) => {
+    if (isExecutingLifecycleActionRef.current) return;
+    isExecutingLifecycleActionRef.current = true;
+
+    try {
+      if (delayMs && delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      if (actionType === 'LIVE_SYNC') {
+        showToast('🌅 Auto Market-Day: Step 1 — Live Sync (8-Point Data Validation Gate) running...', 'info');
+        await fetchLiveDhanQuotes(false);
+        await syncMarketSessionToDb();
+      } else if (actionType === '20D_SYNC') {
+        showToast('⚡ Auto Market-Day: Step 2 — 20D Average Traded Shares calculation running...', 'info');
+        await syncDailyBaselines(false, true);
+        await syncMarketSessionToDb();
+      } else if (actionType === 'START_FEED') {
+        showToast('🟢 Auto Market-Day: Step 3 — Live Feed Active! Auto Trade monitoring 20D crossovers.', 'emerald');
+        setFeedModeState('DHAN_LIVE');
+        setIsLiveStreaming(true);
+        stateMachineRef.current.markLiveFeedStarted();
+        await syncMarketSessionToDb();
+      } else if (actionType === 'STOP_FEED') {
+        showToast('🛑 Auto Market-Day: 15:31 IST Shutdown — Live Feed stopped. Market session archived.', 'amber');
+        setIsLiveStreaming(false);
+        stateMachineRef.current.markLiveFeedStopped();
+        fetch('/api/pipeline/market-close-archive', { method: 'POST' }).catch(() => {});
+        await syncMarketSessionToDb();
+      } else if (actionType === 'RETRY_STAGE') {
+        const snap = stateMachineRef.current.getSnapshot();
+        if (snap.liveSyncStatus !== 'SUCCESS') {
+          await fetchLiveDhanQuotes(false);
+        } else if (snap.twentyDaySyncStatus !== 'SUCCESS') {
+          await syncDailyBaselines(false, true);
+        }
+        await syncMarketSessionToDb();
+      }
+    } catch (err: any) {
+      console.error('Lifecycle action error:', err);
+    } finally {
+      isExecutingLifecycleActionRef.current = false;
+      setMarketLifecycle(stateMachineRef.current.getSnapshot());
+    }
+  }, [fetchLiveDhanQuotes, syncDailyBaselines, syncMarketSessionToDb, showToast]);
+
+  useEffect(() => {
+    executeLifecycleActionRef.current = executeLifecycleAction;
+  }, [executeLifecycleAction]);
+
   const toggleAutoPilot = useCallback(() => {
     setAutoPilotStatus((prev) => {
       const nextEnabled = !prev.enabled;
@@ -2090,7 +2325,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         if (p.stateIndex < 4) {
           closed++;
           const finalPnl = (p.currentLtp - p.entryPrice) * p.quantity;
-          closeTradeOrderInCloud(p.id, p.currentLtp, finalPnl);
+          closeTradeOrderInCloud(
+            p.id,
+            p.currentLtp,
+            finalPnl,
+            p.highest_target_achieved || p.highestTargetAchieved,
+            p.target_achievement_time || p.targetAchievementTimestamp
+          );
           if (isSupabaseConfigured && supabase) {
             const client = supabase;
             client
@@ -2145,7 +2386,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
           if (updated.stateIndex === 4) {
             const finalPnl = (updated.currentLtp - pos.entryPrice) * pos.quantity;
-            closeTradeOrderInCloud(pos.id, updated.currentLtp, finalPnl);
+            closeTradeOrderInCloud(
+              pos.id,
+              updated.currentLtp,
+              finalPnl,
+              updated.highest_target_achieved || updated.highestTargetAchieved,
+              updated.target_achievement_time || updated.targetAchievementTimestamp
+            );
           }
 
           if (isSupabaseConfigured && supabase) {
@@ -2480,6 +2727,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         refreshBrokerVaultStatus,
         marketSession,
         ingestionTelemetry,
+        marketLifecycle,
         autoPilotStatus,
         isAutoPilotModalOpen,
         setIsAutoPilotModalOpen,

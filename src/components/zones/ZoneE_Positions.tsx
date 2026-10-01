@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { TradeLog, TslAuditTrailEntry } from '@/lib/types/quant';
+import { generatePerformanceReport } from '@/lib/engine/targetTrackingEngine';
 
 export function ZoneE_Positions() {
   const {
@@ -15,7 +16,8 @@ export function ZoneE_Positions() {
     clearAllPositionsAndTrades,
   } = useQuantPulse();
 
-  const [subTab, setSubTab] = useState<'ACTIVE' | 'TRADE_LOGS' | 'TSL_TRAIL'>('ACTIVE');
+  const [subTab, setSubTab] = useState<'ACTIVE' | 'TRADE_LOGS' | 'TSL_TRAIL' | 'PERFORMANCE'>('ACTIVE');
+  const [perfTimeframe, setPerfTimeframe] = useState<'DAILY' | 'WEEKLY' | 'YEARLY'>('DAILY');
   const [cloudTradeLogs, setCloudTradeLogs] = useState<TradeLog[]>([]);
   const [cloudTslTrails, setCloudTslTrails] = useState<TslAuditTrailEntry[]>([]);
   const [isCloudLoading, setIsCloudLoading] = useState(false);
@@ -31,14 +33,14 @@ export function ZoneE_Positions() {
         .select('*')
         .neq('status', 'CANCELLED')
         .order('created_at', { ascending: false })
-        .limit(25);
+        .limit(subTab === 'PERFORMANCE' ? 500 : 50);
       if (tLogs) setCloudTradeLogs(tLogs as TradeLog[]);
 
       const { data: tsls } = await supabase
         .from('tsl_audit_trail')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(25);
+        .limit(50);
       if (tsls) setCloudTslTrails(tsls as TslAuditTrailEntry[]);
     } catch (err) {
       console.warn('Error fetching cloud data in Zone E:', err);
@@ -46,6 +48,37 @@ export function ZoneE_Positions() {
       setIsCloudLoading(false);
     }
   };
+
+  const perfReport = useMemo(() => {
+    return generatePerformanceReport(cloudTradeLogs, perfTimeframe);
+  }, [cloudTradeLogs, perfTimeframe]);
+
+  const filteredPerfTrades = useMemo(() => {
+    const now = new Date();
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffsetMs);
+    const dateStr = istDate.toISOString().slice(0, 10);
+
+    return cloudTradeLogs.filter((trade) => {
+      if (!trade.created_at) return true;
+      const tradeDate = trade.created_at.slice(0, 10);
+      if (perfTimeframe === 'DAILY') {
+        return tradeDate === dateStr;
+      }
+      if (perfTimeframe === 'WEEKLY') {
+        const d = new Date(istDate);
+        const day = d.getUTCDay();
+        const diffToMon = (day === 0 ? -6 : 1) - day;
+        const monday = new Date(d.getTime() + diffToMon * 86400000);
+        const monStr = monday.toISOString().slice(0, 10);
+        return tradeDate >= monStr && tradeDate <= dateStr;
+      }
+      if (perfTimeframe === 'YEARLY') {
+        return tradeDate.startsWith(dateStr.slice(0, 4));
+      }
+      return true;
+    });
+  }, [cloudTradeLogs, perfTimeframe]);
 
   useEffect(() => {
     fetchCloudData();
@@ -143,6 +176,21 @@ export function ZoneE_Positions() {
               <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-900 text-amber-400 font-bold">
                 {cloudTslTrails.length}
               </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSubTab('PERFORMANCE');
+                fetchCloudData();
+              }}
+              className={`px-3 py-1 rounded-lg font-semibold transition flex items-center gap-1.5 ${
+                subTab === 'PERFORMANCE'
+                  ? 'bg-slate-800 text-purple-300 border border-slate-700'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>📊 Performance &amp; Pi% Targets</span>
             </button>
           </div>
 
@@ -245,7 +293,16 @@ export function ZoneE_Positions() {
                         <td className="py-2.5 px-3 font-mono font-bold text-cyan-300">
                           ₹{pos.activeTrailingSl.toFixed(2)}
                         </td>
-                        <td className="py-2.5 px-3 font-mono text-emerald-400">₹{pos.targetPrice.toFixed(2)}</td>
+                        <td className="py-2.5 px-3 font-mono">
+                          <div className="text-emerald-400">₹{pos.targetPrice.toFixed(2)}</div>
+                          {pos.highestTargetAchieved && pos.highestTargetAchieved !== 'NONE' ? (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              🎯 {pos.highestTargetAchieved}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500">T1: ₹{pos.target1 ? pos.target1.toFixed(1) : '-'}</span>
+                          )}
+                        </td>
                         <td className="py-2.5 px-3">
                           <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold border border-slate-700 bg-slate-800 text-slate-200">
                             {pos.stateLabel}
@@ -429,6 +486,189 @@ export function ZoneE_Positions() {
                 </tbody>
               </table>
             )}
+          </div>
+        )}
+
+        {/* Tab 4: Performance & Pi% Targets */}
+        {subTab === 'PERFORMANCE' && (
+          <div className="p-4 space-y-4">
+            {/* Control Bar: Timeframe Selector & Pi% Legend */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-obsidian/80 rounded-lg border border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-1">Timeframe:</span>
+                {(['DAILY', 'WEEKLY', 'YEARLY'] as const).map((tf) => (
+                  <button
+                    key={tf}
+                    type="button"
+                    onClick={() => setPerfTimeframe(tf)}
+                    className={`px-3 py-1 rounded text-xs font-bold transition flex items-center gap-1.5 ${
+                      perfTimeframe === tf
+                        ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 shadow-sm'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    <span>{tf === 'DAILY' ? '📅 Today (Daily)' : tf === 'WEEKLY' ? '🗓️ This Week' : '📊 Year to Date'}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3 text-[11px] font-mono bg-slate-900/90 px-3 py-1.5 rounded border border-slate-800">
+                <span className="text-purple-300 font-bold">π = 3.1416%</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-slate-400">T1: <strong className="text-purple-300">+3.14%</strong></span>
+                <span className="text-slate-400">T2: <strong className="text-blue-300">+4.71%</strong></span>
+                <span className="text-slate-400">T3: <strong className="text-emerald-300">+6.28%</strong></span>
+                <span className="text-slate-400">T4: <strong className="text-amber-300">+7.85%</strong></span>
+              </div>
+            </div>
+
+            {/* Performance Metric Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Trades</div>
+                <div className="text-xl font-bold font-mono text-white mt-1">{perfReport.totalTrades}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Executed orders</div>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Hit Rate (≥ T1)</div>
+                <div className="text-xl font-bold font-mono text-purple-300 mt-1">
+                  {perfReport.targetAchievementPercentage}%
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Target reached</div>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">T1 Reached</div>
+                <div className="text-xl font-bold font-mono text-purple-400 mt-1">{perfReport.t1AchievedCount}</div>
+                <div className="text-[10px] text-purple-300/80 mt-0.5">+3.14% BuyVal</div>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">T2 Reached</div>
+                <div className="text-xl font-bold font-mono text-blue-400 mt-1">{perfReport.t2AchievedCount}</div>
+                <div className="text-[10px] text-blue-300/80 mt-0.5">+4.71% BuyVal</div>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">T3 &amp; T4 Apex</div>
+                <div className="text-xl font-bold font-mono text-amber-300 mt-1">
+                  {perfReport.t3AchievedCount} <span className="text-xs text-slate-500 font-normal">/</span> {perfReport.t4AchievedCount}
+                </div>
+                <div className="text-[10px] text-amber-300/80 mt-0.5">T3: +6.28% | T4: +7.85%</div>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Realized P&amp;L</div>
+                <div
+                  className={`text-xl font-bold font-mono mt-1 ${
+                    perfReport.grossPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {perfReport.grossPnl >= 0 ? '+' : ''}₹{perfReport.grossPnl.toLocaleString('en-IN')}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Closed positions</div>
+              </div>
+            </div>
+
+            {/* Trades Target Table */}
+            <div className="overflow-x-auto rounded-lg border border-slate-800">
+              {filteredPerfTrades.length === 0 ? (
+                <div className="py-12 text-center text-xs text-slate-400 bg-obsidian/40">
+                  No trades found for {perfTimeframe} period in Supabase <code>public.trade_logs</code>.
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400 bg-obsidian/80">
+                      <th className="py-2.5 px-3">Symbol</th>
+                      <th className="py-2.5 px-3">Side</th>
+                      <th className="py-2.5 px-3">Qty</th>
+                      <th className="py-2.5 px-3">Entry Price</th>
+                      <th className="py-2.5 px-3">Buy Value</th>
+                      <th className="py-2.5 px-3 text-purple-300">T1 (+π%)</th>
+                      <th className="py-2.5 px-3 text-blue-300">T2 (+1.5π%)</th>
+                      <th className="py-2.5 px-3 text-emerald-300">T3 (+2π%)</th>
+                      <th className="py-2.5 px-3 text-amber-300">T4 (+2.5π%)</th>
+                      <th className="py-2.5 px-3">Highest Achieved</th>
+                      <th className="py-2.5 px-3">Milestone Time</th>
+                      <th className="py-2.5 px-3 text-right">Realized P&amp;L</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/70 font-mono">
+                    {filteredPerfTrades.map((t) => {
+                      const highest = t.highest_target_achieved || 'NONE';
+                      const pnl = Number(t.realized_pnl) || 0;
+                      return (
+                        <tr key={t.id || t.order_id} className="hover:bg-slate-900/60 transition">
+                          <td className="py-2 px-3 font-bold text-white flex items-center gap-1.5">
+                            <span>{t.symbol}</span>
+                            {t.lots && (
+                              <span className="text-[10px] font-normal text-slate-400">({t.lots}L)</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                t.action === 'BUY'
+                                  ? 'bg-emerald-500/20 text-emerald-400'
+                                  : 'bg-rose-500/20 text-rose-400'
+                              }`}
+                            >
+                              {t.action}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-slate-300">{t.quantity}</td>
+                          <td className="py-2 px-3 text-white font-semibold">₹{t.entry_price}</td>
+                          <td className="py-2 px-3 text-slate-400">
+                            ₹{t.buy_value ? Number(t.buy_value).toLocaleString('en-IN') : (t.entry_price * t.quantity).toLocaleString('en-IN')}
+                          </td>
+                          <td className="py-2 px-3 text-purple-300">
+                            {t.target_1 ? `₹${t.target_1}` : '—'}
+                          </td>
+                          <td className="py-2 px-3 text-blue-300">
+                            {t.target_2 ? `₹${t.target_2}` : '—'}
+                          </td>
+                          <td className="py-2 px-3 text-emerald-300">
+                            {t.target_3 ? `₹${t.target_3}` : '—'}
+                          </td>
+                          <td className="py-2 px-3 text-amber-300">
+                            {t.target_4 ? `₹${t.target_4}` : '—'}
+                          </td>
+                          <td className="py-2 px-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                highest === 'T4'
+                                  ? 'bg-amber-400 text-black font-black'
+                                  : highest === 'T3'
+                                  ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                                  : highest === 'T2'
+                                  ? 'bg-blue-500/30 text-blue-300 border border-blue-500/40'
+                                  : highest === 'T1'
+                                  ? 'bg-purple-500/30 text-purple-300 border border-purple-500/40'
+                                  : 'bg-slate-800 text-slate-500'
+                              }`}
+                            >
+                              {highest === 'NONE' ? 'NO TARGET' : `🎯 ${highest}`}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-[11px] text-amber-300/90">
+                            {t.target_achievement_time || '—'}
+                          </td>
+                          <td
+                            className={`py-2 px-3 text-right font-bold ${
+                              pnl > 0 ? 'text-emerald-400' : pnl < 0 ? 'text-rose-400' : 'text-slate-400'
+                            }`}
+                          >
+                            {pnl > 0 ? '+' : ''}₹{pnl.toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
       </div>
