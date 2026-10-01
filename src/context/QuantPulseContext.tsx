@@ -23,6 +23,7 @@ import {
   INITIAL_CROSSOVER_LOGS,
   formatClockIST,
   checkAndLatchVolumeCrossover,
+  getVolumeScreenerMetrics,
 } from '@/lib/engine/crossoverEngine';
 import { buildNextActionPayload } from '@/lib/engine/optionPricing';
 import {
@@ -180,6 +181,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     stateMachineRef.current.getSnapshot()
   );
   const executeLifecycleActionRef = useRef<((action: string, delayMs?: number) => Promise<void>) | null>(null);
+  const reconcileAutoTradeOrdersRef = useRef<(() => void) | null>(null);
 
   // Exact real-time Indian Standard Time (IST) initialization
   const getNowIstSeconds = () => {
@@ -706,6 +708,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         executeLifecycleActionRef.current('RETRY_STAGE', transitionAction.delayMs);
       }
 
+      // Auto-Trade State Reconciliation: continuously monitor eligible stocks when AUTO & Feed active
+      if (reconcileAutoTradeOrdersRef.current) {
+        reconcileAutoTradeOrdersRef.current();
+      }
+
       // Midnight date change rollover detection
       if (ist.dateStr !== currentTradingDateRef.current) {
         currentTradingDateRef.current = ist.dateStr;
@@ -1151,18 +1158,30 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   // 3. Execution logic
   const executeBuy = useCallback(
     async (tickerSymbol: string, triggeredBy: ExecutionMode = 'MANUAL') => {
-      const stock = watchlist.find((s) => s.ticker === tickerSymbol);
+      const currentWl = watchlistRef.current.length > 0 ? watchlistRef.current : watchlist;
+      const stock = currentWl.find((s) => s.ticker === tickerSymbol) || watchlist.find((s) => s.ticker === tickerSymbol);
       if (!stock) return;
 
-      if (!stock.hasCrossed20D) {
+      const todayShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
+      const avgShares = stock.avg20DTradedShares !== undefined ? stock.avg20DTradedShares : Math.round(stock.avgVol20DM * 1_000_000);
+      const volumeMet = (todayShares >= avgShares && todayShares > 0) || Boolean(stock.hasCrossed20D);
+
+      if (!volumeMet) {
         showToast(
-          `Cannot Buy ${stock.ticker} yet — Today's volume (${stock.todayVolM}M) has not crossed 20D Avg (${stock.avgVol20DM}M).`,
+          `Cannot Buy ${stock.ticker} yet — Today's volume (${(todayShares / 1_000_000).toFixed(2)}M) has not crossed 20D Avg (${(avgShares / 1_000_000).toFixed(2)}M).`,
           'rose'
         );
         return;
       }
 
-      const openLegs = positions.filter((p) => p.stateIndex < 4).length;
+      if (!stock.hasCrossed20D) {
+        stock.hasCrossed20D = true;
+        if (!stock.crossoverTime) stock.crossoverTime = formatClockIST(clockSecondsRef.current || clockSeconds);
+        if (!stock.crossoverSpotPrice) stock.crossoverSpotPrice = stock.spotLtp;
+      }
+
+      const currentPositions = positionsRef.current || positions;
+      const openLegs = currentPositions.filter((p) => p.stateIndex < 4).length;
       if (openLegs >= config.maxOpenPositions) {
         showToast(`Max Open Positions (${config.maxOpenPositions}) reached!`, 'rose');
         return;
@@ -1324,12 +1343,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     [watchlist, positions, config, clockSeconds, showToast]
   );
 
-  // Event-driven Auto-Buy trigger: ONLY called when a stock newly crosses in real-time
+  // Event-driven Auto-Buy trigger: called when a stock newly crosses in real-time
   const dispatchAutoBuyOnCrossover = useCallback(
     (tickerSymbol: string) => {
       if (config.executionMode !== 'AUTO') return;
-      if (stateMachineRef.current.getSnapshot().currentState !== 'LIVE_FEED_ACTIVE') {
-        console.warn(`[AutoTrade] Skipped buy for ${tickerSymbol}: Market-Day State is not LIVE_FEED_ACTIVE (${stateMachineRef.current.getSnapshot().currentState}).`);
+      const isFeedActive =
+        stateMachineRef.current.getSnapshot().currentState === 'LIVE_FEED_ACTIVE' ||
+        isLiveStreamingRef.current;
+      if (!isFeedActive) {
+        console.warn(`[AutoTrade] Skipped buy for ${tickerSymbol}: Live feed is not active.`);
         return;
       }
       if (!hasTodayMarketSessionStarted()) return;
@@ -1343,7 +1365,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       }
 
       if (idempotencyLocksRef.current.includes(tickerSymbol)) return;
-      const openCount = positionsRef.current.filter((p) => p.stateIndex < 4).length;
+      const currentPositions = positionsRef.current || positions;
+      const openCount = currentPositions.filter((p) => p.stateIndex < 4).length;
       if (openCount >= config.maxOpenPositions) {
         showToast(
           `Auto Trade: Max Open Positions ceiling (${config.maxOpenPositions}) reached. Skipped ${tickerSymbol}.`,
@@ -1354,8 +1377,62 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
       executeBuy(tickerSymbol, 'AUTO');
     },
-    [config.executionMode, config.maxOpenPositions, executeBuy, showToast]
+    [config.executionMode, config.maxOpenPositions, executeBuy, positions, showToast]
   );
+
+  /**
+   * Continuous Auto-Trade State Reconciler:
+   * Evaluates all watchlist stocks against full eligibility conditions:
+   * (Volume Crossed 20D Average + Bullish Price Action).
+   * Automatically executes orders for any eligible stock that:
+   * 1. Does not currently have an active open position
+   * 2. Has not already been traded in this session (idempotency lock)
+   * 3. Fits within the configured maxOpenPositions ceiling
+   */
+  const reconcileAutoTradeOrders = useCallback(() => {
+    if (config.executionMode !== 'AUTO') return;
+    const isFeedActive =
+      stateMachineRef.current.getSnapshot().currentState === 'LIVE_FEED_ACTIVE' ||
+      isLiveStreamingRef.current;
+    if (!isFeedActive) return;
+    if (!hasTodayMarketSessionStarted()) return;
+
+    const ist = getISTDate();
+    const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
+    if (secsSinceOpen >= 0 && secsSinceOpen < 30) return;
+
+    const currentPositions = positionsRef.current || [];
+    const openCount = currentPositions.filter((p) => p.stateIndex < 4).length;
+    let availableSlots = config.maxOpenPositions - openCount;
+    if (availableSlots <= 0) return;
+
+    const currentWatchlist = watchlistRef.current.length > 0 ? watchlistRef.current : watchlist;
+
+    for (const stock of currentWatchlist) {
+      if (availableSlots <= 0) break;
+
+      // 1. Skip if already an active open position
+      const hasOpenPosition = currentPositions.some(
+        (p) => p.ticker === stock.ticker && p.stateIndex < 4
+      );
+      if (hasOpenPosition) continue;
+
+      // 2. Skip if already locked by idempotency today
+      if (idempotencyLocksRef.current.includes(stock.ticker)) continue;
+
+      // 3. Evaluate eligibility
+      const metrics = getVolumeScreenerMetrics(stock);
+      if (metrics.isEligibleForBuy) {
+        console.log(`[AutoTrade Reconciler] Automatically buying eligible stock: ${stock.ticker}`);
+        executeBuy(stock.ticker, 'AUTO');
+        availableSlots--;
+      }
+    }
+  }, [config.executionMode, config.maxOpenPositions, executeBuy, watchlist]);
+
+  useEffect(() => {
+    reconcileAutoTradeOrdersRef.current = reconcileAutoTradeOrders;
+  }, [reconcileAutoTradeOrders]);
 
   // 4. Tick Simulation
   const simulateSingleTick = useCallback(() => {
@@ -1453,6 +1530,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
       return updatedWl;
     });
+
+    setTimeout(() => {
+      reconcileAutoTradeOrdersRef.current?.();
+    }, 50);
 
     setPositions((prevPos) =>
       prevPos.map((pos) => {
@@ -1732,6 +1813,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
           return updatedWl;
         });
+
+        setTimeout(() => {
+          reconcileAutoTradeOrdersRef.current?.();
+        }, 50);
 
         // Update active positions with live market LTP
         setPositions((prevPos) =>
@@ -2079,6 +2164,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         setIsLiveStreaming(true);
         stateMachineRef.current.markLiveFeedStarted();
         await syncMarketSessionToDb();
+        setTimeout(() => {
+          reconcileAutoTradeOrdersRef.current?.();
+        }, 100);
       } else if (actionType === 'STOP_FEED') {
         showToast('🛑 Auto Market-Day: 15:31 IST Shutdown — Live Feed stopped. Market session archived.', 'amber');
         setIsLiveStreaming(false);
@@ -2704,7 +2792,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         isSupabaseActive: isSupabaseConfigured,
         setSelectedTicker,
         setInstrumentMode: (mode) => setConfig((prev) => ({ ...prev, instrumentMode: mode })),
-        setExecutionMode: (mode) => setConfig((prev) => ({ ...prev, executionMode: mode })),
+        setExecutionMode: (mode) => {
+          setConfig((prev) => ({ ...prev, executionMode: mode }));
+          if (mode === 'AUTO') {
+            setTimeout(() => {
+              reconcileAutoTradeOrdersRef.current?.();
+            }, 100);
+          }
+        },
         setCapitalPerTrade: (val) => setConfig((prev) => ({ ...prev, capitalPerTrade: val })),
         syncDailyBaselines,
         resetToDayStart,
