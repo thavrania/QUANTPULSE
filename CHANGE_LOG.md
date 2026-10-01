@@ -52,8 +52,44 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ## Change History
 
+### [2026-10-01 11:28 IST] — Fix TypeScript Inferred Return Type for Watchlist Baseline Sync
+- **Commit SHA / Version:** Pending (`main`) / `v2.1.1`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Fix`
+- **Business Rationale / Objective:** 
+  Fix TypeScript build failure during Vercel deployment where `prevWl.map(...)` without an explicit return type inferred an anonymous object array requiring `avg20DTradedShares: number`, causing `updated.push(stock)` to fail type checking because `Stock.avg20DTradedShares` is optional (`number | undefined`). Explicitly typed `updated: Stock[]` and mapper as `: Stock`.
+
+#### Affected Components & Files
+- `src/context/QuantPulseContext.tsx`: Explicitly typed `const updated: Stock[] = prevWl.map((stock): Stock => ...)` in `syncBaselines` and typed callback return as `Stock` in `resetSessionData`.
+
+#### Database & Schema Impact
+- **Tables Touched:** None
+- **Operations:** None
+- **Migration Script:** N/A
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+- [x] Invariant 11: Zero Round-Off & Slippage Precision Standard
+
+#### Verification & Testing Performed
+- Validated TypeScript typing in `QuantPulseContext.tsx` ensuring compatibility with `Stock[]`.
+
+#### Rollback Procedure
+- `git revert HEAD`
+
+---
+
 ### [2026-10-01 11:20 IST] — Zero Round-Off & Slippage Precision for Average Traded Shares & Crossovers
-- **Commit SHA / Version:** Pending (`main`) / `v2.1.0`
+- **Commit SHA / Version:** `86ccd8b` / `v2.1.0`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
 - **Category:** `Fix` / `Feature` / `Database`
 - **Business Rationale / Objective:** 

@@ -501,7 +501,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         // Update baselines for all active stocks WITHOUT removing or resetting any stocks!
         setWatchlist((prevWl) => {
-          const updated = prevWl.map((stock) => {
+          const updated: Stock[] = prevWl.map((stock): Stock => {
             const bInfo = baselineMap.get(stock.ticker);
             const newAvg20DM = bInfo?.avgVol20DM ?? stock.avgVol20DM;
             const newAvg20DShares = bInfo?.avg20DTradedShares ?? stock.avg20DTradedShares ?? Math.round(newAvg20DM * 1_000_000);
@@ -1890,9 +1890,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
       // 2. Reset watchlist in memory to 0.00M volume and uncrossed state
       setWatchlist((prevWl) =>
-        prevWl.map((stock) => ({
+        prevWl.map((stock): Stock => ({
           ...stock,
           todayVolM: 0.0,
+          todayTradedShares: 0,
           hasCrossed20D: false,
           crossoverTime: null,
           crossoverSpotPrice: null,
