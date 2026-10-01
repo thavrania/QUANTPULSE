@@ -282,7 +282,7 @@ export function ZoneB_Watchlist() {
           )}
 
           {/* Active 4 Stocks Cards */}
-          <div className="p-2.5 grid grid-cols-2 gap-2 border-b border-slate-800 bg-obsidian/40">
+          <div className="p-2.5 grid grid-cols-2 gap-2 border-b border-slate-800 bg-obsidian/40 max-h-[300px] overflow-y-auto scrollbar-thin">
             {watchlist.map((stock) => {
               const isSelected = stock.ticker === selectedTicker;
               return (
@@ -596,11 +596,21 @@ export function ZoneB_Watchlist() {
             ) : (
               filteredMasterStocks.map((stock) => {
                 const isInWatchlist = activeTickers.has(stock.ticker);
+                const isSelected = stock.ticker === selectedTicker;
                 return (
                   <div
                     key={stock.ticker}
+                    onClick={() => {
+                      if (isInWatchlist) {
+                        setSelectedTicker(stock.ticker);
+                      }
+                    }}
                     className={`p-2.5 transition flex items-center justify-between gap-2.5 ${
-                      isInWatchlist ? 'bg-cyan-950/20' : 'hover:bg-slate-900/60'
+                      isSelected
+                        ? 'bg-cyan-950/40 border-l-2 border-cyan-400 shadow-sm'
+                        : isInWatchlist
+                        ? 'bg-cyan-950/15 hover:bg-cyan-900/30 cursor-pointer'
+                        : 'hover:bg-slate-900/60'
                     }`}
                   >
                     <div className="flex-1 min-w-0">
