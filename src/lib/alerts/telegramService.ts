@@ -145,3 +145,69 @@ export function formatKillSwitchAlert(closedCount: number, timeIST: string): str
 ──────────────────────
 ⚠️ _QuantPulse Risk Engine: Emergency Protocol Executed_`;
 }
+
+export function formatNifty0920SelectionAlert(
+  expiry: string,
+  ceSymbol: string,
+  cePrice: number,
+  ceSl: number,
+  peSymbol: string,
+  pePrice: number,
+  peSl: number,
+  timeIST: string
+): string {
+  return `🌙 *QUANTPULSE — NIFTY 09:20 STRADDLE LOCKED!*
+──────────────────────
+• *Strategy ID:* \`NIFTY_0920_PREMIUM_625_OVERNIGHT\`
+• *Expiry:* \`${expiry}\`
+• *Selection Time:* \`${timeIST} IST\`
+• *CE Leg:* \`${ceSymbol}\` @ \`₹${cePrice.toFixed(2)}\` (SL: \`₹${ceSl.toFixed(2)}\`)
+• *PE Leg:* \`${peSymbol}\` @ \`₹${pePrice.toFixed(2)}\` (SL: \`₹${peSl.toFixed(2)}\`)
+• *Core Invariant:* ⚠️ *NO TARGET* (Hold overnight if SL not hit)
+• *Mandatory Exit:* 09:25 AM IST Next Trading Day
+──────────────────────
+_QuantPulse Nifty Overnight Option Engine_`;
+}
+
+export function formatNifty0920SlAlert(
+  legType: 'CE' | 'PE',
+  symbol: string,
+  refPrice: number,
+  slPrice: number,
+  lossAmount: number,
+  timeIST: string
+): string {
+  return `🚨 *QUANTPULSE — NIFTY 09:20 STOP LOSS HIT!*
+──────────────────────
+• *Leg:* \`${legType} (${symbol})\`
+• *Reference Price:* \`₹${refPrice.toFixed(2)}\`
+• *Exit Price:* \`₹${slPrice.toFixed(2)}\` (-25% Fixed SL)
+• *Loss Realized:* \`-₹${Math.abs(lossAmount).toFixed(2)}\`
+• *Action:* Sold immediately. Will *NOT* carry overnight.
+• *Timestamp:* \`${timeIST} IST\`
+──────────────────────
+_QuantPulse Risk Engine: Strict 25% Capital Protection_`;
+}
+
+export function formatNifty0920ExitAlert(
+  reason: string,
+  ceExit: number,
+  cePnl: number,
+  peExit: number,
+  pePnl: number,
+  netPnl: number,
+  timeIST: string
+): string {
+  const pnlSign = netPnl >= 0 ? '+' : '';
+  const pnlEmoji = netPnl >= 0 ? '🟢' : '🔴';
+  return `🎯 *QUANTPULSE — NIFTY 09:20 MANDATORY EXIT!*
+──────────────────────
+• *Action:* \`09:25 AM IST Next-Day Portfolio Exit\`
+• *CE Exit Price:* \`₹${ceExit.toFixed(2)}\` (P&L: \`₹${cePnl.toFixed(2)}\`)
+• *PE Exit Price:* \`₹${peExit.toFixed(2)}\` (P&L: \`₹${pePnl.toFixed(2)}\`)
+• *Combined Realized P&L:* ${pnlEmoji} \`₹${pnlSign}${netPnl.toFixed(2)}\`
+• *Reason:* \`${reason}\`
+• *Timestamp:* \`${timeIST} IST\`
+──────────────────────
+_QuantPulse Nifty Overnight Option Engine_`;
+}

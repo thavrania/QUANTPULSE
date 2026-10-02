@@ -57,6 +57,9 @@ import {
   formatAutoPilotAlert,
   formatCrossoverAlert,
   formatKillSwitchAlert,
+  formatNifty0920SelectionAlert,
+  formatNifty0920SlAlert,
+  formatNifty0920ExitAlert,
   sendTelegramMessage,
 } from '@/lib/alerts/telegramService';
 import {
@@ -158,6 +161,7 @@ interface QuantPulseContextType {
   adjustNiftyLegPrice: (type: 'CE' | 'PE', delta: number) => void;
   forceNiftyStopLoss: (type: 'CE' | 'PE') => Promise<void>;
   forceNiftyNextDayExit: (isRecovery?: boolean) => Promise<void>;
+  simulateOvernightHold: () => void;
   resetNiftyScenario: () => void;
 }
 
@@ -3134,6 +3138,29 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           `🌙 NIFTY 09:20 Selection Locked! CE: ${d.ce_symbol} @ ₹${d.ce_ref_price} (SL: ₹${d.ce_stop_loss}) | PE: ${d.pe_symbol} @ ₹${d.pe_ref_price} (SL: ₹${d.pe_stop_loss})`,
           'emerald'
         );
+
+        if (typeof window !== 'undefined') {
+          const botToken = localStorage.getItem('qp_telegram_bot_token');
+          const chatId = localStorage.getItem('qp_telegram_chat_id');
+          if (botToken && chatId) {
+            const timeIST = getISTDate().timeStr;
+            const niftyMsg = formatNifty0920SelectionAlert(
+              d.selected_expiry,
+              d.ce_symbol,
+              Number(d.ce_ref_price),
+              Number(d.ce_stop_loss),
+              d.pe_symbol,
+              Number(d.pe_ref_price),
+              Number(d.pe_stop_loss),
+              timeIST
+            );
+            fetch('/api/alerts/telegram', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ botToken, chatId, message: niftyMsg }),
+            }).catch(() => {});
+          }
+        }
       }
     } catch (err: any) {
       console.warn('Failed to execute NIFTY 09:20 scan:', err);
@@ -3155,6 +3182,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
   const forceNiftyStopLoss = useCallback(
     async (type: 'CE' | 'PE') => {
+      let triggeredSymbol = '';
+      let triggeredRef = 0;
+      let triggeredSl = 0;
+      let triggeredLoss = 0;
+
       setNiftyOvernightState((prev) => {
         const leg = type === 'CE' ? prev.ceLeg : prev.peLeg;
         if (leg.status === 'CLOSED' || leg.status === 'SL_HIT') return prev;
@@ -3162,6 +3194,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         const realizedPnl = +((exitPrice - leg.refPrice) * leg.quantity).toFixed(2);
         const otherLeg = type === 'CE' ? prev.peLeg : prev.ceLeg;
         const allClosed = otherLeg.status === 'SL_HIT' || otherLeg.status === 'CLOSED';
+
+        triggeredSymbol = leg.symbol;
+        triggeredRef = leg.refPrice;
+        triggeredSl = exitPrice;
+        triggeredLoss = realizedPnl;
 
         const updatedLeg: NiftyOptionLeg = {
           ...leg,
@@ -3185,7 +3222,22 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           [type === 'CE' ? 'ceLeg' : 'peLeg']: updatedLeg,
         };
       });
+
       showToast(`🚨 NIFTY ${type} Stop Loss Hit! Sold immediately @ SL price. Will NOT carry overnight.`, 'rose');
+
+      if (typeof window !== 'undefined') {
+        const botToken = localStorage.getItem('qp_telegram_bot_token');
+        const chatId = localStorage.getItem('qp_telegram_chat_id');
+        if (botToken && chatId && triggeredSymbol) {
+          const timeIST = getISTDate().timeStr;
+          const slMsg = formatNifty0920SlAlert(type, triggeredSymbol, triggeredRef, triggeredSl, triggeredLoss, timeIST);
+          fetch('/api/alerts/telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ botToken, chatId, message: slMsg }),
+          }).catch(() => {});
+        }
+      }
     },
     [clockSeconds, showToast]
   );
@@ -3193,6 +3245,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const forceNiftyNextDayExit = useCallback(
     async (isRecovery = false) => {
       const reason = isRecovery ? 'NEXT_DAY_0925_EXIT_RECOVERY' : 'NEXT_DAY_0925_EXIT';
+      let exitCePrice = 0;
+      let exitPePrice = 0;
+      let exitCePnl = 0;
+      let exitPePnl = 0;
+
       setNiftyOvernightState((prev) => {
         const timeStr = formatClockIST(clockSecondsRef.current || clockSeconds);
         const updatedCe = { ...prev.ceLeg };
@@ -3205,6 +3262,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           updatedCe.status = 'CLOSED';
           updatedCe.realizedPnl = +((updatedCe.currentPrice - updatedCe.refPrice) * updatedCe.quantity).toFixed(2);
         }
+        exitCePrice = updatedCe.exitPrice || updatedCe.currentPrice;
+        exitCePnl = updatedCe.realizedPnl || 0;
 
         if (updatedPe.status === 'ACTIVE' || updatedPe.status === 'OVERNIGHT_HOLD') {
           updatedPe.exitPrice = updatedPe.currentPrice;
@@ -3213,6 +3272,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           updatedPe.status = 'CLOSED';
           updatedPe.realizedPnl = +((updatedPe.currentPrice - updatedPe.refPrice) * updatedPe.quantity).toFixed(2);
         }
+        exitPePrice = updatedPe.exitPrice || updatedPe.currentPrice;
+        exitPePnl = updatedPe.realizedPnl || 0;
 
         fetch('/api/strategy/nifty-overnight', {
           method: 'POST',
@@ -3238,9 +3299,43 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           : '🔔 Mandatory 09:25 AM IST Next-Day Exit Executed! Overnight positions closed cleanly.',
         isRecovery ? 'amber' : 'emerald'
       );
+
+      if (typeof window !== 'undefined') {
+        const botToken = localStorage.getItem('qp_telegram_bot_token');
+        const chatId = localStorage.getItem('qp_telegram_chat_id');
+        if (botToken && chatId) {
+          const netPnl = +(exitCePnl + exitPePnl).toFixed(2);
+          const timeIST = getISTDate().timeStr;
+          const exitMsg = formatNifty0920ExitAlert(reason, exitCePrice, exitCePnl, exitPePrice, exitPePnl, netPnl, timeIST);
+          fetch('/api/alerts/telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ botToken, chatId, message: exitMsg }),
+          }).catch(() => {});
+        }
+      }
     },
     [clockSeconds, showToast]
   );
+
+  const simulateOvernightHold = useCallback(() => {
+    setNiftyOvernightState((prev) => {
+      if (prev.status !== 'ACTIVE') return prev;
+      return {
+        ...prev,
+        status: 'OVERNIGHT_HOLD',
+        ceLeg: {
+          ...prev.ceLeg,
+          status: prev.ceLeg.status === 'ACTIVE' ? 'OVERNIGHT_HOLD' : prev.ceLeg.status,
+        },
+        peLeg: {
+          ...prev.peLeg,
+          status: prev.peLeg.status === 'ACTIVE' ? 'OVERNIGHT_HOLD' : prev.peLeg.status,
+        },
+      };
+    });
+    showToast('🌙 15:30 Market Close: 15:35 Intraday Square-off BYPASSED. Position held OVERNIGHT.', 'info');
+  }, [showToast]);
 
   const resetNiftyScenario = useCallback(() => {
     setNiftyOvernightState(initializePendingState(getISTDate().dateStr));
@@ -3340,6 +3435,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         adjustNiftyLegPrice,
         forceNiftyStopLoss,
         forceNiftyNextDayExit,
+        simulateOvernightHold,
         resetNiftyScenario,
       }}
     >

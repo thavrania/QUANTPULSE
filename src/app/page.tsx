@@ -17,6 +17,7 @@ export default function QuantPulseTerminalPage() {
     adjustNiftyLegPrice,
     forceNiftyStopLoss,
     forceNiftyNextDayExit,
+    simulateOvernightHold,
     resetNiftyScenario,
   } = useQuantPulse();
 
@@ -36,6 +37,7 @@ export default function QuantPulseTerminalPage() {
               onAdjustPrice={adjustNiftyLegPrice}
               onForceStopLoss={forceNiftyStopLoss}
               onForceNextDayExit={forceNiftyNextDayExit}
+              onSimulateOvernightHold={simulateOvernightHold}
               onResetScenario={resetNiftyScenario}
             />
           </div>

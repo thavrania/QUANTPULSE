@@ -8,9 +8,10 @@ import {
   formatTslAlert,
   formatAutoPilotAlert,
   formatKillSwitchAlert,
+  formatNifty0920SelectionAlert,
 } from '@/lib/alerts/telegramService';
 
-type AlertTypeId = 'PING' | 'CROSSOVER' | 'ORDER' | 'TSL' | 'AUTOPILOT' | 'KILL_SWITCH';
+type AlertTypeId = 'PING' | 'CROSSOVER' | 'ORDER' | 'TSL' | 'AUTOPILOT' | 'KILL_SWITCH' | 'NIFTY_OVERNIGHT';
 
 function getAlertLabel(type: AlertTypeId): string {
   switch (type) {
@@ -26,6 +27,8 @@ function getAlertLabel(type: AlertTypeId): string {
       return 'Pre-Market Auto-Pilot Alert';
     case 'KILL_SWITCH':
       return 'Emergency Kill Switch Alert';
+    case 'NIFTY_OVERNIGHT':
+      return 'NIFTY 09:20 Overnight Alert';
     default:
       return 'Telegram Alert';
   }
@@ -37,12 +40,13 @@ export function AlertsModal() {
   const [botToken, setBotToken] = useState('');
   const [chatId, setChatId] = useState('');
 
-  // 5 Individual Alert Type Toggles
+  // Individual Alert Type Toggles
   const [notifyCrossover, setNotifyCrossover] = useState(true);
   const [notifyOrder, setNotifyOrder] = useState(true);
   const [notifyTsl, setNotifyTsl] = useState(true);
   const [notifyAutoPilot, setNotifyAutoPilot] = useState(true);
   const [notifyKillSwitch, setNotifyKillSwitch] = useState(true);
+  const [notifyNiftyOvernight, setNotifyNiftyOvernight] = useState(true);
 
   // Active testing state for individual buttons
   const [testingAlertId, setTestingAlertId] = useState<AlertTypeId | null>(null);
@@ -82,6 +86,9 @@ export function AlertsModal() {
 
       const savedNotifyKillSwitch = localStorage.getItem('qp_notify_killswitch');
       if (savedNotifyKillSwitch !== null) setNotifyKillSwitch(savedNotifyKillSwitch === 'true');
+
+      const savedNotifyNifty = localStorage.getItem('qp_notify_nifty_overnight');
+      if (savedNotifyNifty !== null) setNotifyNiftyOvernight(savedNotifyNifty === 'true');
     }
   }, [isAlertsModalOpen]);
 
@@ -97,6 +104,7 @@ export function AlertsModal() {
     localStorage.setItem('qp_notify_tsl', String(notifyTsl));
     localStorage.setItem('qp_notify_autopilot', String(notifyAutoPilot));
     localStorage.setItem('qp_notify_killswitch', String(notifyKillSwitch));
+    localStorage.setItem('qp_notify_nifty_overnight', String(notifyNiftyOvernight));
     showToast('Alert preferences saved successfully!', 'emerald');
     onClose();
   };
@@ -107,6 +115,7 @@ export function AlertsModal() {
     setNotifyTsl(enable);
     setNotifyAutoPilot(enable);
     setNotifyKillSwitch(enable);
+    setNotifyNiftyOvernight(enable);
     showToast(enable ? 'All alert types enabled.' : 'All alert types muted.', 'info');
   };
 
@@ -139,6 +148,17 @@ export function AlertsModal() {
         );
       } else if (alertType === 'KILL_SWITCH') {
         messageToSend = formatKillSwitchAlert(2, nowIST);
+      } else if (alertType === 'NIFTY_OVERNIGHT') {
+        messageToSend = formatNifty0920SelectionAlert(
+          '14-OCT-2026',
+          'NIFTY 25200 CE',
+          64.0,
+          48.0,
+          'NIFTY 24800 PE',
+          63.0,
+          47.25,
+          nowIST
+        );
       }
 
       const res = await fetch('/api/alerts/telegram', {
@@ -220,6 +240,17 @@ export function AlertsModal() {
       checked: notifyKillSwitch,
       setChecked: setNotifyKillSwitch,
       sampleText: 'Sample: Portfolio Flattening Protocol • 2 Trade(s) Squared Off',
+    },
+    {
+      id: 'NIFTY_OVERNIGHT' as AlertTypeId,
+      badge: 'OVERNIGHT',
+      badgeColor: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+      icon: '🌙',
+      title: 'NIFTY 09:20 Premium 62.5 Overnight Strategy',
+      desc: 'Dispatched at 09:20 AM strike selection, 25% Stop Loss breaches, overnight carry, and next-day 09:25 AM mandatory exits.',
+      checked: notifyNiftyOvernight,
+      setChecked: setNotifyNiftyOvernight,
+      sampleText: 'Sample: CE 25200 @ ₹64 (SL: ₹48) | PE 24800 @ ₹63 (SL: ₹47.25) • NO TARGET',
     },
   ];
 
