@@ -175,6 +175,45 @@ export const INITIAL_WATCHLIST_DATA: Stock[] = [
   },
 ];
 
+export const INITIAL_SIMULATION_WATCHLIST_DATA: Stock[] = [
+  {
+    ...INITIAL_WATCHLIST_DATA[0], // RELIANCE: avg 5.2M shares
+    todayVolM: 4.88,
+    todayTradedShares: 4880000, // 93.8% progress
+    feedSource: 'SIMULATED',
+  },
+  {
+    ...INITIAL_WATCHLIST_DATA[1], // TCS: avg 1.5M shares
+    todayVolM: 1.25,
+    todayTradedShares: 1250000, // 83.3% progress
+    feedSource: 'SIMULATED',
+  },
+  {
+    ...INITIAL_WATCHLIST_DATA[2], // HDFCBANK: avg 6.0M shares
+    todayVolM: 5.10,
+    todayTradedShares: 5100000, // 85.0% progress
+    feedSource: 'SIMULATED',
+  },
+  {
+    ...INITIAL_WATCHLIST_DATA[3], // ICICIBANK: avg 7.0M shares
+    todayVolM: 6.82,
+    todayTradedShares: 6820000, // 97.4% progress -> crosses in 1-2 simulation ticks!
+    feedSource: 'SIMULATED',
+  },
+  {
+    ...INITIAL_WATCHLIST_DATA[4], // TMCV: avg 8.9M shares
+    todayVolM: 8.45,
+    todayTradedShares: 8450000, // 94.9% progress -> crosses in 3-4 simulation ticks!
+    feedSource: 'SIMULATED',
+  },
+  {
+    ...INITIAL_WATCHLIST_DATA[5], // ETERNAL: avg 19.0M shares
+    todayVolM: 13.50,
+    todayTradedShares: 13500000, // 71.0% progress
+    feedSource: 'SIMULATED',
+  },
+];
+
 export const INITIAL_CROSSOVER_LOGS: CrossoverEvent[] = [];
 
 export function formatClockIST(totalSeconds: number): string {
@@ -185,7 +224,8 @@ export function formatClockIST(totalSeconds: number): string {
   return `${hrs}:${mins}:${secs}`;
 }
 
-export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
+export function getVolumeScreenerMetrics(stock: Stock, isSimulation?: boolean): VolumeMetrics {
+  const isSim = isSimulation ?? (stock.feedSource === 'SIMULATED');
   const todayShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
   const avgShares = stock.avg20DTradedShares !== undefined ? stock.avg20DTradedShares : Math.round(stock.avgVol20DM * 1_000_000);
 
@@ -195,8 +235,9 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
   const surplusShares = Math.max(0, todayShares - avgShares);
   const deficitM = +(deficitShares / 1_000_000).toFixed(3);
 
-  // Rule 5: Strict Day Start Integrity - traded shares must genuinely meet/exceed 20D average (> 0) during active market
-  const sessionStarted = hasTodayMarketSessionStarted();
+  // In live trading, regular market session MUST be active (>= 09:15:00 IST).
+  // In simulation / demo mode, session gate is bypassed so demo replay functions reliably at all times.
+  const sessionStarted = isSim || hasTodayMarketSessionStarted();
   const hasVolumeCrossed =
     sessionStarted &&
     (stock.hasCrossed20D || todayShares >= avgShares) &&
@@ -236,10 +277,14 @@ export function getVolumeScreenerMetrics(stock: Stock): VolumeMetrics {
 
 export function checkAndLatchVolumeCrossover(
   stock: Stock,
-  currentTimeStr: string
+  currentTimeStr: string,
+  isSimulation?: boolean
 ): { newlyCrossed: boolean; event: CrossoverEvent | null } {
+  const isSim = isSimulation ?? (stock.feedSource === 'SIMULATED');
+
   // 1. Session Gate: Continuous regular market session MUST be active (>= 09:15:00 IST)
-  if (!hasTodayMarketSessionStarted()) {
+  // Bypassed when running in SIMULATION mode for testing & demos
+  if (!isSim && !hasTodayMarketSessionStarted()) {
     stock.hasCrossed20D = false;
     stock.crossoverTime = null;
     stock.crossoverSpotPrice = null;
@@ -253,17 +298,19 @@ export function checkAndLatchVolumeCrossover(
   // 2. Opening Stabilization Gate (09:15:00 to 09:16:00 IST):
   // Broker quote feeds often carry yesterday's cumulative EOD volume during the first 60 seconds.
   // In genuine market trading, it is physically impossible for a stock to trade 100% of its 20-day average volume
-  // within the first 60 seconds of open.
-  const ist = getISTDate();
-  const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
-  if (secsSinceOpen >= 0 && secsSinceOpen < 60) {
-    if (todayShares >= avgShares * 0.5) {
-      // Suppress anomalous opening spike (residual EOD cached volume)
-      stock.hasCrossed20D = false;
-      stock.crossoverTime = null;
-      stock.crossoverSpotPrice = null;
-      stock.justCrossedHighlight = false;
-      return { newlyCrossed: false, event: null };
+  // within the first 60 seconds of open. (Bypassed during simulation)
+  if (!isSim) {
+    const ist = getISTDate();
+    const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
+    if (secsSinceOpen >= 0 && secsSinceOpen < 60) {
+      if (todayShares >= avgShares * 0.5) {
+        // Suppress anomalous opening spike (residual EOD cached volume)
+        stock.hasCrossed20D = false;
+        stock.crossoverTime = null;
+        stock.crossoverSpotPrice = null;
+        stock.justCrossedHighlight = false;
+        return { newlyCrossed: false, event: null };
+      }
     }
   }
 

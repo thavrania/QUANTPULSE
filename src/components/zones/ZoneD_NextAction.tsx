@@ -14,6 +14,7 @@ export function ZoneD_NextAction() {
     setIsJsonModalOpen,
     setIsOptionChainModalOpen,
     showToast,
+    feedMode,
   } = useQuantPulse();
 
   const [isPaperMode, setIsPaperMode] = useState<boolean>(() => {
@@ -42,7 +43,7 @@ export function ZoneD_NextAction() {
     watchlist.find((s) => s.ticker === selectedTicker) || watchlist[0];
   if (!stock) return null;
 
-  const payload = buildNextActionPayload(stock, config);
+  const payload = buildNextActionPayload(stock, config, feedMode === 'SIMULATION');
   const isEligible = payload.isEligibleForBuy;
   const isAlreadyTraded = idempotencyLocks.includes(stock.ticker);
   const showCashFallback = config.instrumentMode === 'OPTION' && !stock.isFnO;

@@ -33,7 +33,10 @@ export function ZoneC_Screener() {
   // Flash highlight state when a new stock is selected
   const [pulseTicker, setPulseTicker] = useState<string | null>(null);
 
-  const eligibleCount = watchlist.filter((s) => s.hasCrossed20D).length;
+  const isSim = feedMode === 'SIMULATION';
+  const eligibleCount = watchlist.filter(
+    (s) => s.hasCrossed20D || getVolumeScreenerMetrics(s, isSim).isEligibleForBuy
+  ).length;
 
   // Sorted watchlist based on user selection
   const sortedWatchlist = useMemo(() => {
@@ -41,8 +44,8 @@ export function ZoneC_Screener() {
     switch (sortOption) {
       case 'PROGRESS_DESC':
         return list.sort((a, b) => {
-          const mA = getVolumeScreenerMetrics(a);
-          const mB = getVolumeScreenerMetrics(b);
+          const mA = getVolumeScreenerMetrics(a, isSim);
+          const mB = getVolumeScreenerMetrics(b, isSim);
           if (mB.progressPct !== mA.progressPct) {
             return mB.progressPct - mA.progressPct;
           }
@@ -53,8 +56,8 @@ export function ZoneC_Screener() {
 
       case 'PROGRESS_ASC':
         return list.sort((a, b) => {
-          const mA = getVolumeScreenerMetrics(a);
-          const mB = getVolumeScreenerMetrics(b);
+          const mA = getVolumeScreenerMetrics(a, isSim);
+          const mB = getVolumeScreenerMetrics(b, isSim);
           if (mA.progressPct !== mB.progressPct) {
             return mA.progressPct - mB.progressPct;
           }
@@ -63,8 +66,8 @@ export function ZoneC_Screener() {
 
       case 'ELIGIBLE_FIRST':
         return list.sort((a, b) => {
-          const mA = getVolumeScreenerMetrics(a);
-          const mB = getVolumeScreenerMetrics(b);
+          const mA = getVolumeScreenerMetrics(a, isSim);
+          const mB = getVolumeScreenerMetrics(b, isSim);
           if (mA.isEligibleForBuy !== mB.isEligibleForBuy) {
             return mA.isEligibleForBuy ? -1 : 1;
           }
@@ -266,7 +269,8 @@ export function ZoneC_Screener() {
 
           <tbody className="divide-y divide-slate-800/70 text-xs">
             {sortedWatchlist.map((stock) => {
-              const m = getVolumeScreenerMetrics(stock);
+              const isRowSim = feedMode === 'SIMULATION' || stock.feedSource === 'SIMULATED';
+              const m = getVolumeScreenerMetrics(stock, isRowSim);
               const isSelectedRow = stock.ticker === selectedTicker;
               const isPulsing = pulseTicker === stock.ticker;
               const barWidth = Math.min(100, Math.round(m.progressPct));
@@ -397,7 +401,7 @@ export function ZoneC_Screener() {
 
                   {/* Exact Crossover Time (HH:MM:SS) */}
                   <td className="py-2.5 px-3 font-mono">
-                    {stock.hasCrossed20D && stock.crossoverTime && todayShares >= avg20DShares ? (
+                    {stock.hasCrossed20D && stock.crossoverTime ? (
                       <div>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-[11px]">
                           ⏱️ {stock.crossoverTime} IST
@@ -425,7 +429,7 @@ export function ZoneC_Screener() {
                       )}
                     </div>
                     <div className="text-[10px] mt-0.5">
-                      {stock.hasCrossed20D && stock.crossoverSpotPrice && todayShares >= avg20DShares ? (
+                      {stock.hasCrossed20D && stock.crossoverSpotPrice ? (
                         <span className="text-amber-300 font-bold font-mono bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20">
                           Crossed @ ₹{stock.crossoverSpotPrice.toFixed(2)}
                         </span>

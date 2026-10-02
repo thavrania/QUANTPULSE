@@ -1,8 +1,9 @@
 import { Stock, SystemConfig, NextActionPayload } from '../types/quant';
 import { getVolumeScreenerMetrics } from './crossoverEngine';
 
-export function buildNextActionPayload(stock: Stock, config: SystemConfig): NextActionPayload {
-  const metrics = getVolumeScreenerMetrics(stock);
+export function buildNextActionPayload(stock: Stock, config: SystemConfig, isSimulation?: boolean): NextActionPayload {
+  const isSim = isSimulation ?? (stock.feedSource === 'SIMULATED');
+  const metrics = getVolumeScreenerMetrics(stock, isSim);
   const cap = config.capitalPerTrade;
 
   // 1. BUY STOCK (EQUITY) DETAILS

@@ -337,10 +337,18 @@ export function ZoneA_Header() {
                   ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/40'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
               }`}
-              title={isLiveStreaming ? 'Click to pause live feed stream' : 'Auto Trade connects live feed automatically at 09:15 market open. Click to manually start feed.'}
+              title={
+                feedMode === 'SIMULATION'
+                  ? (isLiveStreaming ? 'Click to pause simulation stream' : 'Click to start automatic simulation tick stream')
+                  : (isLiveStreaming ? 'Click to pause live feed stream' : 'Auto Trade connects live feed automatically at 09:15 market open. Click to manually start feed.')
+              }
             >
               <span className={`w-1.5 h-1.5 rounded-full ${isLiveStreaming ? 'bg-rose-400 animate-pulse' : 'bg-slate-400'}`}></span>
-              <span>{isLiveStreaming ? '⏸ Pause Feed' : '▶ Start Feed (Override)'}</span>
+              <span>
+                {feedMode === 'SIMULATION'
+                  ? (isLiveStreaming ? '⏸ Pause Simulation' : '▶ Start Simulation')
+                  : (isLiveStreaming ? '⏸ Pause Feed' : '▶ Start Feed (Override)')}
+              </span>
             </button>
 
             {feedMode === 'SIMULATION' && (

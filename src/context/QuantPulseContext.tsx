@@ -28,6 +28,7 @@ import {
 } from '@/lib/stocks/stockMaster';
 import {
   INITIAL_WATCHLIST_DATA,
+  INITIAL_SIMULATION_WATCHLIST_DATA,
   INITIAL_CROSSOVER_LOGS,
   formatClockIST,
   checkAndLatchVolumeCrossover,
@@ -459,14 +460,18 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedFeedMode = localStorage.getItem('qp_feed_mode') as 'DHAN_LIVE' | 'SIMULATION';
-      if (savedFeedMode) setFeedModeState(savedFeedMode);
-    }
-  }, []);
-
-  const setFeedMode = useCallback((mode: 'DHAN_LIVE' | 'SIMULATION') => {
-    setFeedModeState(mode);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('qp_feed_mode', mode);
+      if (savedFeedMode) {
+        setFeedModeState(savedFeedMode);
+        if (savedFeedMode === 'SIMULATION') {
+          setWatchlist((prevWl) => {
+            const hasAnyVolume = prevWl.some((s) => (s.todayTradedShares || s.todayVolM) > 0);
+            if (!hasAnyVolume) {
+              return JSON.parse(JSON.stringify(INITIAL_SIMULATION_WATCHLIST_DATA));
+            }
+            return prevWl.map((stock) => ({ ...stock, feedSource: 'SIMULATED' as const }));
+          });
+        }
+      }
     }
   }, []);
 
@@ -490,6 +495,34 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     },
     []
   );
+
+  const setFeedMode = useCallback((mode: 'DHAN_LIVE' | 'SIMULATION') => {
+    setFeedModeState(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qp_feed_mode', mode);
+    }
+    if (mode === 'SIMULATION') {
+      setWatchlist((prevWl) => {
+        const hasAnyVolume = prevWl.some((s) => (s.todayTradedShares || s.todayVolM) > 0);
+        if (!hasAnyVolume) {
+          return JSON.parse(JSON.stringify(INITIAL_SIMULATION_WATCHLIST_DATA));
+        }
+        return prevWl.map((stock) => ({
+          ...stock,
+          feedSource: 'SIMULATED' as const,
+        }));
+      });
+      showToast('🧪 Simulator Feed Selected: Testing mode active. Market session gates bypassed for demo.', 'info');
+    } else {
+      setWatchlist((prevWl) =>
+        prevWl.map((stock) => ({
+          ...stock,
+          feedSource: 'LIVE_DHAN' as const,
+        }))
+      );
+      showToast('📈 Live Dhan Feed Selected.', 'info');
+    }
+  }, [showToast]);
 
   // Circuit Breaker auto-pause listener
   useEffect(() => {
@@ -1548,14 +1581,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         console.warn(`[AutoTrade] Skipped buy for ${tickerSymbol}: Live feed is not active.`);
         return;
       }
-      if (!hasTodayMarketSessionStarted()) return;
+      if (feedMode !== 'SIMULATION' && !hasTodayMarketSessionStarted()) return;
 
-      const ist = getISTDate();
-      const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
-      // Guard: Opening 30s stabilization buffer to prevent broker cache anomalies
-      if (secsSinceOpen >= 0 && secsSinceOpen < 30) {
-        console.warn(`[AutoTrade] Held order for ${tickerSymbol} during opening 30s stabilization buffer.`);
-        return;
+      if (feedMode !== 'SIMULATION') {
+        const ist = getISTDate();
+        const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
+        // Guard: Opening 30s stabilization buffer to prevent broker cache anomalies
+        if (secsSinceOpen >= 0 && secsSinceOpen < 30) {
+          console.warn(`[AutoTrade] Held order for ${tickerSymbol} during opening 30s stabilization buffer.`);
+          return;
+        }
       }
 
       if (idempotencyLocksRef.current.includes(tickerSymbol)) return;
@@ -1571,7 +1606,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
       executeBuy(tickerSymbol, 'AUTO');
     },
-    [config.executionMode, config.maxOpenPositions, executeBuy, positions, showToast]
+    [config.executionMode, config.maxOpenPositions, executeBuy, feedMode, positions, showToast]
   );
 
   /**
@@ -1589,11 +1624,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       stateMachineRef.current.getSnapshot().currentState === 'LIVE_FEED_ACTIVE' ||
       isLiveStreamingRef.current;
     if (!isFeedActive) return;
-    if (!hasTodayMarketSessionStarted()) return;
+    if (feedMode !== 'SIMULATION' && !hasTodayMarketSessionStarted()) return;
 
-    const ist = getISTDate();
-    const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
-    if (secsSinceOpen >= 0 && secsSinceOpen < 30) return;
+    if (feedMode !== 'SIMULATION') {
+      const ist = getISTDate();
+      const secsSinceOpen = (ist.hours * 3600 + ist.minutes * 60 + ist.seconds) - (9 * 3600 + 15 * 60);
+      if (secsSinceOpen >= 0 && secsSinceOpen < 30) return;
+    }
 
     const currentPositions = positionsRef.current || [];
     const openCount = currentPositions.filter((p) => p.stateIndex < 4).length;
@@ -1601,6 +1638,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     if (availableSlots <= 0) return;
 
     const currentWatchlist = watchlistRef.current.length > 0 ? watchlistRef.current : watchlist;
+    const isSim = feedMode === 'SIMULATION';
 
     for (const stock of currentWatchlist) {
       if (availableSlots <= 0) break;
@@ -1615,14 +1653,14 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       if (idempotencyLocksRef.current.includes(stock.ticker)) continue;
 
       // 3. Evaluate eligibility
-      const metrics = getVolumeScreenerMetrics(stock);
+      const metrics = getVolumeScreenerMetrics(stock, isSim);
       if (metrics.isEligibleForBuy) {
         console.log(`[AutoTrade Reconciler] Automatically buying eligible stock: ${stock.ticker}`);
         executeBuy(stock.ticker, 'AUTO');
         availableSlots--;
       }
     }
-  }, [config.executionMode, config.maxOpenPositions, executeBuy, watchlist]);
+  }, [config.executionMode, config.maxOpenPositions, executeBuy, feedMode, watchlist]);
 
   useEffect(() => {
     reconcileAutoTradeOrdersRef.current = reconcileAutoTradeOrders;
@@ -1651,9 +1689,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           avg20DTradedShares: avgShares,
           spotLtp: newSpotLtp,
           changePct: newChangePct,
+          feedSource: 'SIMULATED',
         };
 
-        const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, timeStr);
+        const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, timeStr, true);
         if (newlyCrossed && event) {
           setCrossoverEvents((prevEv) => {
             if (prevEv.some((e) => e.ticker === event.ticker)) {
@@ -2537,8 +2576,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               avg20DTradedShares: avgShares,
               spotLtp: newSpot,
               changePct: newChangePct,
+              feedSource: 'SIMULATED',
             };
-            const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, timeStr);
+            const { newlyCrossed, event } = checkAndLatchVolumeCrossover(updated, timeStr, true);
             if (newlyCrossed && event) {
               setCrossoverEvents((prevEv) => {
                 if (prevEv.some((e) => e.ticker === event.ticker)) {
@@ -2949,10 +2989,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       setIsLiveStreaming(false);
     }
     setClockSeconds(getNowIstSeconds());
-    setWatchlist(JSON.parse(JSON.stringify(INITIAL_WATCHLIST_DATA)));
+    setWatchlist(JSON.parse(JSON.stringify(INITIAL_SIMULATION_WATCHLIST_DATA)));
     setCrossoverEvents(JSON.parse(JSON.stringify(INITIAL_CROSSOVER_LOGS)));
     setIdempotencyLocks([]);
-    setSelectedTicker('TCS');
+    setSelectedTicker('ICICIBANK');
     showToast('Simulation reset! Ready to test 20D crossover latching.', 'info');
   }, [showToast]);
 
