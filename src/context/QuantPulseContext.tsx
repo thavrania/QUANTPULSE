@@ -51,7 +51,14 @@ import {
 import { MarketSessionInfo, getIndianMarketSession, getISTDate, hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 import { IngestionTelemetry } from '@/lib/services/liveIngestionEngine';
 import { requestQueueEngine } from '@/lib/engine/requestQueueEngine';
-import { formatTslAlert, formatOrderAlert, formatAutoPilotAlert, formatCrossoverAlert, sendTelegramMessage } from '@/lib/alerts/telegramService';
+import {
+  formatTslAlert,
+  formatOrderAlert,
+  formatAutoPilotAlert,
+  formatCrossoverAlert,
+  formatKillSwitchAlert,
+  sendTelegramMessage,
+} from '@/lib/alerts/telegramService';
 import {
   evaluateAutoPilot,
   PreMarketAutoPilotStatus,
@@ -505,6 +512,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       if (!storedChat || storedChat === '-1005577627015') {
         localStorage.setItem('qp_telegram_chat_id', defaultChat);
       }
+
+      if (!localStorage.getItem('qp_notify_crossover')) localStorage.setItem('qp_notify_crossover', 'true');
+      if (!localStorage.getItem('qp_notify_order')) localStorage.setItem('qp_notify_order', 'true');
+      if (!localStorage.getItem('qp_notify_tsl')) localStorage.setItem('qp_notify_tsl', 'true');
+      if (!localStorage.getItem('qp_notify_autopilot')) localStorage.setItem('qp_notify_autopilot', 'true');
+      if (!localStorage.getItem('qp_notify_killswitch')) localStorage.setItem('qp_notify_killswitch', 'true');
 
       const savedFeedMode = localStorage.getItem('qp_feed_mode') as 'DHAN_LIVE' | 'SIMULATION';
       if (savedFeedMode) {
@@ -2316,7 +2329,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           if (typeof window !== 'undefined') {
             const botToken = localStorage.getItem('qp_telegram_bot_token');
             const chatId = localStorage.getItem('qp_telegram_chat_id');
-            if (botToken && chatId) {
+            const notifyAutoPilot = localStorage.getItem('qp_notify_autopilot') !== 'false';
+            if (botToken && chatId && notifyAutoPilot) {
               const msg = formatAutoPilotAlert(1, '20D Baseline Sync', 'Calculated 20-Day historical volume benchmarks for all focus stocks.', ist.timeStr);
               sendTelegramMessage(botToken, chatId, msg).catch(() => {});
             }
@@ -2330,7 +2344,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           if (typeof window !== 'undefined') {
             const botToken = localStorage.getItem('qp_telegram_bot_token');
             const chatId = localStorage.getItem('qp_telegram_chat_id');
-            if (botToken && chatId) {
+            const notifyAutoPilot = localStorage.getItem('qp_notify_autopilot') !== 'false';
+            if (botToken && chatId && notifyAutoPilot) {
               const msg = formatAutoPilotAlert(2, 'Day Start Session Reset', 'Today traded volume zeroed. Cleared prior crossover event flags.', ist.timeStr);
               sendTelegramMessage(botToken, chatId, msg).catch(() => {});
             }
@@ -2344,7 +2359,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           if (typeof window !== 'undefined') {
             const botToken = localStorage.getItem('qp_telegram_bot_token');
             const chatId = localStorage.getItem('qp_telegram_chat_id');
-            if (botToken && chatId) {
+            const notifyAutoPilot = localStorage.getItem('qp_notify_autopilot') !== 'false';
+            if (botToken && chatId && notifyAutoPilot) {
               const msg = formatAutoPilotAlert(3, 'Pre-Open Live Sync', 'NSE pre-open discovered opening prices synced. ATM Option strikes calibrated.', ist.timeStr);
               sendTelegramMessage(botToken, chatId, msg).catch(() => {});
             }
@@ -2359,7 +2375,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           if (typeof window !== 'undefined') {
             const botToken = localStorage.getItem('qp_telegram_bot_token');
             const chatId = localStorage.getItem('qp_telegram_chat_id');
-            if (botToken && chatId) {
+            const notifyAutoPilot = localStorage.getItem('qp_notify_autopilot') !== 'false';
+            if (botToken && chatId && notifyAutoPilot) {
               const msg = formatAutoPilotAlert(4, 'Start Live Feed', 'Live quote & tick ingestion active. Armed for 09:15 opening bell!', ist.timeStr);
               sendTelegramMessage(botToken, chatId, msg).catch(() => {});
             }
@@ -2732,6 +2749,21 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       })
     );
     showToast(`🛑 KILL-SWITCH: Auto Trade OFF. Squared off ${closed} open trade(s).`, 'rose');
+
+    if (typeof window !== 'undefined') {
+      const botToken = localStorage.getItem('qp_telegram_bot_token');
+      const chatId = localStorage.getItem('qp_telegram_chat_id');
+      const notifyKillSwitch = localStorage.getItem('qp_notify_killswitch') !== 'false';
+      if (botToken && chatId && notifyKillSwitch) {
+        const timeIST = getISTDate().timeStr;
+        const killMsg = formatKillSwitchAlert(closed, timeIST);
+        fetch('/api/alerts/telegram', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ botToken, chatId, message: killMsg }),
+        }).catch(() => {});
+      }
+    }
   }, [showToast]);
 
   const advancePositionState = useCallback(

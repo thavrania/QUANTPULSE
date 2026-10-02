@@ -133,3 +133,15 @@ export function formatAutoPilotAlert(stepNumber: number, stepName: string, detai
 ──────────────────────
 ⚡ _Automated NSE/BSE Pre-Market Pipeline (QuantPulse)_`;
 }
+
+export function formatKillSwitchAlert(closedCount: number, timeIST: string): string {
+  return `🛑 *QUANTPULSE — EMERGENCY PANIC KILL SWITCH ACTIVATED!*
+──────────────────────
+• *Action:* Emergency Portfolio Flattening
+• *Closed Positions:* \`${closedCount} Trade(s) Squared Off\`
+• *Execution Mode:* 🔒 Forced to \`MANUAL\`
+• *Feed Status:* Ingestion Stream Halted
+• *Timestamp:* \`${timeIST} IST\`
+──────────────────────
+⚠️ _QuantPulse Risk Engine: Emergency Protocol Executed_`;
+}

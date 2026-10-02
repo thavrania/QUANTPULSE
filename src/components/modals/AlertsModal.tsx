@@ -2,17 +2,50 @@
 
 import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
-import { formatCrossoverAlert } from '@/lib/alerts/telegramService';
+import {
+  formatCrossoverAlert,
+  formatOrderAlert,
+  formatTslAlert,
+  formatAutoPilotAlert,
+  formatKillSwitchAlert,
+} from '@/lib/alerts/telegramService';
+
+type AlertTypeId = 'PING' | 'CROSSOVER' | 'ORDER' | 'TSL' | 'AUTOPILOT' | 'KILL_SWITCH';
+
+function getAlertLabel(type: AlertTypeId): string {
+  switch (type) {
+    case 'PING':
+      return 'Connection Ping';
+    case 'CROSSOVER':
+      return 'Buy-Eligible Crossover Alert';
+    case 'ORDER':
+      return 'Order Dispatched (Trade Took) Alert';
+    case 'TSL':
+      return 'Target / Trailing SL Alert';
+    case 'AUTOPILOT':
+      return 'Pre-Market Auto-Pilot Alert';
+    case 'KILL_SWITCH':
+      return 'Emergency Kill Switch Alert';
+    default:
+      return 'Telegram Alert';
+  }
+}
 
 export function AlertsModal() {
   const { showToast, isAlertsModalOpen, setIsAlertsModalOpen } = useQuantPulse();
 
   const [botToken, setBotToken] = useState('');
   const [chatId, setChatId] = useState('');
+
+  // 5 Individual Alert Type Toggles
   const [notifyCrossover, setNotifyCrossover] = useState(true);
   const [notifyOrder, setNotifyOrder] = useState(true);
-  const [isSendingTest, setIsSendingTest] = useState(false);
-  const [isSendingCrossoverTest, setIsSendingCrossoverTest] = useState(false);
+  const [notifyTsl, setNotifyTsl] = useState(true);
+  const [notifyAutoPilot, setNotifyAutoPilot] = useState(true);
+  const [notifyKillSwitch, setNotifyKillSwitch] = useState(true);
+
+  // Active testing state for individual buttons
+  const [testingAlertId, setTestingAlertId] = useState<AlertTypeId | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -37,6 +70,18 @@ export function AlertsModal() {
 
       const savedNotifyCross = localStorage.getItem('qp_notify_crossover');
       if (savedNotifyCross !== null) setNotifyCrossover(savedNotifyCross === 'true');
+
+      const savedNotifyOrder = localStorage.getItem('qp_notify_order');
+      if (savedNotifyOrder !== null) setNotifyOrder(savedNotifyOrder === 'true');
+
+      const savedNotifyTsl = localStorage.getItem('qp_notify_tsl');
+      if (savedNotifyTsl !== null) setNotifyTsl(savedNotifyTsl === 'true');
+
+      const savedNotifyAutoPilot = localStorage.getItem('qp_notify_autopilot');
+      if (savedNotifyAutoPilot !== null) setNotifyAutoPilot(savedNotifyAutoPilot === 'true');
+
+      const savedNotifyKillSwitch = localStorage.getItem('qp_notify_killswitch');
+      if (savedNotifyKillSwitch !== null) setNotifyKillSwitch(savedNotifyKillSwitch === 'true');
     }
   }, [isAlertsModalOpen]);
 
@@ -49,59 +94,52 @@ export function AlertsModal() {
     localStorage.setItem('qp_telegram_chat_id', chatId.trim());
     localStorage.setItem('qp_notify_crossover', String(notifyCrossover));
     localStorage.setItem('qp_notify_order', String(notifyOrder));
+    localStorage.setItem('qp_notify_tsl', String(notifyTsl));
+    localStorage.setItem('qp_notify_autopilot', String(notifyAutoPilot));
+    localStorage.setItem('qp_notify_killswitch', String(notifyKillSwitch));
     showToast('Alert preferences saved successfully!', 'emerald');
     onClose();
   };
 
-  const handleTestAlert = async () => {
-    if (!botToken.trim() || !chatId.trim()) {
-      showToast('Enter both Telegram Bot Token and Chat ID to test.', 'rose');
-      return;
-    }
-
-    setIsSendingTest(true);
-    try {
-      const res = await fetch('/api/alerts/telegram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          botToken: botToken.trim(),
-          chatId: chatId.trim(),
-          testPing: true,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        showToast('✅ Test Alert delivered to your Telegram!', 'emerald');
-      } else {
-        showToast(`❌ ${data.message}`, 'rose');
-      }
-    } catch (err: any) {
-      showToast(`Network error: ${err.message}`, 'rose');
-    } finally {
-      setIsSendingTest(false);
-    }
+  const handleToggleAll = (enable: boolean) => {
+    setNotifyCrossover(enable);
+    setNotifyOrder(enable);
+    setNotifyTsl(enable);
+    setNotifyAutoPilot(enable);
+    setNotifyKillSwitch(enable);
+    showToast(enable ? 'All alert types enabled.' : 'All alert types muted.', 'info');
   };
 
-  const handleTestCrossoverAlert = async () => {
+  const handleTestSpecificAlert = async (alertType: AlertTypeId) => {
     if (!botToken.trim() || !chatId.trim()) {
       showToast('Enter both Telegram Bot Token and Chat ID to test.', 'rose');
       return;
     }
 
-    setIsSendingCrossoverTest(true);
+    setTestingAlertId(alertType);
     try {
       const nowIST = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
-      const sampleMsg = formatCrossoverAlert(
-        'RELIANCE',
-        14.25,
-        12.50,
-        2985.40,
-        nowIST,
-        14250000,
-        12500000
-      );
+      let messageToSend = '';
+      let isPing = false;
+
+      if (alertType === 'PING') {
+        isPing = true;
+      } else if (alertType === 'CROSSOVER') {
+        messageToSend = formatCrossoverAlert('RELIANCE', 14.25, 12.50, 2985.40, nowIST, 14250000, 12500000);
+      } else if (alertType === 'ORDER') {
+        messageToSend = formatOrderAlert('RELIANCE 2980 CE', 'AUTO BUY', 250, 48.50, 'ORD-89421', 'LIVE_DHAN');
+      } else if (alertType === 'TSL') {
+        messageToSend = formatTslAlert('RELIANCE 2980 CE', 2, 'State 2: Breakeven (+1R)', 48.50, 0, nowIST);
+      } else if (alertType === 'AUTOPILOT') {
+        messageToSend = formatAutoPilotAlert(
+          3,
+          'Pre-Open Live Sync',
+          'NSE pre-open discovered opening prices synced. ATM Option strikes calibrated.',
+          nowIST
+        );
+      } else if (alertType === 'KILL_SWITCH') {
+        messageToSend = formatKillSwitchAlert(2, nowIST);
+      }
 
       const res = await fetch('/api/alerts/telegram', {
         method: 'POST',
@@ -109,128 +147,281 @@ export function AlertsModal() {
         body: JSON.stringify({
           botToken: botToken.trim(),
           chatId: chatId.trim(),
-          message: sampleMsg,
+          testPing: isPing,
+          message: messageToSend,
         }),
       });
 
       const data = await res.json();
       if (data.success) {
-        showToast('🚀 Sample Buy-Eligibility Alert delivered to Telegram!', 'emerald');
+        showToast(`✅ ${getAlertLabel(alertType)} delivered to Telegram!`, 'emerald');
       } else {
         showToast(`❌ ${data.message}`, 'rose');
       }
     } catch (err: any) {
       showToast(`Network error: ${err.message}`, 'rose');
     } finally {
-      setIsSendingCrossoverTest(false);
+      setTestingAlertId(null);
     }
   };
 
+  const alertCards = [
+    {
+      id: 'CROSSOVER' as AlertTypeId,
+      badge: 'BUY ELIGIBLE',
+      badgeColor: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+      icon: '🚀',
+      title: 'Buy Eligible (20D Volume Crossover)',
+      desc: "Dispatched the exact second a stock's today traded shares break above its 20-Day Average benchmark, officially unlocking buy eligibility.",
+      checked: notifyCrossover,
+      setChecked: setNotifyCrossover,
+      sampleText: 'Sample: RELIANCE Crossover @ 09:45 IST • ELIGIBLE FOR BUY',
+    },
+    {
+      id: 'ORDER' as AlertTypeId,
+      badge: 'TRADE TOOK',
+      badgeColor: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+      icon: '⚡',
+      title: 'Trade Taken (Order Executed / OMS)',
+      desc: 'Dispatched whenever an Auto or Manual Buy order executes (Paper Simulator or Live Dhan Execution) with strike, quantity, and Order ID.',
+      checked: notifyOrder,
+      setChecked: setNotifyOrder,
+      sampleText: 'Sample: RELIANCE 2980 CE BUY 250 Units @ ₹48.50',
+    },
+    {
+      id: 'TSL' as AlertTypeId,
+      badge: 'PROFIT / TSL',
+      badgeColor: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+      icon: '🎯',
+      title: 'Target Hits & Trailing SL Milestones',
+      desc: 'Dispatched as trades achieve +1R Breakeven (0R Risk-Free), +2R (+1R Profit Locked), and final Target Hit / SL Square Off.',
+      checked: notifyTsl,
+      setChecked: setNotifyTsl,
+      sampleText: 'Sample: Breakeven (+1R) Achieved • SL Moved to Entry (Risk-Free)',
+    },
+    {
+      id: 'AUTOPILOT' as AlertTypeId,
+      badge: 'SCHEDULED',
+      badgeColor: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
+      icon: '🤖',
+      title: 'Pre-Market Auto-Pilot Pipeline',
+      desc: 'Dispatched during morning stages: 08:50 AM baseline sync, 09:00 AM day reset, 09:07 AM pre-open sync, 09:14 AM live feed connect.',
+      checked: notifyAutoPilot,
+      setChecked: setNotifyAutoPilot,
+      sampleText: 'Sample: Pre-Open Live Sync Completed • Strikes Calibrated',
+    },
+    {
+      id: 'KILL_SWITCH' as AlertTypeId,
+      badge: 'EMERGENCY',
+      badgeColor: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
+      icon: '🛑',
+      title: 'Emergency Panic Kill Switch',
+      desc: 'Dispatched when Panic Kill Switch is pressed to immediately square off all open positions, cancel active orders, and halt live trading.',
+      checked: notifyKillSwitch,
+      setChecked: setNotifyKillSwitch,
+      sampleText: 'Sample: Portfolio Flattening Protocol • 2 Trade(s) Squared Off',
+    },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-panel border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-panel border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[92vh] shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-800 bg-slate-900 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-300 font-bold text-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-300 font-bold text-base shadow-inner">
               🔔
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Instant Webhook Push Alerts</h3>
-              <p className="text-xs text-slate-400">Telegram Bot Notifications for Crossovers &amp; Fills</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white tracking-wide">Telegram Push Alert Settings</h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">
+                  LIVE BOT
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Configure triggers &amp; preview notifications delivered to your Telegram group
+              </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-white text-sm px-2.5 py-1 rounded bg-slate-800"
+            className="text-slate-400 hover:text-white text-sm px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 transition"
           >
             ✕
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-5 space-y-4 text-xs text-slate-300">
-          <div>
-            <label className="block text-[10px] text-slate-400 uppercase font-semibold mb-1">
-              Telegram Bot Token
-            </label>
-            <input
-              type="password"
-              placeholder="e.g. 7123456789:AAHxyz_your_bot_token"
-              value={botToken}
-              onChange={(e) => setBotToken(e.target.value)}
-              className="w-full bg-slate-900 text-xs font-mono text-white px-3 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-400"
-            />
+        {/* Scrollable Body */}
+        <div className="p-5 overflow-y-auto space-y-4 text-xs text-slate-300 flex-1">
+          {/* Bot & Chat ID Grid */}
+          <div className="p-4 bg-obsidian/90 rounded-xl border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                Telegram Credentials &amp; Target Destination
+              </span>
+              <span className="text-[10px] text-cyan-400 font-mono">@SureShotTradeBot</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] text-slate-400 uppercase font-semibold mb-1">
+                  Telegram Bot Token
+                </label>
+                <input
+                  type="password"
+                  placeholder="e.g. 8602260354:AAGfdG8f..."
+                  value={botToken}
+                  onChange={(e) => setBotToken(e.target.value)}
+                  className="w-full bg-slate-900 text-xs font-mono text-white px-3 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-400 uppercase font-semibold mb-1">
+                  Telegram Group / Chat ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. -1004477627015"
+                  value={chatId}
+                  onChange={(e) => setChatId(e.target.value)}
+                  className="w-full bg-slate-900 text-xs font-mono text-white px-3 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-400"
+                />
+              </div>
+            </div>
+
+            {chatId === '-1004477627015' && (
+              <div className="text-[11px] text-emerald-400 flex items-center gap-1.5 pt-0.5">
+                <span>✓</span> Verified Destination: <strong>SureShot</strong> Supergroup (ID: <code>-1004477627015</code>)
+              </div>
+            )}
           </div>
 
-          <div>
-            <label className="block text-[10px] text-slate-400 uppercase font-semibold mb-1">
-              Telegram Chat ID (Personal or Group)
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. 987654321 or -10012345678"
-              value={chatId}
-              onChange={(e) => setChatId(e.target.value)}
-              className="w-full bg-slate-900 text-xs font-mono text-white px-3 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-400"
-            />
+          {/* Alert Types Matrix Section Header */}
+          <div className="flex items-center justify-between pt-1">
+            <div>
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Notification Trigger Types
+              </span>
+              <p className="text-[11px] text-slate-400">
+                Toggle each alert type on/off and click <strong>Test Alert</strong> to preview live in Telegram
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleToggleAll(true)}
+                className="text-[10px] font-semibold px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+              >
+                Enable All
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleAll(false)}
+                className="text-[10px] font-semibold px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 transition"
+              >
+                Mute All
+              </button>
+            </div>
           </div>
 
-          {/* Trigger Checkboxes */}
-          <div className="p-3 bg-obsidian rounded-xl border border-slate-800 space-y-2.5">
-            <span className="font-semibold text-white block">Active Notification Triggers</span>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={notifyCrossover}
-                onChange={(e) => setNotifyCrossover(e.target.checked)}
-                className="w-4 h-4 rounded text-emerald-500 bg-slate-900 border-slate-700 focus:ring-0"
-              />
-              <span>Send alert when a stock latches 20-Day Volume Crossover</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={notifyOrder}
-                onChange={(e) => setNotifyOrder(e.target.checked)}
-                className="w-4 h-4 rounded text-emerald-500 bg-slate-900 border-slate-700 focus:ring-0"
-              />
-              <span>Send alert on Order Placement (Paper Sim &amp; Live Dhan)</span>
-            </label>
+          {/* 5 Distinct Alert Type Cards */}
+          <div className="space-y-2.5">
+            {alertCards.map((card) => {
+              const isTesting = testingAlertId === card.id;
+              return (
+                <div
+                  key={card.id}
+                  className={`p-3.5 rounded-xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    card.checked
+                      ? 'bg-slate-900/90 border-slate-700 hover:border-slate-600'
+                      : 'bg-slate-900/40 border-slate-800/70 opacity-70'
+                  }`}
+                >
+                  {/* Left: Icon, Badge & Details */}
+                  <div className="flex items-start gap-3 flex-1">
+                    <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-sm shrink-0 mt-0.5">
+                      {card.icon}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${card.badgeColor}`}>
+                          {card.badge}
+                        </span>
+                        <strong className="text-xs text-white">{card.title}</strong>
+                        {card.checked ? (
+                          <span className="text-[10px] text-emerald-400 font-mono">● Active</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-mono">○ Muted</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">{card.desc}</p>
+                      <div className="text-[10px] text-slate-500 font-mono italic">{card.sampleText}</div>
+                    </div>
+                  </div>
+
+                  {/* Right: Toggle & Test Button */}
+                  <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleTestSpecificAlert(card.id)}
+                      disabled={isTesting}
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 transition flex items-center gap-1.5"
+                      title={`Send sample ${card.title} to your Telegram group`}
+                    >
+                      {isTesting ? (
+                        <>
+                          <span className="animate-spin text-xs">⏳</span> Sending...
+                        </>
+                      ) : (
+                        <>
+                          <span>⚡</span> Test Alert
+                        </>
+                      )}
+                    </button>
+
+                    {/* Styled Toggle Switch */}
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={card.checked}
+                        onChange={(e) => card.setChecked(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500 border border-slate-700"></div>
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Instructions Box */}
+          {/* Help Tips */}
           <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <div className="font-semibold text-slate-200">Get Telegram credentials in 60 seconds (Free):</div>
-            <div>1. In Telegram, search for <strong className="text-cyan-300">@BotFather</strong> and send <code>/newbot</code> to get your token.</div>
-            <div>2. Search for <strong className="text-cyan-300">@userinfobot</strong> and send <code>/start</code> to see your Chat ID.</div>
-            <div>3. Press Start in your new bot and click <strong>Test Ping</strong> below!</div>
+            <div className="font-semibold text-slate-200">💡 Quick Telegram Tips:</div>
+            <div>
+              • <strong>SureShot Group:</strong> Ensure <code>@SureShotTradeBot</code> has administrator privileges so it can dispatch alerts without restrictions.
+            </div>
+            <div>
+              • <strong>Real-time Trade Execution:</strong> If Execution Mode is set to <strong>AUTO</strong>, a crossover triggers both <strong>Buy Eligible</strong> and <strong>Trade Taken</strong> alerts sequentially.
+            </div>
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Sticky Footer */}
         <div className="px-5 py-3 border-t border-slate-800 bg-slate-900 flex justify-between items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleTestAlert}
-              disabled={isSendingTest || isSendingCrossoverTest}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
-              title="Send a basic connection test ping"
-            >
-              {isSendingTest ? 'Pinging...' : '⚡ Test Ping'}
-            </button>
-            <button
-              type="button"
-              onClick={handleTestCrossoverAlert}
-              disabled={isSendingTest || isSendingCrossoverTest}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition"
-              title="Send an exact sample 20D Volume Crossover (Buy-Eligibility) alert to your Telegram group"
-            >
-              {isSendingCrossoverTest ? 'Sending...' : '🚀 Test Buy-Eligibility Alert'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => handleTestSpecificAlert('PING')}
+            disabled={testingAlertId === 'PING'}
+            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition flex items-center gap-1.5"
+            title="Send a basic connection handshake ping to verify credentials"
+          >
+            {testingAlertId === 'PING' ? 'Pinging...' : '⚡ General Test Ping'}
+          </button>
+
           <div className="flex gap-2">
             <button
               type="button"
@@ -242,9 +433,9 @@ export function AlertsModal() {
             <button
               type="button"
               onClick={handleSave}
-              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition"
+              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition shadow-lg shadow-cyan-500/20"
             >
-              Save Alerts
+              Save Alert Settings
             </button>
           </div>
         </div>
