@@ -14,8 +14,19 @@ export function AlertsModal() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setBotToken(localStorage.getItem('qp_telegram_bot_token') || '');
-      setChatId(localStorage.getItem('qp_telegram_chat_id') || '');
+      const defaultToken = process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_BOT_TOKEN || '8602260354:AAGfdG8fTeS24QpP9QXiooNWRuKTepyr0Mw';
+      const defaultChat = process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_CHAT_ID || '-1005577627015';
+      const savedToken = localStorage.getItem('qp_telegram_bot_token');
+      const savedChat = localStorage.getItem('qp_telegram_chat_id');
+
+      const activeToken = savedToken || defaultToken;
+      const activeChat = savedChat || defaultChat;
+      setBotToken(activeToken);
+      setChatId(activeChat);
+
+      if (!savedToken) localStorage.setItem('qp_telegram_bot_token', activeToken);
+      if (!savedChat) localStorage.setItem('qp_telegram_chat_id', activeChat);
+
       const savedNotifyCross = localStorage.getItem('qp_notify_crossover');
       if (savedNotifyCross !== null) setNotifyCrossover(savedNotifyCross === 'true');
     }
