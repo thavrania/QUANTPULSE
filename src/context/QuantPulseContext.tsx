@@ -51,7 +51,7 @@ import {
 import { MarketSessionInfo, getIndianMarketSession, getISTDate, hasTodayMarketSessionStarted } from '@/lib/services/marketHoursService';
 import { IngestionTelemetry } from '@/lib/services/liveIngestionEngine';
 import { requestQueueEngine } from '@/lib/engine/requestQueueEngine';
-import { formatTslAlert, formatOrderAlert, formatAutoPilotAlert, sendTelegramMessage } from '@/lib/alerts/telegramService';
+import { formatTslAlert, formatOrderAlert, formatAutoPilotAlert, formatCrossoverAlert, sendTelegramMessage } from '@/lib/alerts/telegramService';
 import {
   evaluateAutoPilot,
   PreMarketAutoPilotStatus,
@@ -155,6 +155,43 @@ interface QuantPulseContextType {
 }
 
 const QuantPulseContext = createContext<QuantPulseContextType | undefined>(undefined);
+
+function dispatchTelegramCrossoverAlert(
+  ticker: string,
+  todayVolM: number,
+  avgVol20DM: number,
+  spotLtp: number,
+  timeStr: string,
+  todayShares?: number,
+  avgShares?: number
+) {
+  if (typeof window === 'undefined') return;
+  const botToken = localStorage.getItem('qp_telegram_bot_token');
+  const chatId = localStorage.getItem('qp_telegram_chat_id');
+  const notifyCross = localStorage.getItem('qp_notify_crossover') !== 'false';
+  if (botToken && chatId && notifyCross) {
+    const msg = formatCrossoverAlert(
+      ticker,
+      todayVolM,
+      avgVol20DM,
+      spotLtp,
+      timeStr,
+      todayShares,
+      avgShares
+    );
+    fetch('/api/alerts/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        botToken,
+        chatId,
+        message: msg,
+      }),
+    }).catch((err) => {
+      console.warn('[Telegram Alert] Failed to dispatch crossover message:', err);
+    });
+  }
+}
 
 export function QuantPulseProvider({ children }: { children: React.ReactNode }) {
   const [watchlist, setWatchlist] = useState<Stock[]>(() => {
@@ -1751,22 +1788,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           }
 
           // Automated Telegram Push Alert
-          if (typeof window !== 'undefined') {
-            const botToken = localStorage.getItem('qp_telegram_bot_token');
-            const chatId = localStorage.getItem('qp_telegram_chat_id');
-            const notifyCross = localStorage.getItem('qp_notify_crossover') !== 'false';
-            if (botToken && chatId && notifyCross) {
-              fetch('/api/alerts/telegram', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  botToken,
-                  chatId,
-                  message: `🚀 *QUANTPULSE 20D CROSSOVER!*\nSymbol: \`${stock.ticker}\`\nTime: \`${timeStr} IST\`\nToday Vol: \`${newTodayVol.toFixed(2)}M\` (vs 20D Avg: \`${stock.avgVol20DM.toFixed(2)}M\`)\nSpot Price: \`₹${newSpotLtp.toFixed(2)}\`\nStatus: 🟢 *ELIGIBLE FOR BUY*`,
-                }),
-              }).catch(() => {});
-            }
-          }
+          dispatchTelegramCrossoverAlert(
+            stock.ticker,
+            updated.todayVolM,
+            stock.avgVol20DM,
+            updated.spotLtp,
+            timeStr,
+            updated.todayTradedShares,
+            updated.avg20DTradedShares
+          );
         }
         return updated;
       });
@@ -2031,23 +2061,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 // Dispatch auto-order only on new verified crossover event
                 dispatchAutoBuyOnCrossover(stock.ticker);
 
-                // Telegram push
-                if (typeof window !== 'undefined') {
-                  const botToken = localStorage.getItem('qp_telegram_bot_token');
-                  const chatId = localStorage.getItem('qp_telegram_chat_id');
-                  const notifyCross = localStorage.getItem('qp_notify_crossover') !== 'false';
-                  if (botToken && chatId && notifyCross) {
-                    fetch('/api/alerts/telegram', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        botToken,
-                        chatId,
-                        message: `🚀 *QUANTPULSE 20D CROSSOVER (LIVE FEED)!*\nSymbol: \`${stock.ticker}\`\nTime: \`${nowTime} IST\`\nToday Vol: \`${updated.todayVolM.toFixed(2)}M\` (vs 20D: \`${stock.avgVol20DM.toFixed(2)}M\`)\nSpot Price: \`₹${updated.spotLtp.toFixed(2)}\`\nStatus: 🟢 *ELIGIBLE FOR BUY*`,
-                      }),
-                    }).catch(() => {});
-                  }
-                }
+                // Automated Telegram Push Alert
+                dispatchTelegramCrossoverAlert(
+                  stock.ticker,
+                  updated.todayVolM,
+                  stock.avgVol20DM,
+                  updated.spotLtp,
+                  nowTime,
+                  updated.todayTradedShares,
+                  updated.avg20DTradedShares
+                );
               }
             }
 
@@ -2597,8 +2620,19 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 return [event, ...prevEv];
               });
               showToast(
-                `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)}!`,
+                `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
                 'emerald'
+              );
+
+              // Automated Telegram Push Alert on Crossover / Buy-Eligibility
+              dispatchTelegramCrossoverAlert(
+                stock.ticker,
+                updated.todayVolM,
+                stock.avgVol20DM,
+                updated.spotLtp,
+                timeStr,
+                updated.todayTradedShares,
+                updated.avg20DTradedShares
               );
 
               if (isSupabaseConfigured && supabase) {

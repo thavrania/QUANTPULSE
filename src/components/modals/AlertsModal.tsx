@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
+import { formatCrossoverAlert } from '@/lib/alerts/telegramService';
 
 export function AlertsModal() {
   const { showToast, isAlertsModalOpen, setIsAlertsModalOpen } = useQuantPulse();
@@ -11,6 +12,7 @@ export function AlertsModal() {
   const [notifyCrossover, setNotifyCrossover] = useState(true);
   const [notifyOrder, setNotifyOrder] = useState(true);
   const [isSendingTest, setIsSendingTest] = useState(false);
+  const [isSendingCrossoverTest, setIsSendingCrossoverTest] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -79,6 +81,48 @@ export function AlertsModal() {
       showToast(`Network error: ${err.message}`, 'rose');
     } finally {
       setIsSendingTest(false);
+    }
+  };
+
+  const handleTestCrossoverAlert = async () => {
+    if (!botToken.trim() || !chatId.trim()) {
+      showToast('Enter both Telegram Bot Token and Chat ID to test.', 'rose');
+      return;
+    }
+
+    setIsSendingCrossoverTest(true);
+    try {
+      const nowIST = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+      const sampleMsg = formatCrossoverAlert(
+        'RELIANCE',
+        14.25,
+        12.50,
+        2985.40,
+        nowIST,
+        14250000,
+        12500000
+      );
+
+      const res = await fetch('/api/alerts/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          botToken: botToken.trim(),
+          chatId: chatId.trim(),
+          message: sampleMsg,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('🚀 Sample Buy-Eligibility Alert delivered to Telegram!', 'emerald');
+      } else {
+        showToast(`❌ ${data.message}`, 'rose');
+      }
+    } catch (err: any) {
+      showToast(`Network error: ${err.message}`, 'rose');
+    } finally {
+      setIsSendingCrossoverTest(false);
     }
   };
 
@@ -166,15 +210,27 @@ export function AlertsModal() {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-slate-800 bg-slate-900 flex justify-between items-center">
-          <button
-            type="button"
-            onClick={handleTestAlert}
-            disabled={isSendingTest}
-            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
-          >
-            {isSendingTest ? 'Pinging...' : '⚡ Send Test Ping'}
-          </button>
+        <div className="px-5 py-3 border-t border-slate-800 bg-slate-900 flex justify-between items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleTestAlert}
+              disabled={isSendingTest || isSendingCrossoverTest}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
+              title="Send a basic connection test ping"
+            >
+              {isSendingTest ? 'Pinging...' : '⚡ Test Ping'}
+            </button>
+            <button
+              type="button"
+              onClick={handleTestCrossoverAlert}
+              disabled={isSendingTest || isSendingCrossoverTest}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition"
+              title="Send an exact sample 20D Volume Crossover (Buy-Eligibility) alert to your Telegram group"
+            >
+              {isSendingCrossoverTest ? 'Sending...' : '🚀 Test Buy-Eligibility Alert'}
+            </button>
+          </div>
           <div className="flex gap-2">
             <button
               type="button"
