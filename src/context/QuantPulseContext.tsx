@@ -460,11 +460,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const defaultToken = process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_BOT_TOKEN || '8602260354:AAGfdG8fTeS24QpP9QXiooNWRuKTepyr0Mw';
-      const defaultChat = process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_CHAT_ID || '-1005577627015';
+      const defaultChat = process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_CHAT_ID || '-1004477627015';
       if (!localStorage.getItem('qp_telegram_bot_token')) {
         localStorage.setItem('qp_telegram_bot_token', defaultToken);
       }
-      if (!localStorage.getItem('qp_telegram_chat_id')) {
+      const storedChat = localStorage.getItem('qp_telegram_chat_id');
+      if (!storedChat || storedChat === '-1005577627015') {
         localStorage.setItem('qp_telegram_chat_id', defaultChat);
       }
 
