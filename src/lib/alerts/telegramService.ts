@@ -67,13 +67,13 @@ export function formatCrossoverAlert(
   return `🚀 *QP — 20D AVG CROSSOVER!*
 ────────────
 • *Symbol:* \`${ticker}\`
-• *Exact Cross Time:* \`${timeIST} IST\`
-• *Today Traded Shares:* \`${todayShares} shares\` (\`${todayVolM.toFixed(2)}M\`)
-• *20D Avg Benchmark:* \`${avgShares} shares\` (\`${avgVol20DM.toFixed(2)}M\`)
 • *Spot Price:* \`₹${spotLtp.toFixed(2)}\`
-• *Eligibility:* 🟢 *ELIGIBLE FOR BUY*
+• *Cross Time:* \`${timeIST} IST\`
+• *Today VOL:* \`${todayShares} Qty\`
+• *20D Avg:* \`${avgShares} Qty\`
+• *Eligibility:* 🟢 *BUY*
 ────────────
-_QP High-Frequency Crossover Engine_`;
+_QP HF Crossover Engine_`;
 }
 
 export function formatOrderAlert(symbol: string, action: string, qty: number, price: number, orderId: string, mode: string): string {
