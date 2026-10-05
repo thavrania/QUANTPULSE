@@ -16,9 +16,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+  const localDateString: string = new Date().toLocaleDateString();
     const textToSend =
       testPing
-        ? `🔔 *QuantPulse Alert Test Ping*\n──────────────────────\n✅ Connection verified!\nYou will now receive instant push alerts for 20-Day Volume Crossovers and Order Executions.\n\n_Market Engine: Nominal • ${new Date().toLocaleTimeString('en-IN')}_`
+        ? `🔔 *QuantPulse *\n──────────\n✅ Connection today!\n You will now receive instant push alerts for 20-Day VOL Crossovers.\n\n_Market Engine: Nominal • ${localDateString}_`
         : message || 'QuantPulse Alert Event';
 
     const result = await sendTelegramMessage(token, chat, textToSend);
