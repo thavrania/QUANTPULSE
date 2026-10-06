@@ -1,24 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
-import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
+import { getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { dhanApiClient } from '@/lib/broker/dhan/dhanApiClient';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { ticker, clientId, accessToken } = body;
 
-    let cid = clientId;
-    let token = accessToken;
-
-    if (!cid || !token) {
-      const vault = await getActiveBrokerCredentials();
-      cid = cid || vault.clientId;
-      token = token || vault.accessToken;
-    }
-
-    if (!ticker || !cid || !token) {
+    if (!ticker) {
       return NextResponse.json(
-        { success: false, message: 'Ticker, Client ID, and Access Token are required (or configure Cloud Vault).' },
+        { success: false, message: 'Ticker symbol is required.' },
         { status: 400 }
       );
     }
@@ -40,25 +33,21 @@ export async function POST(req: NextRequest) {
       toDate: toDateStr,
     };
 
-    const response = await fetch(`${DHAN_BASE_URL}/charts/historical`, {
+    const response = await dhanApiClient.request('/charts/historical', {
       method: 'POST',
-      headers: {
-        'access-token': token,
-        'client-id': cid,
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(payload),
+      overrideClientId: clientId,
+      overrideAccessToken: accessToken,
     });
 
     if (!response.ok) {
-      const errText = await response.text();
       return NextResponse.json({
         success: false,
-        message: `Dhan Historical API error (${response.status}): ${errText}`,
+        message: response.error || `Dhan Historical API error (${response.status})`,
       });
     }
 
-    const chartData = await response.json();
+    const chartData = response.data;
     const volumes: number[] = chartData?.volume || [];
 
     if (volumes.length < 5) {

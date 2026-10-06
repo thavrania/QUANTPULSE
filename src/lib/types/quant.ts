@@ -295,6 +295,23 @@ export interface BrokerVaultStatus {
   source: 'VAULT' | 'LOCAL' | 'ENV' | 'NONE';
 }
 
+export interface DhanAuthStatus {
+  isConfigured: boolean;
+  authMode: 'AUTOMATED_API_KEY_TOTP' | 'MANUAL_VAULT' | 'ENV_STATIC' | 'NONE';
+  tokenValid: boolean;
+  isExpiringSoon: boolean;
+  timeRemainingFormatted: string;
+  remainingMinutes: number;
+  maskedClientId: string;
+  hasApiKey: boolean;
+  hasApiSecret: boolean;
+  hasTotpSecret: boolean;
+  lastRefreshedAt: string | null;
+  tokenExpiryAt: string | null;
+  source: string;
+  lastError: string | null;
+}
+
 // =====================================================================
 // NIFTY 09:20 Premium 62.5 Overnight Strategy Domain Types
 // Strategy ID: NIFTY_0920_PREMIUM_625_OVERNIGHT

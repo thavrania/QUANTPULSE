@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
-import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
+import { getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { dhanApiClient } from '@/lib/broker/dhan/dhanApiClient';
+import { dhanAuthService } from '@/lib/services/dhanAuthService';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const {
       positionId,
       ticker,
@@ -18,18 +21,8 @@ export async function POST(req: NextRequest) {
 
     const exitTime = new Date().toLocaleTimeString('en-IN', { hour12: false });
 
-    // Resolve credentials if live and not provided
-    let activeClientId = clientId;
-    let activeAccessToken = accessToken;
-
-    if (!isPaper && (!activeClientId || !activeAccessToken)) {
-      const vault = await getActiveBrokerCredentials();
-      activeClientId = activeClientId || vault.clientId;
-      activeAccessToken = activeAccessToken || vault.accessToken;
-    }
-
     // Paper Trading square off
-    if (isPaper || !activeClientId || !activeAccessToken) {
+    if (isPaper) {
       return NextResponse.json({
         success: true,
         mode: 'PAPER',
@@ -41,9 +34,17 @@ export async function POST(req: NextRequest) {
     }
 
     // Live Dhan square off (sell market order)
-    const isOption = instrumentType?.includes('OPTION');
+    const isOption = (instrumentType || '').includes('OPTION');
     const exchangeSegment = isOption ? 'NSE_FNO' : 'NSE_EQ';
     const securityId = getDhanSecurityId(ticker);
+
+    let activeClientId = clientId;
+    if (!activeClientId) {
+      try {
+        const auth = await dhanAuthService.getValidAccessToken();
+        activeClientId = auth.clientId;
+      } catch {}
+    }
 
     const squareOffPayload = {
       dhanClientId: activeClientId,
@@ -58,20 +59,21 @@ export async function POST(req: NextRequest) {
       triggerPrice: 0,
     };
 
-    const dhanRes = await fetch(`${DHAN_BASE_URL}/orders`, {
+    const dhanRes = await dhanApiClient.request('/orders', {
       method: 'POST',
-      headers: {
-        'access-token': activeAccessToken,
-        'client-id': activeClientId,
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(squareOffPayload),
+      overrideClientId: clientId,
+      overrideAccessToken: accessToken,
     });
 
-    const data = await dhanRes.json();
+    const data = dhanRes.data;
 
-    if (!dhanRes.ok || data.status === 'failure') {
-      const errorMsg = data.remarks || data.errorMessage || JSON.stringify(data);
+    if (!dhanRes.ok || data?.status === 'failure') {
+      const errorMsg =
+        data?.remarks ||
+        data?.errorMessage ||
+        dhanRes.error ||
+        JSON.stringify(data || {});
       const isInvalidIp =
         errorMsg.toLowerCase().includes('invalid ip') ||
         errorMsg.includes('DH-905') ||
@@ -107,10 +109,10 @@ export async function POST(req: NextRequest) {
       success: true,
       mode: 'LIVE_DHAN',
       positionId,
-      orderId: data.orderId,
+      orderId: data?.orderId,
       exitStatus: 'CLOSED',
       exitTime,
-      message: `Live Position ${symbol} squared off via Dhan (Order ID: ${data.orderId})`,
+      message: `Live Position ${symbol} squared off via Dhan (Order ID: ${data?.orderId})`,
     });
   } catch (err: any) {
     return NextResponse.json(

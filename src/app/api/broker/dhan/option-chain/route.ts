@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
 import { buildOptionChainMatrix, OptionChainSummary } from '@/lib/engine/optionChainEngine';
-import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
+import { dhanApiClient } from '@/lib/broker/dhan/dhanApiClient';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { ticker, spotLtp, strikeStep, clientId, accessToken } = body;
 
     if (!ticker || !spotLtp) {
@@ -16,43 +18,26 @@ export async function POST(req: NextRequest) {
     }
 
     const step = strikeStep || (spotLtp > 1500 ? 50 : 20);
+    let liveDhanDataAvailable = false;
 
-    let activeClientId = clientId;
-    let activeAccessToken = accessToken;
+    // 1. Try querying Dhan Option Chain API via centralized client
+    try {
+      const securityId = parseInt(getDhanSecurityId(ticker), 10);
+      const dhanRes = await dhanApiClient.request('/optionchain', {
+        method: 'POST',
+        body: JSON.stringify({
+          UnderlyingScrip: securityId,
+          UnderlyingSeg: 'NSE_EQ',
+        }),
+        overrideClientId: clientId,
+        overrideAccessToken: accessToken,
+      });
 
-    if (!activeClientId || !activeAccessToken) {
-      const vault = await getActiveBrokerCredentials();
-      activeClientId = activeClientId || vault.clientId;
-      activeAccessToken = activeAccessToken || vault.accessToken;
-    }
-
-    // 1. Try querying Dhan Option Chain API if credentials supplied
-    if (activeClientId && activeAccessToken) {
-      try {
-        const securityId = parseInt(getDhanSecurityId(ticker), 10);
-        const dhanRes = await fetch(`${DHAN_BASE_URL}/optionchain`, {
-          method: 'POST',
-          headers: {
-            'access-token': activeAccessToken,
-            'client-id': activeClientId,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            UnderlyingScrip: securityId,
-            UnderlyingSeg: 'NSE_EQ',
-          }),
-        });
-
-        if (dhanRes.ok) {
-          const dhanData = await dhanRes.json();
-          // If Dhan returns active contracts, map them
-          if (dhanData?.data && Array.isArray(dhanData.data)) {
-            // successful live Dhan chain
-          }
-        }
-      } catch (dhanErr) {
-        console.warn('Dhan live optionchain endpoint fallback:', dhanErr);
+      if (dhanRes.ok && dhanRes.data?.data && Array.isArray(dhanRes.data.data)) {
+        liveDhanDataAvailable = true;
       }
+    } catch (dhanErr) {
+      console.warn('Dhan live optionchain endpoint fallback:', dhanErr);
     }
 
     // 2. Compute Institutional Real-Time Option Chain Matrix with Black-Scholes Greeks & PCR
@@ -64,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      dataSource: clientId && accessToken ? 'DHAN_OPTION_CHAIN' : 'QUANT_BLACK_SCHOLES',
+      dataSource: liveDhanDataAvailable ? 'DHAN_OPTION_CHAIN' : 'QUANT_BLACK_SCHOLES',
       matrix,
     });
   } catch (err: any) {

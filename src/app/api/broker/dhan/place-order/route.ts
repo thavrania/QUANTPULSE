@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DHAN_BASE_URL, getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
-import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
+import { getDhanSecurityId } from '@/lib/broker/dhan/dhanConstants';
+import { dhanApiClient } from '@/lib/broker/dhan/dhanApiClient';
+import { dhanAuthService } from '@/lib/services/dhanAuthService';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const {
       ticker,
       instrumentType, // 'STOCK (EQUITY)' | 'OPTION (ATM CALL)'
@@ -28,20 +31,10 @@ export async function POST(req: NextRequest) {
 
     const orderTime = new Date().toLocaleTimeString('en-IN', { hour12: false });
 
-    // Resolve credentials if not paper and not provided
-    let activeClientId = clientId;
-    let activeAccessToken = accessToken;
-
-    if (!isPaper && (!activeClientId || !activeAccessToken)) {
-      const vault = await getActiveBrokerCredentials();
-      activeClientId = activeClientId || vault.clientId;
-      activeAccessToken = activeAccessToken || vault.accessToken;
-    }
-
     // =====================================================================
     // 1. PAPER TRADING ENGINE (Virtual Execution against real price)
     // =====================================================================
-    if (isPaper || !activeClientId || !activeAccessToken) {
+    if (isPaper) {
       const paperOrderId = `PAPER-${Math.floor(100000 + Math.random() * 900000)}`;
 
       return NextResponse.json({
@@ -62,9 +55,17 @@ export async function POST(req: NextRequest) {
     // =====================================================================
     // 2. LIVE DHAN HQ ORDER ROUTING (Real Capital Execution)
     // =====================================================================
-    const isOption = instrumentType.includes('OPTION');
+    const isOption = (instrumentType || '').includes('OPTION');
     const exchangeSegment = isOption ? 'NSE_FNO' : 'NSE_EQ';
     const securityId = getDhanSecurityId(ticker);
+
+    let activeClientId = clientId;
+    if (!activeClientId) {
+      try {
+        const auth = await dhanAuthService.getValidAccessToken();
+        activeClientId = auth.clientId;
+      } catch {}
+    }
 
     const dhanOrderPayload = {
       dhanClientId: activeClientId,
@@ -80,20 +81,21 @@ export async function POST(req: NextRequest) {
       afterMarketOrder: false,
     };
 
-    const dhanResponse = await fetch(`${DHAN_BASE_URL}/orders`, {
+    const dhanResponse = await dhanApiClient.request('/orders', {
       method: 'POST',
-      headers: {
-        'access-token': activeAccessToken,
-        'client-id': activeClientId,
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(dhanOrderPayload),
+      overrideClientId: clientId,
+      overrideAccessToken: accessToken,
     });
 
-    const dhanData = await dhanResponse.json();
+    const dhanData = dhanResponse.data;
 
-    if (!dhanResponse.ok || dhanData.status === 'failure') {
-      const errorMsg = dhanData.remarks || dhanData.errorMessage || JSON.stringify(dhanData);
+    if (!dhanResponse.ok || dhanData?.status === 'failure') {
+      const errorMsg =
+        dhanData?.remarks ||
+        dhanData?.errorMessage ||
+        dhanResponse.error ||
+        JSON.stringify(dhanData || {});
       const isInvalidIp =
         errorMsg.toLowerCase().includes('invalid ip') ||
         errorMsg.includes('DH-905') ||
@@ -133,14 +135,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       mode: 'LIVE_DHAN',
-      orderId: dhanData.orderId,
-      orderStatus: dhanData.orderStatus || 'PENDING',
+      orderId: dhanData?.orderId,
+      orderStatus: dhanData?.orderStatus || 'PENDING',
       symbol,
       action,
       quantity,
       fillPrice: price,
       orderTime,
-      message: `Live Order Dispatched to Dhan: ${action} ${quantity} ${symbol} (Order ID: ${dhanData.orderId})`,
+      message: `Live Order Dispatched to Dhan: ${action} ${quantity} ${symbol} (Order ID: ${dhanData?.orderId})`,
     });
   } catch (err: any) {
     return NextResponse.json(

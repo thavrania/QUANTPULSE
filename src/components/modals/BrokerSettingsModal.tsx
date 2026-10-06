@@ -41,9 +41,46 @@ export function BrokerSettingsModal() {
     message: string;
   } | null>(null);
 
-  // Load saved credentials from localStorage
+  const [dhanAuthStatus, setDhanAuthStatus] = useState<any>(null);
+  const [isRefreshingToken, setIsRefreshingToken] = useState(false);
+
+  const fetchAuthStatus = async () => {
+    try {
+      const res = await fetch('/api/broker/dhan/auth-status');
+      const data = await res.json();
+      if (data?.success && data?.status) {
+        setDhanAuthStatus(data.status);
+      }
+    } catch {}
+  };
+
+  const handleForceRefreshToken = async () => {
+    setIsRefreshingToken(true);
+    try {
+      const res = await fetch('/api/broker/dhan/auth-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceRefresh: true }),
+      });
+      const data = await res.json();
+      if (data?.success && data?.status) {
+        setDhanAuthStatus(data.status);
+        showToast('Dhan Access Token refreshed successfully via Server Auto-Auth!', 'emerald');
+        refreshBrokerVaultStatus();
+      } else {
+        showToast(data?.message || 'Failed to refresh token', 'rose');
+      }
+    } catch (err: any) {
+      showToast(`Refresh error: ${err.message}`, 'rose');
+    } finally {
+      setIsRefreshingToken(false);
+    }
+  };
+
+  // Load saved credentials from localStorage & server auth status
   useEffect(() => {
     if (typeof window !== 'undefined' && isBrokerModalOpen) {
+      fetchAuthStatus();
       const savedBroker = (localStorage.getItem('qp_broker_type') as BrokerType) || 'DHAN';
       const savedClientId = localStorage.getItem('qp_dhan_client_id') || '';
       const savedToken = localStorage.getItem('qp_dhan_access_token') || '';
@@ -480,6 +517,54 @@ export function BrokerSettingsModal() {
                   Generate in Dhan Web ↗
                 </a>
               </div>
+
+              {/* Automated Server-Side Authentication Banner */}
+              {dhanAuthStatus?.authMode === 'AUTOMATED_API_KEY_TOTP' ? (
+                <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-300 text-xs">
+                      <span>🤖</span>
+                      <span>Automated Server-Side Authentication Active</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                      TOTP + API Key
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    QuantPulse automatically generates and maintains a fresh Dhan Access Token using your server-side API Key &amp; TOTP. No daily manual token generation required!
+                  </p>
+                  <div className="flex items-center justify-between pt-1 border-t border-emerald-500/20 text-[10px] text-slate-400 font-mono">
+                    <span>
+                      Token Status:{' '}
+                      <strong className="text-emerald-400">
+                        {dhanAuthStatus.timeRemainingFormatted}
+                      </strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleForceRefreshToken}
+                      disabled={isRefreshingToken}
+                      className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded border border-emerald-500/40 font-semibold transition"
+                    >
+                      {isRefreshingToken ? 'Refreshing...' : '🔄 Force Renew Now'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-slate-900/80 border border-slate-800 rounded-lg text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>
+                    💡 <strong>Automate 24h Logins:</strong> Add <code className="text-cyan-400 font-mono">DHAN_API_KEY</code> &amp; <code className="text-cyan-400 font-mono">DHAN_TOTP_SECRET</code> to <code className="text-cyan-400 font-mono">.env.local</code>.
+                  </span>
+                  <a
+                    href="/api/broker/dhan/initiate-auth"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-cyan-400 hover:underline shrink-0 ml-2 font-semibold text-[10px] bg-cyan-500/10 px-2 py-1 rounded border border-cyan-500/30"
+                  >
+                    OAuth Consent ↗
+                  </a>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[10px] text-slate-400 uppercase mb-1">

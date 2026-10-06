@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DHAN_BASE_URL } from '@/lib/broker/dhan/dhanConstants';
-import { getActiveBrokerCredentials } from '@/lib/services/brokerVaultService';
+import { dhanApiClient } from '@/lib/broker/dhan/dhanApiClient';
+import { dhanAuthService } from '@/lib/services/dhanAuthService';
+
+export const dynamic = 'force-dynamic';
 
 async function getServerPublicIp(): Promise<string> {
   try {
@@ -31,19 +33,14 @@ async function getServerPublicIp(): Promise<string> {
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
-    let clientId = url.searchParams.get('clientId') || req.headers.get('client-id') || '';
-    let accessToken = url.searchParams.get('accessToken') || req.headers.get('access-token') || '';
-
-    if (!clientId || !accessToken) {
-      const vault = await getActiveBrokerCredentials();
-      clientId = clientId || vault.clientId;
-      accessToken = accessToken || vault.accessToken;
-    }
+    const clientId = url.searchParams.get('clientId') || req.headers.get('client-id') || undefined;
+    const accessToken = url.searchParams.get('accessToken') || req.headers.get('access-token') || undefined;
 
     const serverIp = await getServerPublicIp();
     const isVercel = Boolean(process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV);
 
-    if (!accessToken) {
+    const authStatus = await dhanAuthService.getAuthStatus();
+    if (!authStatus.isConfigured && !accessToken) {
       return NextResponse.json({
         success: true,
         serverIp,
@@ -54,29 +51,25 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Call Dhan v2 /ip/getIP
-    const dhanRes = await fetch(`${DHAN_BASE_URL}/ip/getIP`, {
+    // Call Dhan v2 /ip/getIP via centralized client
+    const dhanRes = await dhanApiClient.request('/ip/getIP', {
       method: 'GET',
-      headers: {
-        'access-token': accessToken,
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
+      overrideClientId: clientId,
+      overrideAccessToken: accessToken,
     });
 
     if (!dhanRes.ok) {
-      const errText = await dhanRes.text();
       return NextResponse.json({
         success: true,
         serverIp,
         isVercel,
         dhanConfig: null,
         isMatched: false,
-        message: `Dhan getIP responded with ${dhanRes.status}: ${errText}`,
+        message: `Dhan getIP responded with ${dhanRes.status}: ${dhanRes.error || dhanRes.rawText}`,
       });
     }
 
-    const dhanData = await dhanRes.json();
+    const dhanData = dhanRes.data;
     const primaryIp = dhanData?.primaryIP || null;
     const secondaryIp = dhanData?.secondaryIP || null;
     const isMatched = (primaryIp && primaryIp === serverIp) || (secondaryIp && secondaryIp === serverIp);
@@ -106,21 +99,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     let { ip, ipFlag = 'PRIMARY', clientId, accessToken } = body;
-
-    if (!clientId || !accessToken) {
-      const vault = await getActiveBrokerCredentials();
-      clientId = clientId || vault.clientId;
-      accessToken = accessToken || vault.accessToken;
-    }
-
-    if (!clientId || !accessToken) {
-      return NextResponse.json(
-        { success: false, message: 'Dhan Client ID and Access Token are required.' },
-        { status: 400 }
-      );
-    }
 
     const ipToSet = ip || (await getServerPublicIp());
     if (!ipToSet || ipToSet === 'UNKNOWN') {
@@ -130,26 +110,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    let targetClientId = clientId;
+    if (!targetClientId) {
+      try {
+        const auth = await dhanAuthService.getValidAccessToken();
+        targetClientId = auth.clientId;
+      } catch {}
+    }
+
     const dhanPayload = {
-      dhanClientId: clientId,
+      dhanClientId: targetClientId,
       ip: ipToSet,
       ipFlag: ipFlag.toUpperCase() === 'SECONDARY' ? 'SECONDARY' : 'PRIMARY',
     };
 
-    const dhanRes = await fetch(`${DHAN_BASE_URL}/ip/setIP`, {
+    const dhanRes = await dhanApiClient.request('/ip/setIP', {
       method: 'POST',
-      headers: {
-        'access-token': accessToken,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
       body: JSON.stringify(dhanPayload),
+      overrideClientId: clientId,
+      overrideAccessToken: accessToken,
     });
 
-    const data = await dhanRes.json();
+    const data = dhanRes.data;
 
-    if (!dhanRes.ok || data.status === 'failure') {
-      const errorMsg = data.remarks || data.errorMessage || JSON.stringify(data);
+    if (!dhanRes.ok || data?.status === 'failure') {
+      const errorMsg = data?.remarks || data?.errorMessage || dhanRes.error || JSON.stringify(data || {});
       return NextResponse.json({
         success: false,
         message: `Dhan setIP Rejected: ${errorMsg}`,

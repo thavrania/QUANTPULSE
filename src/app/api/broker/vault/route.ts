@@ -117,6 +117,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Sync server memory cache
+    try {
+      const { dhanAuthService } = await import('@/lib/services/dhanAuthService');
+      await dhanAuthService.saveToken(trimmedToken, trimmedCid, expiryIso, 'MANUAL');
+    } catch {}
+
     const countdown = formatTokenCountdown(expiryIso);
 
     return NextResponse.json({

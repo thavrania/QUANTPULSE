@@ -219,7 +219,37 @@ export async function getActiveBrokerCredentials(): Promise<{
     }
   }
 
-  // 3. Environment Variables fallback (Server-side)
+  // 3. Automated Server-Side Authentication / Environment Variables
+  if (typeof window === 'undefined') {
+    try {
+      const { dhanAuthService } = await import('./dhanAuthService');
+      const creds = dhanAuthService.getConfiguredCredentials();
+      if (creds.hasAutomatedCreds) {
+        const auth = await dhanAuthService.getValidAccessToken();
+        if (auth && auth.accessToken) {
+          const status = await dhanAuthService.getAuthStatus();
+          return {
+            clientId: auth.clientId,
+            accessToken: auth.accessToken,
+            brokerName: 'DHAN',
+            expiryAt: status.tokenExpiryAt,
+            status: {
+              isConfigured: true,
+              brokerName: 'DHAN',
+              clientId: auth.clientId,
+              maskedToken: maskToken(auth.accessToken),
+              tokenExpiryAt: status.tokenExpiryAt,
+              tokenTimeRemaining: status.timeRemainingFormatted,
+              isExpired: !status.tokenValid,
+              isExpiringSoon: status.isExpiringSoon,
+              source: 'ENV',
+            },
+          };
+        }
+      }
+    } catch {}
+  }
+
   const envCid = process.env.DHAN_CLIENT_ID || '';
   const envToken = process.env.DHAN_ACCESS_TOKEN || '';
 

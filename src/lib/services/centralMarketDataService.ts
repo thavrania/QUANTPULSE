@@ -8,6 +8,8 @@ import {
 } from '../types/quant';
 import { supabase, isSupabaseConfigured } from '../supabaseClient';
 import { DHAN_BASE_URL, getDhanSecurityId } from '../broker/dhan/dhanConstants';
+import { dhanApiClient } from '../broker/dhan/dhanApiClient';
+import { dhanAuthService } from './dhanAuthService';
 import { getActiveBrokerCredentials } from './brokerVaultService';
 import { fetchFreeLiveQuotes } from '../market/freeLiveMarketService';
 import {
@@ -175,17 +177,14 @@ export class CentralMarketDataService {
     const currentStocks = await this.getActiveWatchlistStocks();
     const tickerList = currentStocks.map((s) => s.ticker);
 
-    const vault = await getActiveBrokerCredentials();
-    const cid = vault.clientId;
-    const token = vault.accessToken;
-
+    const authStatus = await dhanAuthService.getAuthStatus();
     let quotes: Record<string, LiveQuoteRecord> = {};
     let feedSource = 'DHAN_HQ';
     let feedStatus: FeedHealthStatus = 'CONNECTED';
     let lastError: string | null = null;
 
     // 1. Fetch from Dhan or fallback
-    if (!cid || !token) {
+    if (!authStatus.isConfigured) {
       quotes = await fetchFreeLiveQuotes(tickerList);
       feedSource = 'FREE_NSE_LIVE';
       feedStatus = 'FALLBACK';
@@ -193,26 +192,19 @@ export class CentralMarketDataService {
       const securityIds = tickerList.map((t) => parseInt(getDhanSecurityId(t), 10));
 
       try {
-        const response = await fetch(`${DHAN_BASE_URL}/marketfeed/quote`, {
+        const response = await dhanApiClient.request('/marketfeed/quote', {
           method: 'POST',
-          headers: {
-            'access-token': token,
-            'client-id': cid,
-            'Content-Type': 'application/json',
-          },
           body: JSON.stringify({ NSE_EQ: securityIds }),
-          cache: 'no-store',
         });
 
         if (!response.ok) {
-          const errText = await response.text();
-          lastError = `Dhan ${response.status}: ${errText}`;
+          lastError = response.error || `Dhan HTTP ${response.status}`;
           console.warn(`[CentralFeed] Dhan rejected (${response.status}). Switching to Free Yahoo fallback.`);
           quotes = await fetchFreeLiveQuotes(tickerList);
           feedSource = 'FREE_NSE_LIVE';
           feedStatus = 'FALLBACK';
         } else {
-          const quoteData = await response.json();
+          const quoteData = response.data;
           const nseData = quoteData?.data?.NSE_EQ || {};
           const sessionStarted = hasTodayMarketSessionStarted();
           const istNow = getISTDate();

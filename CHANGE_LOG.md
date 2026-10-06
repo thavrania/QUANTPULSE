@@ -50,6 +50,70 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ---
 
+### [2026-10-07 01:15 IST] — Automated Dhan API Authentication & Access Token Management (API Key + Secret + TOTP)
+- **Commit SHA / Version:** Pending / `v2.4.0`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Feature` / `Security` / `Architecture`
+- **Business Rationale / Objective:** 
+  Eliminate reliance on manual daily Dhan Access Token generation. QuantPulse now automatically generates, renews, and recovers Dhan access tokens server-side using long-lived `DHAN_API_KEY`, `DHAN_API_SECRET`, and `DHAN_TOTP_SECRET` credentials.
+  1. **Native RFC 6238 TOTP Engine:** Implemented RFC 6238 standard TOTP generation in `src/lib/services/dhanAuthService.ts` using Node.js built-in `crypto` HMAC-SHA1 and Base32 decoding with zero external dependencies (verified against all 5 official RFC 6238 test vectors).
+  2. **Single-Flight Concurrency Mutex Lock:** Prevents stampedes by locking concurrent requests into a shared promise during token generation/renewal.
+  3. **Automated Token Caching & Pre-Expiry Renewal:** Implements 5-minute pre-expiry buffer and integrates official Dhan v2 `/RenewToken` endpoint to seamlessly extend active tokens by 24 hours.
+  4. **Centralized HTTP Client (`DhanApiClient`):** Wraps all outbound Dhan calls (`/quote`, `/historical-20d`, `/option-chain`, `/place-order`, `/square-off`, `/test-connection`, `/ip-status`) with automatic token injection and 401 / DH-901 retry-once recovery.
+  5. **Zero Client-Side Secret Leakage:** Long-lived secrets and access tokens are strictly server-bound. Observability route `/api/broker/dhan/auth-status` provides masked status and time countdown without exposing credentials.
+  6. **OAuth Consent & Webhook Endpoints:** Added `/api/broker/dhan/initiate-auth` and `/api/broker/dhan/callback` for seamless Dhan developer portal integration, plus documented portal fields (App Name, Redirect URL, Postback URL).
+
+#### Affected Components & Files
+- `src/lib/services/dhanAuthService.ts`: RFC 6238 TOTP engine, token cache, single-flight mutex lock, renewal & OAuth methods.
+- `src/lib/broker/dhan/dhanApiClient.ts`: Centralized Dhan HTTP wrapper with automatic 401 retry-once recovery.
+- `src/app/api/broker/dhan/auth-status/route.ts`: Secure observability endpoint with masked credentials and manual refresh trigger.
+- `src/app/api/broker/dhan/initiate-auth/route.ts`: Dhan OAuth consent session initializer.
+- `src/app/api/broker/dhan/callback/route.ts`: Dhan OAuth redirect callback handler.
+- `src/app/api/broker/dhan/quote/route.ts`: Integrated with centralized market feed.
+- `src/app/api/broker/dhan/historical-20d/route.ts`: Refactored to use `dhanApiClient`.
+- `src/app/api/broker/dhan/option-chain/route.ts`: Refactored to use `dhanApiClient`.
+- `src/app/api/broker/dhan/place-order/route.ts`: Refactored to use `dhanApiClient`.
+- `src/app/api/broker/dhan/square-off/route.ts`: Refactored to use `dhanApiClient`.
+- `src/app/api/broker/dhan/test-connection/route.ts`: Supports testing automated server credentials.
+- `src/app/api/broker/dhan/ip-status/route.ts`: Refactored to use `dhanApiClient`.
+- `src/app/api/broker/vault/route.ts`: Syncs memory cache on credential update.
+- `src/lib/services/brokerVaultService.ts`: Added automated server credentials resolution.
+- `src/lib/services/centralMarketDataService.ts`: Refactored to use `dhanApiClient` and `dhanAuthService`.
+- `src/components/modals/BrokerSettingsModal.tsx`: Added Auto-Auth status card and refresh trigger.
+- `src/lib/types/quant.ts`: Added `DhanAuthStatus` type definition.
+- `.env.example`: Documented `DHAN_CLIENT_ID`, `DHAN_API_KEY`, `DHAN_API_SECRET`, and `DHAN_TOTP_SECRET`.
+- `tests/architecture/dhanAutomatedAuth.test.ts`: 10 comprehensive tests for TOTP, caching, mutex lock, masking, and 401 retry-once.
+- `package.json`: Updated test script to run all 45 automated tests.
+
+#### Database & Schema Impact
+- **Tables Touched:** `broker_vault`
+- **Operations:** `INSERT` / `UPDATE` (syncs renewed tokens to vault if Supabase configured)
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+
+#### Verification & Testing Performed
+- RFC 6238 standard test vectors verified at timestamps 59, 1111111109, 1111111111, 1234567890, 2000000000.
+- 10 concurrent requests verified single-flight lock executing exactly 1 network renewal.
+- 401 Unauthorized simulated: verified automatic token invalidation, refresh, and single retry with `retried: true`.
+- Masking verified: zero token/secret leakage in responses or logs.
+- Full test suite passed (45/45 tests).
+- Production build succeeded (`npm run build`).
+
+#### Rollback Procedure
+- `git revert <commit_hash>` to restore previous manual token handling.
+
+---
+
 ### [2026-10-07 00:33 IST] — Resilient 20D Baseline Sync, Symbol Normalization & Database Schema Adaptation
 - **Commit SHA / Version:** `db4d4fe` / `v2.3.3`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
