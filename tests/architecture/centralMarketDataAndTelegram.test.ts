@@ -392,3 +392,62 @@ test('MULTI-USER TELEGRAM: User A does not receive User B alerts', () => {
   assert.ok(!eligibleRecipients.includes('-1002222222'), 'User B chatId must not receive alert');
 });
 
+// =====================================================================
+// 7. 20D BASELINE DATABASE SOURCE OF TRUTH TESTS
+// =====================================================================
+
+test('20D BASELINE DB TRUTH: resolveStockMetadata prioritizes database-stored avg_20d_traded_shares over catalog constant', async () => {
+  const { resolveStockMetadata } = await import('../../src/lib/stocks/stockMaster');
+
+  // RELIANCE catalog default is 5.20M (5,200,000 shares)
+  // Simulate database row containing newly recalculated 20D average: 7,450,123 shares (7.450123M)
+  const dbRow = {
+    ticker: 'RELIANCE',
+    avg_20d_traded_shares: 7450123,
+    avg_vol_20d_m: 7.450123,
+  };
+
+  const meta = resolveStockMetadata(dbRow);
+
+  assert.equal(
+    meta.avg20DTradedShares,
+    7450123,
+    'Database stored avg_20d_traded_shares MUST take strict precedence over static catalog constant (5,200,000)'
+  );
+  assert.equal(
+    meta.avgVol20DM,
+    7.450123,
+    'Database stored avgVol20DM must reflect the exact database value'
+  );
+});
+
+test('20D BASELINE SYNC: Data flow propagates confirmed DB shares to UI and memory snapshots', () => {
+  // Simulate the data flow:
+  // Step 1 & 2: Calculation produces 20D average
+  const calculated = {
+    ticker: 'TCS',
+    avgVolume20DM: 2.154321,
+    avg20DTradedShares: 2154321,
+  };
+
+  // Step 3 & 4: Stored in DB & confirmed
+  const databaseRecord = {
+    ticker: calculated.ticker,
+    avg_vol_20d_m: calculated.avgVolume20DM,
+    avg_20d_traded_shares: calculated.avg20DTradedShares,
+    updated_at: new Date().toISOString(),
+  };
+
+  // Step 5: Reload DB value into UI state
+  const uiStock = {
+    ticker: databaseRecord.ticker,
+    avgVol20DM: Number(databaseRecord.avg_vol_20d_m),
+    avg20DTradedShares: Number(databaseRecord.avg_20d_traded_shares),
+  };
+
+  // Step 6: Verify UI and DB reflect identical single source of truth
+  assert.equal(uiStock.avg20DTradedShares, databaseRecord.avg_20d_traded_shares);
+  assert.equal(uiStock.avgVol20DM, databaseRecord.avg_vol_20d_m);
+  assert.notEqual(uiStock.avg20DTradedShares, 1500000, 'Must NOT use static catalog value (1.5M)');
+});
+

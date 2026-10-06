@@ -120,12 +120,15 @@ async function handleSync(req: NextRequest) {
       }
     }
 
-    // 4. Update Supabase Watchlist table for the trading session
+    // 4. Update Supabase Watchlist, Stock Master & Live Tick Snapshots
     let updatedInDb = 0;
+    let verifiedBaselines: Array<{ ticker: string; avgVolume20DM: number; avg20DTradedShares: number }> = [];
+
     if (isSupabaseConfigured && supabase && calculationResults.length > 0) {
       for (const res of calculationResults) {
         const updatePayload: Record<string, any> = {
           avg_vol_20d_m: res.avgVolume20DM,
+          avg_20d_traded_shares: res.avg20DTradedShares,
           updated_at: new Date().toISOString(),
         };
 
@@ -134,6 +137,7 @@ async function handleSync(req: NextRequest) {
         const sessionStarted = hasTodayMarketSessionStarted();
         if (!sessionStarted || isDateChange) {
           updatePayload.today_vol_m = 0.0;
+          updatePayload.today_traded_shares = 0;
           updatePayload.has_crossed_20d = false;
           updatePayload.crossover_time = null;
           updatePayload.crossover_spot_price = null;
@@ -164,7 +168,9 @@ async function handleSync(req: NextRequest) {
               strike_step: master.strikeStep,
               spot_ltp: master.approxLtp,
               today_vol_m: 0.0,
+              today_traded_shares: 0,
               avg_vol_20d_m: res.avgVolume20DM,
+              avg_20d_traded_shares: res.avg20DTradedShares,
               has_crossed_20d: false,
               crossover_time: null,
               crossover_spot_price: null,
@@ -175,7 +181,49 @@ async function handleSync(req: NextRequest) {
             updatedInDb++;
           }
         }
+
+        // Also synchronize stock_master and live_tick_snapshots tables concurrently
+        await Promise.allSettled([
+          supabase
+            .from('stock_master')
+            .update({
+              avg_vol_20d_m: res.avgVolume20DM,
+              avg_20d_traded_shares: res.avg20DTradedShares,
+            })
+            .eq('ticker', res.ticker),
+          supabase
+            .from('live_tick_snapshots')
+            .update({
+              avg_vol_20d_m: res.avgVolume20DM,
+              avg_20d_traded_shares: res.avg20DTradedShares,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('ticker', res.ticker),
+        ]);
       }
+
+      // Step 4 Verification: Query database to strictly confirm the records were stored successfully
+      const { data: verifiedRows, error: verifyErr } = await supabase
+        .from('watchlist')
+        .select('ticker, avg_vol_20d_m, avg_20d_traded_shares')
+        .in('ticker', calculationResults.map((r) => r.ticker));
+
+      if (verifyErr || !verifiedRows || verifiedRows.length === 0) {
+        throw new Error(`Database verification failed: ${verifyErr?.message || 'No records returned from watchlist table'}`);
+      }
+
+      verifiedBaselines = verifiedRows.map((r: any) => ({
+        ticker: r.ticker,
+        avgVolume20DM: Number(r.avg_vol_20d_m),
+        avg20DTradedShares: Number(r.avg_20d_traded_shares) || Math.round(Number(r.avg_vol_20d_m) * 1_000_000),
+      }));
+    } else {
+      // Offline fallback: Use computed results directly if Supabase not configured
+      verifiedBaselines = calculationResults.map((r) => ({
+        ticker: r.ticker,
+        avgVolume20DM: r.avgVolume20DM,
+        avg20DTradedShares: r.avg20DTradedShares,
+      }));
     }
 
     const durationMs = Date.now() - startTime;
@@ -186,7 +234,8 @@ async function handleSync(req: NextRequest) {
       status: 'COMPLETED',
       symbolsEvaluated: calculationResults.length,
       databaseRecordsUpdated: updatedInDb,
-      dataSource: clientId && accessToken ? 'DHAN_HISTORICAL_API' : 'QUANT_SIMULATOR',
+      confirmedBaselines: verifiedBaselines,
+      dataSource: clientId && accessToken ? 'DHAN_HISTORICAL_API' : 'FREE_NSE_HISTORICAL',
       durationMs,
       timestamp: new Date().toISOString(),
       baselines: calculationResults,

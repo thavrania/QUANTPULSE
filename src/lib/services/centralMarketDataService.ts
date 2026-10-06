@@ -635,6 +635,23 @@ export class CentralMarketDataService {
 
     return this.health;
   }
+
+  /**
+   * Propagates authoritative database-stored 20D baselines to memory snapshots
+   */
+  public updateBaselinesFromDatabase(
+    baselines: Array<{ ticker: string; avgVol20DM: number; avg20DTradedShares: number }>
+  ): void {
+    for (const b of baselines) {
+      const sym = b.ticker.toUpperCase();
+      const existing = this.snapshots.get(sym);
+      if (existing) {
+        existing.avgVol20DM = b.avgVol20DM;
+        existing.avg20DTradedShares = b.avg20DTradedShares;
+        this.snapshots.set(sym, existing);
+      }
+    }
+  }
 }
 
 // Global Singleton Instance

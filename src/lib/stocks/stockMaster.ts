@@ -1019,10 +1019,12 @@ export function resolveStockMetadata(
   // Explicit corporate restructuring & rebranding overrides
   if (cleanTicker === 'TMCV' || cleanTicker === 'TATAMOTORS') {
     const avgShares = Number(
-      dbMasterItem?.avg20DTradedShares ??
       input.avg20DTradedShares ??
       input.avg_20d_traded_shares ??
-      Math.round(Number(input.avgVol20DM || input.avg_vol_20d_m || 8.90) * 1_000_000)
+      (input.avgVol20DM !== undefined && Number(input.avgVol20DM) > 0 ? Math.round(Number(input.avgVol20DM) * 1_000_000) : undefined) ??
+      (input.avg_vol_20d_m !== undefined && Number(input.avg_vol_20d_m) > 0 ? Math.round(Number(input.avg_vol_20d_m) * 1_000_000) : undefined) ??
+      dbMasterItem?.avg20DTradedShares ??
+      Math.round(8.90 * 1_000_000)
     );
     return {
       ticker: 'TMCV',
@@ -1043,10 +1045,12 @@ export function resolveStockMetadata(
   }
   if (cleanTicker === 'ETERNAL' || cleanTicker === 'ZOMATO') {
     const avgShares = Number(
-      dbMasterItem?.avg20DTradedShares ??
       input.avg20DTradedShares ??
       input.avg_20d_traded_shares ??
-      Math.round(Number(input.avgVol20DM || input.avg_vol_20d_m || 19.00) * 1_000_000)
+      (input.avgVol20DM !== undefined && Number(input.avgVol20DM) > 0 ? Math.round(Number(input.avgVol20DM) * 1_000_000) : undefined) ??
+      (input.avg_vol_20d_m !== undefined && Number(input.avg_vol_20d_m) > 0 ? Math.round(Number(input.avg_vol_20d_m) * 1_000_000) : undefined) ??
+      dbMasterItem?.avg20DTradedShares ??
+      Math.round(19.00 * 1_000_000)
     );
     return {
       ticker: 'ETERNAL',
@@ -1067,10 +1071,12 @@ export function resolveStockMetadata(
   }
   if (cleanTicker === 'LTM' || cleanTicker === 'LTIM') {
     const avgShares = Number(
-      dbMasterItem?.avg20DTradedShares ??
       input.avg20DTradedShares ??
       input.avg_20d_traded_shares ??
-      Math.round(Number(input.avgVol20DM || input.avg_vol_20d_m || 0.65) * 1_000_000)
+      (input.avgVol20DM !== undefined && Number(input.avgVol20DM) > 0 ? Math.round(Number(input.avgVol20DM) * 1_000_000) : undefined) ??
+      (input.avg_vol_20d_m !== undefined && Number(input.avg_vol_20d_m) > 0 ? Math.round(Number(input.avg_vol_20d_m) * 1_000_000) : undefined) ??
+      dbMasterItem?.avg20DTradedShares ??
+      Math.round(0.65 * 1_000_000)
     );
     return {
       ticker: 'LTM',
@@ -1134,13 +1140,18 @@ export function resolveStockMetadata(
   const securityId = master?.securityId || input.securityId || input.security_id || '1330';
   const lotSize = Number(master?.lotSize ?? input.lotSize ?? input.lot_size ?? 1);
   const strikeStep = Number(master?.strikeStep ?? input.strikeStep ?? input.strike_step ?? 50);
+  // Database values take strict precedence over static catalog constants
   const avg20DTradedShares = Number(
-    master?.avg20DTradedShares ??
     input.avg20DTradedShares ??
     input.avg_20d_traded_shares ??
-    Math.round(Number(master?.avgVol20DM ?? input.avgVol20DM ?? input.avg_vol_20d_m ?? 1.0) * 1_000_000)
+    (input.avgVol20DM !== undefined && Number(input.avgVol20DM) > 0 ? Math.round(Number(input.avgVol20DM) * 1_000_000) : undefined) ??
+    (input.avg_vol_20d_m !== undefined && Number(input.avg_vol_20d_m) > 0 ? Math.round(Number(input.avg_vol_20d_m) * 1_000_000) : undefined) ??
+    dbMasterItem?.avg20DTradedShares ??
+    (dbMasterItem?.avgVol20DM ? Math.round(Number(dbMasterItem.avgVol20DM) * 1_000_000) : undefined) ??
+    master?.avg20DTradedShares ??
+    Math.round(Number(master?.avgVol20DM ?? 1.0) * 1_000_000)
   );
-  const avgVol20DM = avg20DTradedShares / 1_000_000;
+  const avgVol20DM = +(avg20DTradedShares / 1_000_000).toFixed(6);
   const approxLtp = Number(
     master?.approxLtp ??
       input.approxLtp ??

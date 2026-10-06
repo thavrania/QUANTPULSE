@@ -77,6 +77,7 @@ import {
 } from '@/lib/services/marketLifecycleStateMachine';
 import { validateLiveSyncBatch } from '@/lib/services/dataValidationService';
 import { calculateTargetLevels, evaluateTargetMilestone } from '@/lib/engine/targetTrackingEngine';
+import { centralMarketDataService } from '@/lib/services/centralMarketDataService';
 
 export interface ToastMessage {
   id: string;
@@ -645,55 +646,71 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           }
         }
 
-        const baselineMap = new Map<string, { avgVol20DM: number; avg20DTradedShares: number }>();
         let dataSource = 'QUANT_BASELINE_ENGINE';
 
-        try {
-          const res = await fetch('/api/pipeline/sync-baselines', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientId, accessToken, tickers: tickersToSync, isDateChange }),
-          });
+        // 1. Trigger recalculation and DB persistence on the backend
+        const res = await fetch('/api/pipeline/sync-baselines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId, accessToken, tickers: tickersToSync, isDateChange }),
+        });
 
-          const data = await res.json();
-          if (data && data.success && data.baselines && data.baselines.length > 0) {
-            data.baselines.forEach((b: any) => {
-              const shares = b.avg20DTradedShares || Math.round((b.avgVolume20DM || 1.0) * 1_000_000);
-              const volM = b.avgVolume20DM || (shares / 1_000_000);
-              baselineMap.set(b.ticker, { avgVol20DM: volM, avg20DTradedShares: shares });
-            });
-            dataSource = data.dataSource || 'DHAN_HISTORICAL_API';
-          }
-        } catch (apiErr) {
-          console.warn('Backend baseline sync API notice, activating quantitative baseline fallback:', apiErr);
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to calculate and store baselines in database');
         }
 
-        // Complete any missing tickers using high-fidelity 20-day historical catalog
-        tickersToSync.forEach((ticker) => {
-          if (!baselineMap.has(ticker)) {
-            const master = getStockMasterByTicker(ticker);
-            const existingStock = watchlistRef.current.find((s) => s.ticker === ticker);
-            const baseShares = master?.avg20DTradedShares || existingStock?.avg20DTradedShares || Math.round((master?.avgVol20DM || existingStock?.avgVol20DM || 5.0) * 1_000_000);
-            const baseAvgM = baseShares / 1_000_000;
-            baselineMap.set(ticker, { avgVol20DM: baseAvgM, avg20DTradedShares: baseShares });
+        dataSource = data.dataSource || 'DHAN_HISTORICAL_API';
+
+        // 2. Reload/Propagate latest DB values: Confirm directly from Supabase watchlist table
+        let dbRecords: any[] = [];
+        if (isSupabaseConfigured && supabase) {
+          try {
+            const { data: dbData, error: dbErr } = await supabase
+              .from('watchlist')
+              .select('*')
+              .filter('is_active_watchlist', 'neq', false);
+            if (!dbErr && dbData && dbData.length > 0) {
+              dbRecords = dbData;
+            }
+          } catch (dbErr) {
+            console.warn('Notice: could not query confirmed watchlist from DB:', dbErr);
           }
-        });
+        }
+
+        const baselineMap = new Map<string, { avgVol20DM: number; avg20DTradedShares: number }>();
+
+        if (dbRecords.length > 0) {
+          dbRecords.forEach((r: any) => {
+            const shares = (r.avg_20d_traded_shares !== null && r.avg_20d_traded_shares !== undefined && Number(r.avg_20d_traded_shares) > 0)
+              ? Number(r.avg_20d_traded_shares)
+              : Math.round(Number(r.avg_vol_20d_m || 1.0) * 1_000_000);
+            const volM = (r.avg_vol_20d_m !== null && r.avg_vol_20d_m !== undefined && Number(r.avg_vol_20d_m) > 0)
+              ? Number(r.avg_vol_20d_m)
+              : +(shares / 1_000_000).toFixed(6);
+            baselineMap.set(normalizeTicker(r.ticker), { avgVol20DM: volM, avg20DTradedShares: shares });
+          });
+        } else if (data.confirmedBaselines && Array.isArray(data.confirmedBaselines) && data.confirmedBaselines.length > 0) {
+          data.confirmedBaselines.forEach((b: any) => {
+            const shares = Number(b.avg20DTradedShares || b.avg_20d_traded_shares) || Math.round(Number(b.avgVolume20DM || b.avg_vol_20d_m || 1.0) * 1_000_000);
+            const volM = Number(b.avgVolume20DM || b.avg_vol_20d_m) || +(shares / 1_000_000).toFixed(6);
+            baselineMap.set(normalizeTicker(b.ticker), { avgVol20DM: volM, avg20DTradedShares: shares });
+          });
+        }
 
         const nowSecs = getNowIstSeconds();
         const currentClockStr = formatClockIST(nowSecs);
         const sessionStarted = hasTodayMarketSessionStarted();
 
-        // Update baselines for all active stocks WITHOUT removing or resetting any stocks!
+        // 3. Update UI strictly from the confirmed database values!
         setWatchlist((prevWl) => {
           const updated: Stock[] = prevWl.map((stock): Stock => {
-            const bInfo = baselineMap.get(stock.ticker);
+            const clean = normalizeTicker(stock.ticker);
+            const bInfo = baselineMap.get(clean);
             const newAvg20DM = bInfo?.avgVol20DM ?? stock.avgVol20DM;
             const newAvg20DShares = bInfo?.avg20DTradedShares ?? stock.avg20DTradedShares ?? Math.round(newAvg20DM * 1_000_000);
 
             if (isDateChange || !sessionStarted) {
-              // Day Start / Pre-Market Sync:
-              // If continuous trading has not started today (e.g. pre-market or closed), Traded Shares is strictly 0.0
-              // Do not retain previous trading day's traded shares or stale flags.
               const dayStartVol = sessionStarted ? stock.todayVolM : 0.0;
               const dayStartShares = sessionStarted ? (stock.todayTradedShares ?? Math.round(dayStartVol * 1_000_000)) : 0;
               const hasCrossed = sessionStarted && dayStartShares >= newAvg20DShares && dayStartShares > 0;
@@ -709,7 +726,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 justCrossedHighlight: false,
               };
             } else {
-              // Mid-day refresh: keep today's traded shares and re-evaluate crossover eligibility against new 20D baseline
               const currentShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
               const hasCrossed = sessionStarted && currentShares >= newAvg20DShares && currentShares > 0;
               return {
@@ -727,17 +743,18 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           // Also ensure any tickers from DB that were not in prevWl are included
           const existingTickersSet = new Set(updated.map((s) => normalizeTicker(s.ticker)));
           tickersToSync.forEach((t) => {
-            if (!existingTickersSet.has(normalizeTicker(t))) {
-              const master = getStockMasterByTicker(t);
+            const clean = normalizeTicker(t);
+            if (!existingTickersSet.has(clean)) {
+              const master = getStockMasterByTicker(clean);
               if (master) {
                 const stock = convertMasterToStock(master);
-                const bInfo = baselineMap.get(t);
+                const bInfo = baselineMap.get(clean);
                 if (bInfo) {
                   stock.avgVol20DM = bInfo.avgVol20DM;
                   stock.avg20DTradedShares = bInfo.avg20DTradedShares;
                 }
                 updated.push(stock);
-                existingTickersSet.add(normalizeTicker(t));
+                existingTickersSet.add(clean);
               }
             }
           });
@@ -745,6 +762,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           watchlistRef.current = updated;
           return updated;
         });
+
+        // 4. Propagate confirmed DB baselines to CentralMarketDataService
+        centralMarketDataService.updateBaselinesFromDatabase(
+          Array.from(baselineMap.entries()).map(([ticker, val]) => ({
+            ticker,
+            avgVol20DM: val.avgVol20DM,
+            avg20DTradedShares: val.avg20DTradedShares,
+          }))
+        );
 
         if (typeof window !== 'undefined') {
           localStorage.setItem(
@@ -759,50 +785,12 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           if (typeof window !== 'undefined') {
             localStorage.setItem('qp_last_trading_date', todayDateStr);
           }
-          if (isSupabaseConfigured && supabase) {
-            markSelfUpdating();
-            const client = supabase;
-            const updates = watchlistRef.current.map((stock) => {
-              const newAvg = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
-              const updatePayload: Record<string, any> = {
-                avg_vol_20d_m: newAvg,
-                updated_at: new Date().toISOString(),
-              };
-              if (!sessionStarted) {
-                updatePayload.today_vol_m = 0.0;
-                updatePayload.has_crossed_20d = false;
-                updatePayload.crossover_time = null;
-                updatePayload.crossover_spot_price = null;
-              }
-              return Promise.allSettled([
-                client.from('watchlist').update(updatePayload).eq('ticker', stock.ticker),
-                client.from('stock_master').update({ avg_vol_20d_m: newAvg }).eq('ticker', stock.ticker),
-              ]);
-            });
-            await Promise.allSettled(updates);
-          }
-          showToast(
-            `📅 Day Start (${todayDateStr}): Last 20-Day Traded Shares baselines updated for ${watchlistRef.current.length} symbols.`,
-            'emerald'
-          );
-        } else {
-          if (isSupabaseConfigured && supabase) {
-            markSelfUpdating();
-            const client = supabase;
-            const updates = watchlistRef.current.map((stock) => {
-              const newAvg = baselineMap.get(stock.ticker) ?? stock.avgVol20DM;
-              return Promise.allSettled([
-                client.from('watchlist').update({ avg_vol_20d_m: newAvg, updated_at: new Date().toISOString() }).eq('ticker', stock.ticker),
-                client.from('stock_master').update({ avg_vol_20d_m: newAvg }).eq('ticker', stock.ticker),
-              ]);
-            });
-            await Promise.allSettled(updates);
-          }
-          showToast(
-            `⚡ Last 20-Day Traded Shares baselines refreshed for ${watchlistRef.current.length} symbols (${dataSource}).`,
-            'info'
-          );
         }
+
+        showToast(
+          `✅ Database Confirmed: 20-Day Average Traded Shares updated for ${baselineMap.size} symbols (${dataSource}).`,
+          'emerald'
+        );
         stateMachineRef.current.mark20DSyncSuccess(watchlistRef.current.length);
         setMarketLifecycle(stateMachineRef.current.getSnapshot());
       } catch (err: any) {
@@ -1075,8 +1063,15 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             // Before 09:15 IST on trading days or on weekends, today's regular session has not traded.
             // Today's traded volume must remain 0.00M, and crossover cannot trigger!
             const todayVol = (sessionStarted && isUpdatedToday) ? (Number(d.today_vol_m) || 0) : 0;
-            const avgVol = Number(d.avg_vol_20d_m) || meta.avgVol20DM || 1.0;
-            const avgShares = Number(d.avg_20d_traded_shares) || meta.avg20DTradedShares || Math.round(avgVol * 1_000_000);
+            const avgShares = (d.avg_20d_traded_shares !== null && d.avg_20d_traded_shares !== undefined && Number(d.avg_20d_traded_shares) > 0)
+              ? Number(d.avg_20d_traded_shares)
+              : (d.avg_vol_20d_m !== null && d.avg_vol_20d_m !== undefined && Number(d.avg_vol_20d_m) > 0
+                ? Math.round(Number(d.avg_vol_20d_m) * 1_000_000)
+                : (meta.avg20DTradedShares || Math.round((meta.avgVol20DM || 1.0) * 1_000_000)));
+
+            const avgVol = (d.avg_vol_20d_m !== null && d.avg_vol_20d_m !== undefined && Number(d.avg_vol_20d_m) > 0)
+              ? Number(d.avg_vol_20d_m)
+              : +(avgShares / 1_000_000).toFixed(6);
             const todayShares = (sessionStarted && isUpdatedToday)
               ? (d.today_traded_shares !== undefined && d.today_traded_shares !== null ? Number(d.today_traded_shares) : Math.round(todayVol * 1_000_000))
               : 0;

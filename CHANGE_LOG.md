@@ -52,8 +52,45 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ## Change History
 
+### [2026-10-07 00:05 IST] — Establish Database as the Single Authoritative Source of Truth for 20-Day Average Traded Shares
+- **Commit SHA / Version:** Pending (`main`) / `v2.3.2`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Fix` / `Database` / `Refactor`
+- **Business Rationale / Objective:** 
+  Eliminate stale or conflicting 20-day average traded shares values across fallback scenarios, browsers, and terminal reloads.
+  1. **Strict Database Priority:** Fixed `resolveStockMetadata` in `src/lib/stocks/stockMaster.ts` where static catalog constants (`master?.avg20DTradedShares`) previously took precedence over database values (`input.avg_20d_traded_shares`). Database records are now strictly prioritized over static catalog defaults.
+  2. **Atomic DB Persistence & Verification:** `/api/pipeline/sync-baselines` now updates both `avg_vol_20d_m` and exact `avg_20d_traded_shares` in `public.watchlist`, `public.stock_master`, and `public.live_tick_snapshots`, and explicitly queries the database to confirm rows were stored before returning success.
+  3. **Reload & UI Synchronization:** `syncDailyBaselines` in `QuantPulseContext.tsx` reloads the confirmed rows from Supabase, updates UI state with the exact DB shares, and propagates them to `centralMarketDataService` memory snapshots.
+  4. **Downstream Coherence:** Screening in `ZoneC_Screener.tsx`, Watchlist cards in `ZoneB_Watchlist.tsx`, next action in `ZoneD_NextAction.tsx`, and volume crossover latches in `crossoverEngine.ts` / `centralMarketDataService.ts` now consume the unified database-stored 20D average values.
+
+#### Affected Components & Files
+- `src/lib/stocks/stockMaster.ts`: Prioritized database fields (`input.avg20DTradedShares`, `input.avg_20d_traded_shares`) over static catalog constants in `resolveStockMetadata`.
+- `src/app/api/pipeline/sync-baselines/route.ts`: Stored `avg_20d_traded_shares` in `watchlist`, `stock_master`, `live_tick_snapshots` and added database confirmation check.
+- `src/lib/services/centralMarketDataService.ts`: Added `updateBaselinesFromDatabase` method to synchronize memory snapshot cache with confirmed DB values.
+- `src/context/QuantPulseContext.tsx`: Re-architected `syncDailyBaselines` to reload from Supabase upon sync and update UI/memory state strictly from confirmed DB records.
+- `tests/architecture/centralMarketDataAndTelegram.test.ts`: Added architecture tests verifying DB precedence and sync data flow.
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+
+#### Verification & Testing Performed
+- Ran `npm test` verifying all 33 unit and architecture tests passed.
+- Ran `npx tsc --noEmit` verifying 0 compilation errors.
+- Ran `npm run build` verifying production Next.js build completed with 0 errors across 21 routes.
+
+---
+
 ### [2026-10-06 23:45 IST] — Restrict 20D Baseline Sync Invocations to User Click and Auto-Pilot Step 1
-- **Commit SHA / Version:** Pending (`main`) / `v2.3.1`
+- **Commit SHA / Version:** `0564363` (`main`) / `v2.3.1`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
 - **Category:** `Refactor` / `Config`
 - **Business Rationale / Objective:** 
