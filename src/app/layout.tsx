@@ -25,7 +25,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'QuantPulse — 20-Day Volume Crossover & Options Execution Terminal',
+  title: 'QuantPulse — 20-Day Vol X & Opt Terminal',
   description:
     'Institutional-grade 20-Day Volume Crossover Screener & Options Execution Terminal with exact timestamp latching and trailing stop-loss management.',
 };
