@@ -33,6 +33,7 @@ export function ZoneA_Header() {
     brokerVaultStatus,
     marketSession,
     ingestionTelemetry,
+    centralFeedHealth,
     autoPilotStatus,
     setIsAutoPilotModalOpen,
     marketLifecycle,
@@ -154,10 +155,10 @@ export function ZoneA_Header() {
               {isLiveStreaming && (
                 <span
                   className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold flex items-center gap-1"
-                  title={`Live Dhan Ingestion Stream: ${ingestionTelemetry.packetsReceived} packets ingested • Latency: ${ingestionTelemetry.lastLatencyMs}ms`}
+                  title={`Central Feed: ${centralFeedHealth?.source || 'DHAN_HQ'} • Status: ${centralFeedHealth?.status || 'CONNECTED'} • Latency: ${centralFeedHealth?.latencyMs || ingestionTelemetry.lastLatencyMs}ms • Packets: ${ingestionTelemetry.packetsReceived}`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>
-                  <span>⚡ Feed: {ingestionTelemetry.packetsReceived} pkts ({ingestionTelemetry.lastLatencyMs}ms)</span>
+                  <span>⚡ CENTRAL {centralFeedHealth?.source ? centralFeedHealth.source.replace('FREE_NSE_LIVE', 'YAHOO').replace('DHAN_HQ', 'DHAN') : 'FEED'}: {ingestionTelemetry.packetsReceived} pkts ({centralFeedHealth?.latencyMs || ingestionTelemetry.lastLatencyMs}ms)</span>
                 </span>
               )}
 

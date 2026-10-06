@@ -342,4 +342,53 @@ export interface NiftyOvernightState {
   peLeg: NiftyOptionLeg;
 }
 
+export interface CentralMarketSnapshot {
+  ticker: string;
+  securityId?: string;
+  ltp: number;
+  open: number;
+  high: number;
+  low: number;
+  previousClose: number;
+  changePct: number;
+  todayTradedShares: number;
+  todayVolumeM: number;
+  avgVol20DM: number;
+  avg20DTradedShares: number;
+  averagePrice?: number;
+  lastTradeTime?: string;
+  source: string;
+  feedStatus: string;
+  hasCrossed20D?: boolean;
+  crossoverTime?: string | null;
+  crossoverSpotPrice?: number | null;
+  timestampIst?: string;
+  receivedAt: string;
+  updatedAt: string;
+}
 
+export type FeedHealthStatus = 'CONNECTED' | 'DEGRADED' | 'FALLBACK' | 'DISCONNECTED' | 'SIMULATION';
+
+export interface CentralFeedHealth {
+  status: FeedHealthStatus;
+  source: string;
+  lastSuccessfulUpdate: string | null;
+  latencyMs: number;
+  errorCount: number;
+  lastError: string | null;
+  workerId?: string;
+  activeSubscribers?: number;
+  updatedAt: string;
+}
+
+export interface LiveQuoteRecord {
+  ltp: number;
+  volumeM: number;
+  volume?: number; // Exact count of physical traded shares today
+  high: number;
+  low: number;
+  open: number;
+  close: number;
+  changePct: number;
+  averagePrice?: number;
+}

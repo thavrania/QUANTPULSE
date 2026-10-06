@@ -1,13 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendTelegramMessage } from '@/lib/alerts/telegramService';
+import { isMaskedToken, getUserAlertSettings } from '@/lib/services/alertSettingsService';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { botToken, chatId, message, testPing } = body;
+    let { botToken, chatId, message, testPing } = body;
 
-    const token = botToken || process.env.TELEGRAM_BOT_TOKEN;
-    const chat = chatId || process.env.TELEGRAM_CHAT_ID;
+    // Resolve authenticated user if session provided
+    let authUserId: string | null = null;
+    const authHeader = req.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ') && isSupabaseConfigured && supabase) {
+      const token = authHeader.replace('Bearer ', '').trim();
+      const { data } = await supabase.auth.getUser(token);
+      if (data?.user) {
+        authUserId = data.user.id;
+      }
+    }
+
+    // If botToken is masked or not provided, resolve unmasked credential from user_alert_settings
+    if (!botToken || isMaskedToken(botToken)) {
+      if (authUserId) {
+        const userSettings = await getUserAlertSettings(authUserId);
+        if (userSettings?.telegramBotToken) {
+          botToken = userSettings.telegramBotToken;
+        }
+        if (!chatId && userSettings?.telegramChatId) {
+          chatId = userSettings.telegramChatId;
+        }
+      }
+    }
+
+    const token =
+      botToken && !isMaskedToken(botToken)
+        ? botToken
+        : process.env.TELEGRAM_BOT_TOKEN || process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_BOT_TOKEN;
+
+    const chat =
+      chatId && chatId.trim()
+        ? chatId.trim()
+        : process.env.TELEGRAM_CHAT_ID || process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_CHAT_ID;
 
     if (!token || !chat) {
       return NextResponse.json(
@@ -16,10 +49,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-  const localDateString: string = new Date().toLocaleDateString();
+    const localDateString: string = new Date().toLocaleDateString();
     const textToSend =
       testPing
-        ? `🔔 *QuantPulse *\n──────────\n✅ Connection today!\n You will now receive instant push alerts for 20-Day VOL Crossovers.\n\n_Market Engine: Nominal • ${localDateString}_`
+        ? `🔔 *QP *\n──────────\n✅ Connection verified!\nYou will now receive instant push alerts for 20-Day VOL Crossovers.\n\n_Market Engine: Nominal • ${localDateString}_`
         : message || 'QuantPulse Alert Event';
 
     const result = await sendTelegramMessage(token, chat, textToSend);

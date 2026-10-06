@@ -52,6 +52,66 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ## Change History
 
+### [2026-10-06 23:30 IST] — Centralized Market Data Architecture & Cross-Device Persistent Telegram Settings
+- **Commit SHA / Version:** Pending (`main`) / `v2.3.0`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Feature` / `Database` / `Refactor`
+- **Business Rationale / Objective:** 
+  Solve two core platform architectural scaling problems:
+  1. **Persistent Cross-Device Telegram Configuration:** Previously, Telegram bot token, chat ID, and notification preferences were stored exclusively in browser `localStorage`, causing settings loss across devices, browsers, and sessions. Migrated alert configuration to Supabase Cloud Vault table `public.user_alert_settings` with Row-Level Security, authenticated retrieval via `/api/alerts/settings`, server-side token masking (`••••••••1234`), and automatic multi-device restoration.
+  2. **Centralized Market Data Pipeline & Realtime Broadcast:** Previously, each open browser tab ran an independent 2-second polling loop against `/api/broker/dhan/quote` -> Dhan HQ, causing $N$-linear external broker API requests. Introduced `CentralMarketDataService` and standalone ingestion worker `src/worker/marketDataWorker.ts` with singleton distributed lease protection (`public.market_feed_leases`), 09:15-09:16 opening stabilization, volume sanitization, exact physical shares (`BIGINT`), feed health tracking (`public.market_feed_health`), and single-row-per-ticker snapshot storage (`public.live_tick_snapshots`). Connected browsers now consume market updates via Supabase Realtime WebSocket push, while `/api/broker/dhan/quote` serves from the coalesced snapshot cache with zero redundant external broker requests ($O(1)$ scaling).
+  3. **Headless Idempotent Alert Dispatch:** Crossover latching and multi-user Telegram push alerts now execute server-side in `CentralMarketDataService` with deterministic deduplication (`public.alert_dispatch_logs`), firing alerts even when all browser tabs are closed.
+
+#### Affected Components & Files
+- `src/lib/types/quant.ts`: Added `CentralMarketSnapshot`, `CentralFeedHealth`, `FeedHealthStatus`, `LiveQuoteRecord` domain interfaces.
+- `src/lib/services/alertSettingsService.ts`: New service handling user alert preferences, token masking, and destination routing.
+- `src/app/api/alerts/settings/route.ts`: Authenticated API route for retrieving masked alert settings and saving to `user_alert_settings`.
+- `src/app/api/alerts/telegram/route.ts`: Updated to resolve stored tokens for masked client submissions and support server-side user resolution.
+- `src/components/modals/AlertsModal.tsx`: Redesigned to load and persist cloud-backed alert preferences with cross-device sync status badge.
+- `src/lib/services/centralMarketDataService.ts`: Core centralized ingestion engine with batching, volume sanitization, crossover latches, deduplicated alert dispatch, in-memory caching, and distributed lease locking.
+- `src/worker/marketDataWorker.ts`: Standalone background worker process for continuous market ingestion and lease heartbeat.
+- `src/app/api/pipeline/central-feed-tick/route.ts`: Serverless trigger endpoint for centralized feed ticks.
+- `src/app/api/broker/dhan/quote/route.ts`: Refactored to serve immediately from `centralMarketDataService` coalesced cache, eliminating redundant external calls.
+- `src/context/QuantPulseContext.tsx`: Connected Supabase Realtime `live_tick_snapshots` and `market_feed_health` listeners, added `centralFeedHealth` state, and relaxed live streaming polling interval.
+- `src/components/zones/ZoneA_Header.tsx`: Integrated centralized feed health telemetry monitor and status indicators.
+- `supabase_user_alert_settings.sql`: Idempotent SQL migration for `user_alert_settings` table and RLS policies.
+- `supabase_central_market_data.sql`: Idempotent SQL migration for `live_tick_snapshots` unique ticker constraint, `market_feed_leases`, `market_feed_health`, and `alert_dispatch_logs`.
+- `package.json`: Added `npm run worker` script and updated `npm test` script to run architecture test suite.
+- `tests/architecture/centralMarketDataAndTelegram.test.ts`: Automated test suite covering token masking, 15-browser request coalescing, exact physical shares, opening stabilization, session timing gates, feed fallbacks, and multi-user alert routing.
+
+#### Database & Schema Impact
+- **Tables Touched:** `public.user_alert_settings` (NEW), `public.market_feed_leases` (NEW), `public.market_feed_health` (NEW), `public.alert_dispatch_logs` (NEW), `public.live_tick_snapshots` (ALTER), `public.watchlist` (UPDATE)
+- **Operations:** `CREATE TABLE`, `ALTER TABLE ADD CONSTRAINT`, `ROW LEVEL SECURITY`, `ALTER PUBLICATION`
+- **Migration Scripts:** `supabase_user_alert_settings.sql`, `supabase_central_market_data.sql`
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch & Server Dedup)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Global Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+- [x] Invariant 11: Zero Round-Off & Slippage Precision Standard (Exact Physical Shares)
+- [x] Invariant 12: Strict Zero-Target Invariant for NIFTY Overnight Strategy
+
+#### Verification & Testing Performed
+- Executed full test suite (`npm test`): 31 of 31 automated tests passed (17 strategy tests + 14 architecture/central-feed tests).
+- Verified TypeScript compilation: `npx tsc --noEmit` exited with code 0 (zero errors).
+- Verified Next.js production build: `npm run build` completed successfully with code 0 across all 21 static and dynamic routes.
+- Simulated 15 simultaneous browser requests coalescing into exactly 1 external feed fetch.
+- Validated distributed lease acquisition, renewal, and standby takeover after expiry.
+
+#### Rollback Procedure
+- Revert git commit and execute:
+  `DROP TABLE IF EXISTS public.user_alert_settings, public.market_feed_leases, public.market_feed_health, public.alert_dispatch_logs;`
+  `ALTER TABLE public.live_tick_snapshots DROP CONSTRAINT IF EXISTS uq_live_tick_snapshots_ticker;`
+
+---
+
 ### [2026-10-01 17:45 IST] — Implementation of NIFTY 09:20 Premium 62.5 Overnight Strategy
 - **Commit SHA / Version:** Pending (`main`) / `v2.2.0`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)

@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node node_modules/sucrase/bin/sucrase-node tests/strategies/niftyBreakout180.test.ts"
+    "test": "node node_modules/sucrase/bin/sucrase-node tests/strategies/niftyBreakout180.test.ts && node node_modules/sucrase/bin/sucrase-node tests/architecture/centralMarketDataAndTelegram.test.ts",
+    "worker": "node node_modules/sucrase/bin/sucrase-node src/worker/marketDataWorker.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

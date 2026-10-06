@@ -29,18 +29,24 @@ This document serves as the permanent, unalterable technical specification for a
 ```mermaid
 flowchart TB
     subgraph Market_Feeds ["External Market Data Feeds"]
-        DhanFeed["Dhan HQ Marketfeed API v2<br/>(Quotes, OHLC, Volumes)"]
+        DhanFeed["Dhan HQ Marketfeed API v2<br/>(Batch Quotes, OHLC, Volumes)"]
         YahooFeed["Yahoo Finance v8 Chart API<br/>(Delayed Fallback & Free Candles)"]
         DhanHist["Dhan Historical Daily Candles<br/>(45 Calendar Days)"]
     end
 
+    subgraph Central_Ingestion ["Central Market Data Ingestion Worker & Service"]
+        CentralWorker["CentralMarketDataService & marketDataWorker<br/>- Singleton Distributed Lease (market_feed_leases)<br/>- Volume Sanitizer & 09:15-09:16 Stabilization<br/>- Server-Side Crossover Latching<br/>- Deterministic Alert Dispatch (alert_dispatch_logs)"]
+        FeedHealth["Feed Health Monitor (market_feed_health)"]
+    end
+
     subgraph Backend_Gateway ["Next.js 14 Serverless Gateway (Edge/Node.js)"]
-        QuoteRoute["/api/broker/dhan/quote"]
+        QuoteRoute["/api/broker/dhan/quote<br/>(Coalesced Centralized Cache)"]
         HistRoute["/api/broker/dhan/historical-20d"]
         OptionRoute["/api/broker/dhan/option-chain"]
         OrderRoute["/api/broker/dhan/place-order"]
         SquareRoute["/api/broker/dhan/square-off"]
         VaultRoute["/api/broker/vault"]
+        AlertSettingsRoute["/api/alerts/settings"]
         SyncRoute["/api/pipeline/sync-baselines"]
         ArchiveRoute["/api/pipeline/market-close-archive"]
         ClearRoute["/api/pipeline/clear-session"]
@@ -57,7 +63,7 @@ flowchart TB
     end
 
     subgraph UI_Zones ["QuantPulse Five-Zone Terminal UI"]
-        ZoneA["Zone A: Master Controls & Feed Bar"]
+        ZoneA["Zone A: Master Controls, Central Feed Monitor & Feed Bar"]
         ZoneB["Zone B: Watchlist & Stock Master"]
         ZoneC["Zone C: 20D Crossover Screener"]
         ZoneD["Zone D: Next Action & ATM Options"]
@@ -73,20 +79,34 @@ flowchart TB
         T_TSL[("public.tsl_audit_trail")]
         T_Journal[("public.daily_pnl_journal")]
         T_Vault[("public.broker_vault")]
-        T_Snapshots[("public.live_tick_snapshots")]
+        T_Snapshots[("public.live_tick_snapshots (1 Row/Ticker)")]
+        T_Leases[("public.market_feed_leases")]
+        T_Health[("public.market_feed_health")]
+        T_AlertSettings[("public.user_alert_settings")]
+        T_DispatchLogs[("public.alert_dispatch_logs")]
     end
 
-    DhanFeed --> QuoteRoute
-    YahooFeed --> QuoteRoute
+    DhanFeed --> CentralWorker
+    YahooFeed -.-> CentralWorker
     DhanHist --> HistRoute
     
-    QuoteRoute --> QueueEngine --> Context
+    CentralWorker --> T_Snapshots
+    CentralWorker --> T_Watchlist
+    CentralWorker --> T_Crossover
+    CentralWorker --> FeedHealth --> T_Health
+    CentralWorker <--> T_Leases
+    CentralWorker <--> T_AlertSettings
+    CentralWorker <--> T_DispatchLogs
+    CentralWorker --> TelegramRoute
+
+    T_Snapshots -.->|Supabase Realtime Push| Context
+    T_Health -.->|Supabase Realtime Push| Context
+    QuoteRoute --> Context
     HistRoute --> SyncRoute --> T_Watchlist
     Context --> UI_Zones
     Context <--> Supabase_Vault
     OrderRoute --> DhanFeed
     SquareRoute --> DhanFeed
-    Context --> TelegramRoute
 ```
 
 ### 2.2 Application Data Flow
@@ -284,6 +304,7 @@ The terminal is partitioned into five distinct visual zones mounted inside [src/
     "timestamp": "2026-10-01T04:30:00.000Z"
   }
   ```
+- **Centralized Coalescing `[UPDATED v2.3.0]`: Direct browser hits delegate to `centralMarketDataService.getCachedLiveQuoteSnapshot()`. If in-memory cache is fresh (or request is in-flight), quotes are returned immediately with zero duplicate upstream hits to Dhan HQ. Standalone worker `src/worker/marketDataWorker.ts` continuously seeds this pipeline.
 - **Volume Sanitization Logic `[CONFIRMED FROM CODE: lines 99-122]`:**
   1. Checks `item.last_trade_time`. Converts epoch/ISO string to IST date.
   2. If the trade timestamp does not match today's date in IST, or occurred before 09:15:00 IST, `rawVol = 0`.
@@ -336,6 +357,15 @@ The terminal is partitioned into five distinct visual zones mounted inside [src/
 ### 7.7 `/api/broker/vault` (GET / POST)
 - **Purpose:** Manages broker authentication tokens in `public.broker_vault`.
 - **Source:** [src/app/api/broker/vault/route.ts](file:///c:/Project/QUANTPULSE/src/app/api/broker/vault/route.ts)
+
+### 7.8 `/api/alerts/settings` (GET / POST)
+- **Purpose:** Manages persistent user-level Telegram alert configuration in `public.user_alert_settings`.
+- **Source:** [src/app/api/alerts/settings/route.ts](file:///c:/Project/QUANTPULSE/src/app/api/alerts/settings/route.ts)
+- **Security:** Requires Supabase Bearer Auth / Cookie Auth. Bot tokens are masked with `••••••••1234` on read to protect credentials in client memory.
+
+### 7.9 `/api/pipeline/central-feed-tick` (GET / POST)
+- **Purpose:** Executes a single tick of the centralized market ingestion loop. Ingests all active watchlist stocks, upserts `public.live_tick_snapshots`, updates `public.market_feed_health`, and broadcasts via Supabase Realtime.
+- **Source:** [src/app/api/pipeline/central-feed-tick/route.ts](file:///c:/Project/QUANTPULSE/src/app/api/pipeline/central-feed-tick/route.ts)
 
 ---
 
@@ -532,6 +562,27 @@ erDiagram
 ### 9.8 `public.broker_vault`
 - **Purpose:** Centralized encrypted cloud vault storing Dhan access tokens for multi-device sync and cron jobs.
 
+### 9.9 `public.user_alert_settings`
+- **Purpose:** Persistent cross-device storage for user-specific Telegram credentials and notification toggles.
+- **Unique Constraint:** `UNIQUE (user_id)` mapped to `auth.users(id)`.
+- **Security:** RLS restricts access to `auth.uid() = user_id`. Bot token is masked as `••••••••1234` on client read.
+
+### 9.10 `public.market_feed_leases`
+- **Purpose:** Distributed singleton leader election lease preventing split-brain execution across multiple workers.
+- **Columns:** `lease_name` (PK), `leader_id`, `acquired_at`, `expires_at`, `updated_at`.
+
+### 9.11 `public.market_feed_health`
+- **Purpose:** Real-time system heartbeat telemetry and circuit-breaker status across worker, broker, and Supabase.
+- **Columns:** `feed_name` (PK), `status`, `active_source`, `last_tick_at`, `latency_ms`, `total_ticks`, `error_count`, `last_error`.
+
+### 9.12 `public.alert_dispatch_logs`
+- **Purpose:** Server-side idempotent dispatch ledger preventing duplicate Telegram notifications.
+- **Unique Constraint:** `UNIQUE (alert_type, reference_key, channel_key, dispatch_date)`.
+
+### 9.13 `public.live_tick_snapshots`
+- **Purpose:** Bounded single-row-per-ticker market state table broadcasted via Supabase Realtime to all connected browsers.
+- **Unique Constraint:** `uq_live_tick_snapshots_ticker UNIQUE (ticker)`.
+
 ---
 
 ## 10. Data Dictionary & Data Source Matrix
@@ -596,6 +647,20 @@ flowchart TD
 - **Dhan Error 805 / 429 (Too many requests):** Enforces immediate 60-second cooldown to protect broker credentials.
 - **Request Coalescing:** Identical requests in-flight share a single HTTP Promise.
 - **TTL Cache:** 2,500ms cache window prevents duplicate polling on high-frequency triggers.
+
+### 11.1 Centralized Market Data Worker & Realtime Pipeline `[ADDED v2.3.0]`
+- **Scaling Invariant ($O(N) \to O(1)$):**
+  Connected browsers no longer execute independent external polling loops against Dhan HQ. Instead, a single centralized worker (`src/worker/marketDataWorker.ts`) runs as a long-running Node/container process, ingesting ticks for all active symbols in `public.watchlist`.
+- **Distributed Leader Lease (`public.market_feed_leases`):**
+  The worker maintains a 10-second heartbeat lease. If a worker goes offline, backup workers or scheduled tick requests can take over seamlessly without split-brain duplicate ingestion.
+- **Single-Row Snapshot Table (`public.live_tick_snapshots`):**
+  Tick updates are written using `ON CONFLICT (ticker) DO UPDATE`, guaranteeing the table never grows beyond the active universe count (55 rows) and storage remains constant.
+- **Supabase Realtime Broadcast:**
+  Changes to `public.live_tick_snapshots` and `public.market_feed_health` are broadcast via Supabase Realtime WebSockets to all connected client browsers. The browser functions strictly as a consumer of shared market state.
+- **Zero-Hit Cache on API Route:**
+  `/api/broker/dhan/quote` delegates to `centralMarketDataService.getCachedLiveQuoteSnapshot()`. If in-memory cache is fresh (or tick is in flight), requests are answered instantly without hitting Dhan or Yahoo.
+- **Server-Side Alert Dispatch:**
+  Volume crossover triggers are detected centrally and dispatched server-side to all users who enabled `telegram_crossover_enabled`. Dispatch logs in `public.alert_dispatch_logs` prevent duplicate notifications across multiple browser tabs.
 
 ---
 

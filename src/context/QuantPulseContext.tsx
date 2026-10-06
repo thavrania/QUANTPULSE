@@ -12,6 +12,7 @@ import {
   StockMasterItem,
   NiftyOvernightState,
   NiftyOptionLeg,
+  CentralFeedHealth,
 } from '@/lib/types/quant';
 import {
   initializePendingState,
@@ -112,6 +113,7 @@ interface QuantPulseContextType {
   marketSession: MarketSessionInfo;
   ingestionTelemetry: IngestionTelemetry;
   marketLifecycle: MarketLifecycleSnapshot;
+  centralFeedHealth: CentralFeedHealth;
 
   // Actions
   setSelectedTicker: (ticker: string) => void;
@@ -306,6 +308,20 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [isCloudLogsModalOpen, setIsCloudLogsModalOpen] = useState<boolean>(false);
   const [idempotencyLocks, setIdempotencyLocks] = useState<string[]>([]);
   const [feedMode, setFeedModeState] = useState<'DHAN_LIVE' | 'SIMULATION'>('DHAN_LIVE');
+  const feedModeRef = useRef<'DHAN_LIVE' | 'SIMULATION'>(feedMode);
+  useEffect(() => {
+    feedModeRef.current = feedMode;
+  }, [feedMode]);
+
+  const [centralFeedHealth, setCentralFeedHealth] = useState<CentralFeedHealth>({
+    status: 'CONNECTED',
+    source: 'DHAN_HQ',
+    lastSuccessfulUpdate: null,
+    latencyMs: 0,
+    errorCount: 0,
+    lastError: null,
+    updatedAt: new Date().toISOString(),
+  });
   const [lastLiveSyncTime, setLastLiveSyncTime] = useState<string | null>(null);
   const [isLiveFetching, setIsLiveFetching] = useState<boolean>(false);
   const [brokerVaultStatus, setBrokerVaultStatus] = useState<BrokerVaultStatus | null>(null);
@@ -1408,6 +1424,97 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlist' }, () => {
         if (isSelfUpdatingRef.current || isLiveStreamingRef.current || isBaselineSyncingRef.current) return;
         loadFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_tick_snapshots' }, (payload: any) => {
+        if (feedModeRef.current === 'SIMULATION') return;
+        const snap = payload.new;
+        if (!snap || !snap.ticker) return;
+
+        const ticker = snap.ticker;
+        const ltp = Number(snap.ltp) || 0;
+        const shares =
+          snap.today_traded_shares !== null && snap.today_traded_shares !== undefined
+            ? Number(snap.today_traded_shares)
+            : Math.round(Number(snap.today_volume_m || snap.today_vol_m || 0) * 1_000_000);
+        const volM =
+          snap.today_volume_m !== null && snap.today_volume_m !== undefined
+            ? Number(snap.today_volume_m)
+            : snap.today_vol_m !== null && snap.today_vol_m !== undefined
+            ? Number(snap.today_vol_m)
+            : shares / 1_000_000;
+        const avgShares =
+          snap.avg_20d_traded_shares !== null && snap.avg_20d_traded_shares !== undefined
+            ? Number(snap.avg_20d_traded_shares)
+            : Math.round(Number(snap.avg_vol_20d_m || 0) * 1_000_000);
+        const avgM =
+          snap.avg_vol_20d_m !== null && snap.avg_vol_20d_m !== undefined
+            ? Number(snap.avg_vol_20d_m)
+            : avgShares / 1_000_000;
+
+        setWatchlist((prevWl) =>
+          prevWl.map((stock) => {
+            if (stock.ticker !== ticker) return stock;
+            return {
+              ...stock,
+              spotLtp: ltp > 0 ? ltp : stock.spotLtp,
+              todayVolM: volM,
+              todayTradedShares: shares,
+              avgVol20DM: avgM > 0 ? avgM : stock.avgVol20DM,
+              avg20DTradedShares: avgShares > 0 ? avgShares : stock.avg20DTradedShares,
+              dayHigh: Number(snap.high) || stock.dayHigh,
+              dayLow: Number(snap.low) || stock.dayLow,
+              dayOpen: Number(snap.open) || stock.dayOpen,
+              dayClose: Number(snap.previous_close) || stock.dayClose,
+              changePct: snap.change_pct !== null && snap.change_pct !== undefined ? Number(snap.change_pct) : stock.changePct,
+              hasCrossed20D: Boolean(snap.has_crossed_20d) || stock.hasCrossed20D,
+              crossoverTime: snap.crossover_time || stock.crossoverTime,
+              crossoverSpotPrice: snap.crossover_spot_price ? Number(snap.crossover_spot_price) : stock.crossoverSpotPrice,
+              feedSource: 'LIVE_DHAN',
+            };
+          })
+        );
+
+        if (ltp > 0) {
+          setPositions((prevPos) =>
+            prevPos.map((pos) => {
+              if (pos.ticker !== ticker) return pos;
+              let updatedLtp = pos.currentLtp;
+              if (pos.instrumentType === 'STOCK') {
+                updatedLtp = ltp;
+              } else {
+                const spotChange = ltp - pos.entryPrice;
+                updatedLtp = Math.max(0.5, +(pos.entryPrice + spotChange * 0.5).toFixed(2));
+              }
+              const updatedPos = { ...pos, currentLtp: updatedLtp };
+              return autoUpdatePositionFromTick(updatedPos);
+            })
+          );
+        }
+
+        const syncTime = snap.timestamp_ist || new Date().toLocaleTimeString('en-IN');
+        setLastLiveSyncTime(syncTime);
+        packetCountRef.current += 1;
+        setIngestionTelemetry((prev) => ({
+          ...prev,
+          packetsReceived: prev.packetsReceived + 1,
+          lastSyncTimestamp: syncTime,
+          streamActive: true,
+        }));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'market_feed_health' }, (payload: any) => {
+        if (payload.new) {
+          setCentralFeedHealth({
+            status: payload.new.status || 'CONNECTED',
+            source: payload.new.source || 'DHAN_HQ',
+            lastSuccessfulUpdate: payload.new.last_successful_update,
+            latencyMs: payload.new.latency_ms || 0,
+            errorCount: payload.new.error_count || 0,
+            lastError: payload.new.last_error,
+            workerId: payload.new.worker_id,
+            activeSubscribers: payload.new.active_subscribers,
+            updatedAt: payload.new.updated_at || new Date().toISOString(),
+          });
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crossover_events' }, () => {
         if (isSelfUpdatingRef.current) return;
@@ -3421,6 +3528,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         marketSession,
         ingestionTelemetry,
         marketLifecycle,
+        centralFeedHealth,
         autoPilotStatus,
         isAutoPilotModalOpen,
         setIsAutoPilotModalOpen,

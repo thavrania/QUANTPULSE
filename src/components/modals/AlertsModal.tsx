@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import {
   formatCrossoverAlert,
   formatOrderAlert,
@@ -39,6 +40,10 @@ export function AlertsModal() {
 
   const [botToken, setBotToken] = useState('');
   const [chatId, setChatId] = useState('');
+  const [hasCloudToken, setHasCloudToken] = useState(false);
+  const [isCloudSynced, setIsCloudSynced] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false);
 
   // Individual Alert Type Toggles
   const [notifyCrossover, setNotifyCrossover] = useState(true);
@@ -52,60 +57,175 @@ export function AlertsModal() {
   const [testingAlertId, setTestingAlertId] = useState<AlertTypeId | null>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (!isAlertsModalOpen) return;
+
+    let isMounted = true;
+    setIsLoadingSettings(true);
+
+    async function loadAlertSettings() {
       const defaultToken = process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_BOT_TOKEN || '8602260354:AAGfdG8fTeS24QpP9QXiooNWRuKTepyr0Mw';
       const defaultChat = process.env.NEXT_PUBLIC_DEFAULT_TELEGRAM_CHAT_ID || '-1004477627015';
-      const savedToken = localStorage.getItem('qp_telegram_bot_token');
-      let savedChat = localStorage.getItem('qp_telegram_chat_id');
 
-      // Auto-migrate if stored chat id was the previous typo (-1005577627015 instead of -1004477627015)
-      if (savedChat === '-1005577627015') {
-        savedChat = defaultChat;
-        localStorage.setItem('qp_telegram_chat_id', defaultChat);
+      let tokenToSet = defaultToken;
+      let chatToSet = defaultChat;
+      let crossToSet = true;
+      let orderToSet = true;
+      let tslToSet = true;
+      let autoToSet = true;
+      let killToSet = true;
+      let niftyToSet = true;
+
+      // Check localStorage first for instant display
+      if (typeof window !== 'undefined') {
+        const savedToken = localStorage.getItem('qp_telegram_bot_token');
+        let savedChat = localStorage.getItem('qp_telegram_chat_id');
+        if (savedChat === '-1005577627015') {
+          savedChat = defaultChat;
+          localStorage.setItem('qp_telegram_chat_id', defaultChat);
+        }
+        if (savedToken) tokenToSet = savedToken;
+        if (savedChat) chatToSet = savedChat;
+
+        const sCross = localStorage.getItem('qp_notify_crossover');
+        if (sCross !== null) crossToSet = sCross === 'true';
+        const sOrder = localStorage.getItem('qp_notify_order');
+        if (sOrder !== null) orderToSet = sOrder === 'true';
+        const sTsl = localStorage.getItem('qp_notify_tsl');
+        if (sTsl !== null) tslToSet = sTsl === 'true';
+        const sAuto = localStorage.getItem('qp_notify_autopilot');
+        if (sAuto !== null) autoToSet = sAuto === 'true';
+        const sKill = localStorage.getItem('qp_notify_killswitch');
+        if (sKill !== null) killToSet = sKill === 'true';
+        const sNifty = localStorage.getItem('qp_notify_nifty_overnight');
+        if (sNifty !== null) niftyToSet = sNifty === 'true';
       }
 
-      const activeToken = savedToken || defaultToken;
-      const activeChat = savedChat || defaultChat;
-      setBotToken(activeToken);
-      setChatId(activeChat);
+      // Check Supabase Cloud Vault for authenticated cross-device persistence
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const session = sessionData.session;
 
-      if (!savedToken) localStorage.setItem('qp_telegram_bot_token', activeToken);
-      if (!savedChat) localStorage.setItem('qp_telegram_chat_id', activeChat);
+          if (session?.access_token) {
+            const res = await fetch('/api/alerts/settings', {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
+            });
 
-      const savedNotifyCross = localStorage.getItem('qp_notify_crossover');
-      if (savedNotifyCross !== null) setNotifyCrossover(savedNotifyCross === 'true');
+            if (res.ok) {
+              const result = await res.json();
+              if (result.success && result.settings) {
+                const s = result.settings;
+                if (s.maskedBotToken) tokenToSet = s.maskedBotToken;
+                if (s.telegramChatId) chatToSet = s.telegramChatId;
+                if (s.telegramCrossoverEnabled !== undefined) crossToSet = s.telegramCrossoverEnabled;
+                if (s.telegramOrderEnabled !== undefined) orderToSet = s.telegramOrderEnabled;
+                if (s.telegramTslEnabled !== undefined) tslToSet = s.telegramTslEnabled;
+                if (s.telegramAutoPilotEnabled !== undefined) autoToSet = s.telegramAutoPilotEnabled;
+                if (s.telegramKillSwitchEnabled !== undefined) killToSet = s.telegramKillSwitchEnabled;
+                if (s.telegramNiftyOvernightEnabled !== undefined) niftyToSet = s.telegramNiftyOvernightEnabled;
 
-      const savedNotifyOrder = localStorage.getItem('qp_notify_order');
-      if (savedNotifyOrder !== null) setNotifyOrder(savedNotifyOrder === 'true');
+                if (isMounted) {
+                  setHasCloudToken(Boolean(s.hasBotToken));
+                  setIsCloudSynced(true);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[AlertsModal] Cloud fetch notice:', err);
+        }
+      }
 
-      const savedNotifyTsl = localStorage.getItem('qp_notify_tsl');
-      if (savedNotifyTsl !== null) setNotifyTsl(savedNotifyTsl === 'true');
-
-      const savedNotifyAutoPilot = localStorage.getItem('qp_notify_autopilot');
-      if (savedNotifyAutoPilot !== null) setNotifyAutoPilot(savedNotifyAutoPilot === 'true');
-
-      const savedNotifyKillSwitch = localStorage.getItem('qp_notify_killswitch');
-      if (savedNotifyKillSwitch !== null) setNotifyKillSwitch(savedNotifyKillSwitch === 'true');
-
-      const savedNotifyNifty = localStorage.getItem('qp_notify_nifty_overnight');
-      if (savedNotifyNifty !== null) setNotifyNiftyOvernight(savedNotifyNifty === 'true');
+      if (isMounted) {
+        setBotToken(tokenToSet);
+        setChatId(chatToSet);
+        setNotifyCrossover(crossToSet);
+        setNotifyOrder(orderToSet);
+        setNotifyTsl(tslToSet);
+        setNotifyAutoPilot(autoToSet);
+        setNotifyKillSwitch(killToSet);
+        setNotifyNiftyOvernight(niftyToSet);
+        setIsLoadingSettings(false);
+      }
     }
+
+    loadAlertSettings();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isAlertsModalOpen]);
 
   if (!isAlertsModalOpen) return null;
 
   const onClose = () => setIsAlertsModalOpen(false);
 
-  const handleSave = () => {
-    localStorage.setItem('qp_telegram_bot_token', botToken.trim());
-    localStorage.setItem('qp_telegram_chat_id', chatId.trim());
-    localStorage.setItem('qp_notify_crossover', String(notifyCrossover));
-    localStorage.setItem('qp_notify_order', String(notifyOrder));
-    localStorage.setItem('qp_notify_tsl', String(notifyTsl));
-    localStorage.setItem('qp_notify_autopilot', String(notifyAutoPilot));
-    localStorage.setItem('qp_notify_killswitch', String(notifyKillSwitch));
-    localStorage.setItem('qp_notify_nifty_overnight', String(notifyNiftyOvernight));
-    showToast('Alert preferences saved successfully!', 'emerald');
+  const handleSave = async () => {
+    setIsSaving(true);
+    const trimmedBotToken = botToken.trim();
+    const trimmedChatId = chatId.trim();
+
+    // 1. Save to localStorage as immediate offline cache
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qp_telegram_bot_token', trimmedBotToken);
+      localStorage.setItem('qp_telegram_chat_id', trimmedChatId);
+      localStorage.setItem('qp_notify_crossover', String(notifyCrossover));
+      localStorage.setItem('qp_notify_order', String(notifyOrder));
+      localStorage.setItem('qp_notify_tsl', String(notifyTsl));
+      localStorage.setItem('qp_notify_autopilot', String(notifyAutoPilot));
+      localStorage.setItem('qp_notify_killswitch', String(notifyKillSwitch));
+      localStorage.setItem('qp_notify_nifty_overnight', String(notifyNiftyOvernight));
+    }
+
+    // 2. Persist to Supabase Cloud Vault for cross-device synchronization
+    let cloudSynced = false;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const session = sessionData.session;
+
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+
+        const res = await fetch('/api/alerts/settings', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            userId: session?.user?.id,
+            botToken: trimmedBotToken,
+            chatId: trimmedChatId,
+            notifyCrossover,
+            notifyOrder,
+            notifyTsl,
+            notifyAutoPilot,
+            notifyKillSwitch,
+            notifyNiftyOvernight,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success && data.isAuthenticated) {
+          cloudSynced = true;
+          setIsCloudSynced(true);
+          if (data.maskedBotToken) {
+            setBotToken(data.maskedBotToken);
+          }
+        }
+      } catch (err: any) {
+        console.warn('[AlertsModal] Cloud save failed, saved locally:', err.message);
+      }
+    }
+
+    setIsSaving(false);
+    if (cloudSynced) {
+      showToast('✅ Alert settings saved and synced across all your devices!', 'emerald');
+    } else {
+      showToast('Alert preferences saved to local browser session.', 'emerald');
+    }
     onClose();
   };
 
@@ -161,9 +281,17 @@ export function AlertsModal() {
         );
       }
 
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (isSupabaseConfigured && supabase) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session?.access_token) {
+          headers['Authorization'] = `Bearer ${sessionData.session.access_token}`;
+        }
+      }
+
       const res = await fetch('/api/alerts/telegram', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           botToken: botToken.trim(),
           chatId: chatId.trim(),
@@ -266,12 +394,19 @@ export function AlertsModal() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white tracking-wide">Telegram Push Alert Settings</h3>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">
-                  LIVE BOT
-                </span>
+                {isCloudSynced ? (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    CLOUD PERSISTENT
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 font-semibold">
+                    LOCAL / DEMO
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400">
-                Configure triggers &amp; preview notifications delivered to your Telegram group
+                Cross-device persistent alert triggers delivered directly to your Telegram channels
               </p>
             </div>
           </div>
@@ -286,6 +421,23 @@ export function AlertsModal() {
 
         {/* Scrollable Body */}
         <div className="p-5 overflow-y-auto space-y-4 text-xs text-slate-300 flex-1">
+          {/* Cloud Sync Status Banner */}
+          {isCloudSynced ? (
+            <div className="p-2.5 bg-emerald-950/30 border border-emerald-800/40 rounded-xl flex items-center justify-between text-[11px] text-emerald-300">
+              <div className="flex items-center gap-2">
+                <span>☁️</span>
+                <span>Settings linked to your account. Open on any browser or machine to restore automatically.</span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-2.5 bg-slate-900/80 border border-slate-800 rounded-xl flex items-center justify-between text-[11px] text-slate-400">
+              <div className="flex items-center gap-2">
+                <span>💡</span>
+                <span>Sign in via <strong>Account Profile</strong> in Zone A to enable seamless cross-device cloud persistence.</span>
+              </div>
+            </div>
+          )}
+
           {/* Bot & Chat ID Grid */}
           <div className="p-4 bg-obsidian/90 rounded-xl border border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
@@ -298,7 +450,7 @@ export function AlertsModal() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] text-slate-400 uppercase font-semibold mb-1">
-                  Telegram Bot Token
+                  Telegram Bot Token {hasCloudToken && <span className="text-emerald-400 font-normal">(Secured in Cloud)</span>}
                 </label>
                 <input
                   type="password"
@@ -358,7 +510,7 @@ export function AlertsModal() {
             </div>
           </div>
 
-          {/* 5 Distinct Alert Type Cards */}
+          {/* 6 Distinct Alert Type Cards */}
           <div className="space-y-2.5">
             {alertCards.map((card) => {
               const isTesting = testingAlertId === card.id;
@@ -436,7 +588,7 @@ export function AlertsModal() {
               • <strong>SureShot Group:</strong> Ensure <code>@SureShotTradeBot</code> has administrator privileges so it can dispatch alerts without restrictions.
             </div>
             <div>
-              • <strong>Real-time Trade Execution:</strong> If Execution Mode is set to <strong>AUTO</strong>, a crossover triggers both <strong>Buy Eligible</strong> and <strong>Trade Taken</strong> alerts sequentially.
+              • <strong>Cross-Device Persistence:</strong> Once saved while signed in, your preferences are secured in the Supabase Cloud Vault and automatically restored whenever you log in from any browser.
             </div>
           </div>
         </div>
@@ -464,9 +616,10 @@ export function AlertsModal() {
             <button
               type="button"
               onClick={handleSave}
-              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition shadow-lg shadow-cyan-500/20"
+              disabled={isSaving}
+              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition shadow-lg shadow-cyan-500/20 flex items-center gap-1.5"
             >
-              Save Alert Settings
+              {isSaving ? 'Saving...' : 'Save Alert Settings'}
             </button>
           </div>
         </div>
