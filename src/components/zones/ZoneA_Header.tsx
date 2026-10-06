@@ -138,11 +138,7 @@ export function ZoneA_Header() {
                   <span className="flex items-center gap-1.5">
                     <span className={marketLifecycle.liveSyncStatus === 'SUCCESS' ? 'text-emerald-400 font-bold' : marketLifecycle.liveSyncStatus === 'RUNNING' ? 'text-amber-400 animate-spin' : 'text-slate-400'}>
                       {marketLifecycle.liveSyncStatus === 'SUCCESS' ? '✓' : marketLifecycle.liveSyncStatus === 'RUNNING' ? '⏳' : '○'} Live Sync
-                    </span>
-                    <span className="text-slate-600">→</span>
-                    <span className={marketLifecycle.twentyDaySyncStatus === 'SUCCESS' ? 'text-emerald-400 font-bold' : marketLifecycle.twentyDaySyncStatus === 'RUNNING' ? 'text-amber-400 animate-spin' : 'text-slate-400'}>
-                      {marketLifecycle.twentyDaySyncStatus === 'SUCCESS' ? '✓' : marketLifecycle.twentyDaySyncStatus === 'RUNNING' ? '⏳' : '○'} 20D Avg
-                    </span>
+                    </span>                   
                     <span className="text-slate-600">→</span>
                     <span className={isLiveStreaming ? 'text-emerald-400 font-bold animate-pulse' : 'text-slate-400'}>
                       {isLiveStreaming ? '🟢 Feed: ACTIVE' : '○ Feed: STOPPED'}

@@ -238,7 +238,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [positions, setPositions] = useState<Position[]>([]);
   const [config, setConfig] = useState<SystemConfig>({
     instrumentMode: 'STOCK',
-    executionMode: 'AUTO', // Standard AUTO TRADE by default
+    executionMode: 'MANUAL', // Default Trade Mode: MANUAL (Explicit user trade confirmation required)
     capitalPerTrade: 100000,
     maxOpenPositions: 5,
   });

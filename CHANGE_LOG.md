@@ -50,6 +50,21 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ---
 
+### [2026-10-07 01:50 IST] — Default Trade Execution Mode Set to MANUAL
+- **Commit SHA / Version:** Pending / `v2.4.1`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Config` / `Risk Management`
+- **Business Rationale / Objective:** 
+  Set the system default Trade Mode to `MANUAL` (previously initialized to `AUTO`).
+  - Terminal starts in `MANUAL` execution mode upon launch/refresh to prevent any automatic order routing without explicit trader confirmation.
+  - Trader retains the ability to switch to `AUTO TRADE` via the header master toggle in Zone A at any time during market sessions.
+
+#### Affected Components & Files
+- `src/context/QuantPulseContext.tsx`: Initialized `config.executionMode` to `'MANUAL'`.
+- `src/components/zones/ZoneA_Header.tsx`: Preserved manual/auto toggle controls with visual state feedback.
+
+---
+
 ### [2026-10-07 01:15 IST] — Automated Dhan API Authentication & Access Token Management (API Key + Secret + TOTP)
 - **Commit SHA / Version:** Pending / `v2.4.0`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
