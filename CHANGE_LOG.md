@@ -52,8 +52,48 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ## Change History
 
+### [2026-10-06 23:45 IST] — Restrict 20D Baseline Sync Invocations to User Click and Auto-Pilot Step 1
+- **Commit SHA / Version:** Pending (`main`) / `v2.3.1`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Refactor` / `Config`
+- **Business Rationale / Objective:** 
+  Ensure that 20D Baseline Sync (`syncDailyBaselines` / `/api/pipeline/sync-baselines`) is strictly and exclusively invoked in two explicit situations:
+  1. User clicks the **"⚡ 20D Sync"** button in `ZoneB_Watchlist.tsx` (or manual 20D button in Broker modal).
+  2. Auto-Pilot Step 1 (`STEP_1_SYNC_20D`) runs at 09:00:05 AM IST or is manually executed via `PreMarketAutoPilotModal.tsx`.
+  
+  All other automatic/background triggers have been permanently removed:
+  - Removed `/api/pipeline/sync-baselines` from `vercel.json` cron jobs.
+  - Removed automatic 20D baseline sync on midnight date rollover in `QuantPulseContext.tsx`.
+  - Removed automatic 20D baseline sync on initial application mount / page refresh in `QuantPulseContext.tsx`.
+  - Removed automatic 20D baseline sync inside `resetToDayStart()` in `QuantPulseContext.tsx` (Day Start now purely zeroes today's volume).
+  - Removed autonomous `TRIGGER_20D_SYNC` from `marketLifecycleStateMachine.ts` at 09:15 AM market opening.
+
+#### Affected Components & Files
+- `vercel.json`: Removed `sync-baselines` cron schedule.
+- `src/lib/services/marketLifecycleStateMachine.ts`: `LIVE_SYNC_COMPLETED` transitions directly to `LIVE_FEED_ACTIVE`.
+- `src/context/QuantPulseContext.tsx`: Removed automated 20D sync calls from midnight rollover, mount date check, `resetToDayStart`, and `executeLifecycleAction`.
+- `APPLICATION_BIBLE.md`: Updated Section 7.2 invocation invariants.
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+
+#### Verification & Testing Performed
+- Ran `npm test` verifying 31 of 31 strategy and architecture tests passed.
+- Ran `npx tsc --noEmit` confirming 0 compilation errors.
+
+---
+
 ### [2026-10-06 23:30 IST] — Centralized Market Data Architecture & Cross-Device Persistent Telegram Settings
-- **Commit SHA / Version:** Pending (`main`) / `v2.3.0`
+- **Commit SHA / Version:** `247ffbf` (`main`) / `v2.3.0`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
 - **Category:** `Feature` / `Database` / `Refactor`
 - **Business Rationale / Objective:** 

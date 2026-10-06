@@ -267,13 +267,7 @@ export class MarketLifecycleStateMachine {
         return { action: 'TRIGGER_LIVE_SYNC', message: 'Executing Live Sync' };
       }
 
-      if (this.state === 'LIVE_SYNC_COMPLETED') {
-        this.transitionTo('20D_SYNC_RUNNING', 'Starting Step 2: 20D Average Traded Shares calculation.');
-        this.twentyDaySyncStatus = 'RUNNING';
-        return { action: 'TRIGGER_20D_SYNC', message: 'Executing 20D Sync' };
-      }
-
-      if (this.state === '20D_SYNC_COMPLETED') {
+      if (this.state === 'LIVE_SYNC_COMPLETED' || this.state === '20D_SYNC_COMPLETED') {
         this.transitionTo('LIVE_FEED_ACTIVE', 'Initialization completed successfully. Connecting Live Feed!');
         this.initializationStatus = 'SUCCESS';
         this.liveFeedStatus = 'ACTIVE';

@@ -314,7 +314,7 @@ The terminal is partitioned into five distinct visual zones mounted inside [src/
 ### 7.2 `/api/pipeline/sync-baselines` (GET / POST)
 - **Purpose:** Calculates 20-session volume moving averages from historical daily candles.
 - **Source:** [src/app/api/pipeline/sync-baselines/route.ts](file:///c:/Project/QUANTPULSE/src/app/api/pipeline/sync-baselines/route.ts)
-- **Vercel Cron Schedule:** `30 3 * * 1-5` (09:00 AM IST Monday-Friday).
+- **Invocation Invariant `[UPDATED v2.3.1]`:** Invocations restricted strictly to explicit user click on the **20D Sync** button or automated execution of **Auto-Pilot Step 1** (09:00:05 IST). Background Vercel cron, page refresh triggers, Day Start session reset, and midnight rollover triggers have been eliminated.
 - **Execution Workflow:**
   1. Resolves monitored symbols from `public.watchlist` where `is_active_watchlist = true`.
   2. Queries Dhan Historical Candles (`/charts/historical`) for 45 calendar days.

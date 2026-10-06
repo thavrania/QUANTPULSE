@@ -862,8 +862,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
       if (transitionAction.action === 'TRIGGER_LIVE_SYNC' && executeLifecycleActionRef.current) {
         executeLifecycleActionRef.current('LIVE_SYNC');
-      } else if (transitionAction.action === 'TRIGGER_20D_SYNC' && executeLifecycleActionRef.current) {
-        executeLifecycleActionRef.current('20D_SYNC');
       } else if (transitionAction.action === 'START_LIVE_FEED' && executeLifecycleActionRef.current) {
         executeLifecycleActionRef.current('START_FEED');
       } else if (transitionAction.action === 'STOP_LIVE_FEED' && executeLifecycleActionRef.current) {
@@ -909,15 +907,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       if (ist.dateStr !== currentTradingDateRef.current) {
         currentTradingDateRef.current = ist.dateStr;
         setCurrentTradingDate(ist.dateStr);
-        // Automatically sync baselines and reset intraday progress for the new calendar date
-        syncDailyBaselines(true);
       }
     };
 
     updateClockAndDate();
     const timer = setInterval(updateClockAndDate, 1000);
     return () => clearInterval(timer);
-  }, [syncDailyBaselines]);
+  }, []);
 
   // Hydrate persistent market session state on initial load
   useEffect(() => {
@@ -995,18 +991,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     hydrateNiftyOvernight();
   }, []);
 
-  // First Day Start check: if date has changed since last visit, run baseline calculation & session reset
+  // First Day Start check: track trading date in localStorage without auto-triggering 20D baseline sync
   useEffect(() => {
     if (hasCheckedInitialDateSyncRef.current) return;
     hasCheckedInitialDateSyncRef.current = true;
 
     const todayDateStr = getISTDate().dateStr;
-    const storedDate = typeof window !== 'undefined' ? localStorage.getItem('qp_last_trading_date') : null;
-
-    if (!storedDate || storedDate !== todayDateStr) {
-      syncDailyBaselines(true);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qp_last_trading_date', todayDateStr);
     }
-  }, [syncDailyBaselines]);
+  }, []);
 
   // 2. Fetch from Supabase if configured
   useEffect(() => {
@@ -2416,13 +2410,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         })
         .neq('ticker', 'DUMMY_NEVER_MATCH');
     }
-    await syncDailyBaselines(true, true);
+    // Note: 20D baseline sync is only invoked via explicit "20D Sync" button or Auto-Pilot Step 1
     // If continuous trading has already started today, initialize Traded Shares with today's live feed
     if (hasTodayMarketSessionStarted()) {
       await fetchLiveDhanQuotes(true);
     }
     showToast('🔄 Watchlist initialized for Day Start (Traded Shares set to today\'s session 0.00M).', 'info');
-  }, [syncDailyBaselines, fetchLiveDhanQuotes, isSupabaseConfigured, markSelfUpdating, showToast]);
+  }, [fetchLiveDhanQuotes, isSupabaseConfigured, markSelfUpdating, showToast]);
 
   const executeAutoPilotStep = useCallback(
     async (stepId: AutoPilotStepId) => {
@@ -2548,12 +2542,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         showToast('🌅 Auto Market-Day: Step 1 — Live Sync (8-Point Data Validation Gate) running...', 'info');
         await fetchLiveDhanQuotes(false);
         await syncMarketSessionToDb();
-      } else if (actionType === '20D_SYNC') {
-        showToast('⚡ Auto Market-Day: Step 2 — 20D Average Traded Shares calculation running...', 'info');
-        await syncDailyBaselines(false, true);
-        await syncMarketSessionToDb();
       } else if (actionType === 'START_FEED') {
-        showToast('🟢 Auto Market-Day: Step 3 — Live Feed Active! Auto Trade monitoring 20D crossovers.', 'emerald');
+        showToast('🟢 Auto Market-Day: Step 2 — Live Feed Active! Auto Trade monitoring 20D crossovers.', 'emerald');
         setFeedModeState('DHAN_LIVE');
         setIsLiveStreaming(true);
         stateMachineRef.current.markLiveFeedStarted();
@@ -2571,8 +2561,6 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         const snap = stateMachineRef.current.getSnapshot();
         if (snap.liveSyncStatus !== 'SUCCESS') {
           await fetchLiveDhanQuotes(false);
-        } else if (snap.twentyDaySyncStatus !== 'SUCCESS') {
-          await syncDailyBaselines(false, true);
         }
         await syncMarketSessionToDb();
       }
@@ -2582,7 +2570,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       isExecutingLifecycleActionRef.current = false;
       setMarketLifecycle(stateMachineRef.current.getSnapshot());
     }
-  }, [fetchLiveDhanQuotes, syncDailyBaselines, syncMarketSessionToDb, showToast]);
+  }, [fetchLiveDhanQuotes, syncMarketSessionToDb, showToast]);
 
   useEffect(() => {
     executeLifecycleActionRef.current = executeLifecycleAction;
