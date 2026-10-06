@@ -152,9 +152,9 @@ interface QuantPulseContextType {
   runAutoPilotStepNow: (stepId: AutoPilotStepId) => Promise<void>;
   clearAllPositionsAndTrades: () => Promise<void>;
 
-  // Multi-Strategy Orchestration (Strategy 1 vs Strategy 2)
-  activeStrategy: '20D_CROSSOVER' | 'NIFTY_OVERNIGHT';
-  setActiveStrategy: (strat: '20D_CROSSOVER' | 'NIFTY_OVERNIGHT') => void;
+  // Multi-Strategy Orchestration (Strategy 1 vs Strategy 2 vs Strategy 3)
+  activeStrategy: '20D_CROSSOVER' | 'NIFTY_OVERNIGHT' | 'NIFTY_BREAKOUT_180';
+  setActiveStrategy: (strat: '20D_CROSSOVER' | 'NIFTY_OVERNIGHT' | 'NIFTY_BREAKOUT_180') => void;
   niftyOvernightState: NiftyOvernightState;
   setNiftyOvernightState: React.Dispatch<React.SetStateAction<NiftyOvernightState>>;
   executeNifty0920Scan: () => Promise<void>;
@@ -324,7 +324,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   );
 
   // Multi-Strategy Orchestration State
-  const [activeStrategy, setActiveStrategy] = useState<'20D_CROSSOVER' | 'NIFTY_OVERNIGHT'>('20D_CROSSOVER');
+  const [activeStrategy, setActiveStrategy] = useState<'20D_CROSSOVER' | 'NIFTY_OVERNIGHT' | 'NIFTY_BREAKOUT_180'>('20D_CROSSOVER');
   const [niftyOvernightState, setNiftyOvernightState] = useState<NiftyOvernightState>(() =>
     initializePendingState(getISTDate().dateStr)
   );

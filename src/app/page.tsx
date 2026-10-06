@@ -8,6 +8,7 @@ import { ZoneC_Screener } from '@/components/zones/ZoneC_Screener';
 import { ZoneD_NextAction } from '@/components/zones/ZoneD_NextAction';
 import { ZoneE_Positions } from '@/components/zones/ZoneE_Positions';
 import { Zone_NiftyOvernight } from '@/components/strategies/Zone_NiftyOvernight';
+import { Zone_NiftyBreakout180 } from '@/components/strategies/breakout180/Zone_NiftyBreakout180';
 
 export default function QuantPulseTerminalPage() {
   const {
@@ -28,7 +29,12 @@ export default function QuantPulseTerminalPage() {
 
       {/* MAIN WORKSPACE: DYNAMIC STRATEGY RENDER */}
       <main className="flex-1 max-w-[1920px] w-full mx-auto p-3">
-        {activeStrategy === 'NIFTY_OVERNIGHT' ? (
+        {activeStrategy === 'NIFTY_BREAKOUT_180' ? (
+          /* STRATEGY 3: NIFTY 09:30 ₹180 BREAKOUT BACKTESTING WORKSPACE */
+          <div className="w-full">
+            <Zone_NiftyBreakout180 />
+          </div>
+        ) : activeStrategy === 'NIFTY_OVERNIGHT' ? (
           /* STRATEGY 2: NIFTY 09:20 PREMIUM 62.5 OVERNIGHT WORKSPACE */
           <div className="w-full">
             <Zone_NiftyOvernight
@@ -63,7 +69,7 @@ export default function QuantPulseTerminalPage() {
       </main>
 
       {/* ZONE E: EXECUTED TRADES & TRAILING STOP-LOSS (TSL) MONITOR */}
-      <ZoneE_Positions />
+      {activeStrategy !== 'NIFTY_BREAKOUT_180' && <ZoneE_Positions />}
 
       {/* Institutional Terminal Footer */}
       <footer className="border-t border-slate-900 bg-obsidian/90 px-4 py-3 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-3">

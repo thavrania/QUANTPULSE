@@ -73,7 +73,7 @@ export function formatCrossoverAlert(
 • *20D Avg:* \`${avgShares} Qty\`
 • *Eligibility:* 🟢 *BUY*
 ────────────
-_QP HF Crossover Engine_`;
+_QP High-Frequency Crossover Engine_`;
 }
 
 export function formatOrderAlert(symbol: string, action: string, qty: number, price: number, orderId: string, mode: string): string {

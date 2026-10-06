@@ -81,6 +81,18 @@ export function ZoneA_Header() {
                 >
                   <span>🌙</span> NIFTY 09:20 Overnight
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveStrategy('NIFTY_BREAKOUT_180')}
+                  className={`px-2 py-0.5 rounded transition flex items-center gap-1 ${
+                    activeStrategy === 'NIFTY_BREAKOUT_180'
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Strategy 3: NIFTY 09:30 ₹180 Premium Breakout Option Buying Strategy"
+                >
+                  <span>⚡</span> NIFTY 180 Breakout
+                </button>
               </div>
 
               {/* Market Session Beacon (NSE IST) */}
