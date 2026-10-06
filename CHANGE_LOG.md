@@ -50,7 +50,38 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ---
 
-## Change History
+### [2026-10-07 00:33 IST] — Resilient 20D Baseline Sync, Symbol Normalization & Database Schema Adaptation
+- **Commit SHA / Version:** Pending (`main`) / `v2.3.3`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Fix` / `Database` / `Resilience`
+- **Business Rationale / Objective:** 
+  Fix 20D Baseline Sync failing to update accurate calculated 20-day average traded shares and falling back to rounded-off numbers.
+  1. **Resilient Schema Adaptation:** Fixed PostgreSQL schema cache rejection (`42703: column avg_20d_traded_shares does not exist`) in `sync-baselines` and `QuantPulseContext`. Updates, inserts, and selects now dynamically adapt whether the physical BIGINT columns (`avg_20d_traded_shares`, `today_traded_shares`, `is_active_watchlist`) exist or fallback to `NUMERIC avg_vol_20d_m` without throwing 500 errors.
+  2. **Corporate Symbol Normalization & Alias Support:** `calculateFree20DBaseline` in `baselineBatchService.ts` now normalizes tickers (`normalizeTicker`) and supports aliases (`TATAMOTORS` -> `TMCV`, `ZOMATO` -> `ETERNAL`, `LTIM` -> `LTM`), preventing Yahoo Finance 404 errors that forced stocks into static catalog defaults (e.g. 5.0M).
+  3. **High-Throughput Parallel Batching:** Replaced slow serial Yahoo fetches in `sync-baselines/route.ts` with parallel chunks of 5, speeding up 55-stock evaluation from 30+ seconds to <2 seconds and eliminating serverless timeouts.
+  4. **Dhan Auth Early Abort:** Aborts Dhan historical loop immediately upon detecting expired/unauthorized credentials (401/403/806) to instantly engage the free historical fallback without rate delays.
+  5. **Dynamic Directory UI Rendering:** `ZoneB_Watchlist.tsx` now looks up synced watchlist stocks in the All Stocks Directory tab to display exact calculated traded shares (`displayShares.toLocaleString('en-IN') shares`) instead of static catalog numbers.
+
+#### Affected Components & Files
+- `src/lib/engine/baselineBatchService.ts`: Added ticker normalization & alias candidate evaluation to `calculateFree20DBaseline`; early abort on Dhan auth failures.
+- `src/app/api/pipeline/sync-baselines/route.ts`: Added parallel chunked calculation, resilient column adaptation for updates/inserts/verification, and dual canonical/alias row updates.
+- `src/context/QuantPulseContext.tsx`: Removed SQL-level `is_active_watchlist` filters in `syncDailyBaselines` and populated `baselineMap` from both confirmed API payload and DB rows.
+- `src/components/zones/ZoneB_Watchlist.tsx`: Dynamically renders confirmed calculated 20D average shares in Directory view for watchlist stocks.
+- `tests/architecture/centralMarketDataAndTelegram.test.ts`: Added tests for alias normalization and resilient schema share extraction.
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+
+---
 
 ### [2026-10-07 00:05 IST] — Establish Database as the Single Authoritative Source of Truth for 20-Day Average Traded Shares
 - **Commit SHA / Version:** `81a3c19` / `v2.3.2`

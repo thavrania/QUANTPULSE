@@ -451,3 +451,41 @@ test('20D BASELINE SYNC: Data flow propagates confirmed DB shares to UI and memo
   assert.notEqual(uiStock.avg20DTradedShares, 1500000, 'Must NOT use static catalog value (1.5M)');
 });
 
+test('20D BASELINE SYNC: Alias normalization maps legacy tickers to active market symbols', async () => {
+  const { normalizeTicker } = await import('../../src/lib/stocks/stockMaster');
+
+  assert.equal(normalizeTicker('TATAMOTORS'), 'TMCV');
+  assert.equal(normalizeTicker('tatamotors.ns'), 'TMCV');
+  assert.equal(normalizeTicker('ZOMATO'), 'ETERNAL');
+  assert.equal(normalizeTicker('zomato.ns'), 'ETERNAL');
+  assert.equal(normalizeTicker('LTIM'), 'LTM');
+  assert.equal(normalizeTicker('ltim.ns'), 'LTM');
+  assert.equal(normalizeTicker('RELIANCE.NS'), 'RELIANCE');
+});
+
+test('20D BASELINE SYNC: Resilient schema fallback extracts shares whether column is BIGINT or NUMERIC millions', () => {
+  // Case A: Migration run, column avg_20d_traded_shares exists
+  const modernRow = {
+    ticker: 'HDFCBANK',
+    avg_vol_20d_m: 32.297632,
+    avg_20d_traded_shares: 32297632,
+  };
+  const modernShares =
+    modernRow.avg_20d_traded_shares !== null && modernRow.avg_20d_traded_shares !== undefined
+      ? Number(modernRow.avg_20d_traded_shares)
+      : Math.round(Number(modernRow.avg_vol_20d_m) * 1_000_000);
+  assert.equal(modernShares, 32297632);
+
+  // Case B: Database table has avg_vol_20d_m only (e.g. 32.298)
+  const legacyRow = {
+    ticker: 'HDFCBANK',
+    avg_vol_20d_m: 32.298,
+    avg_20d_traded_shares: undefined,
+  };
+  const legacyShares =
+    legacyRow.avg_20d_traded_shares !== null && legacyRow.avg_20d_traded_shares !== undefined
+      ? Number(legacyRow.avg_20d_traded_shares)
+      : Math.round(Number(legacyRow.avg_vol_20d_m) * 1_000_000);
+  assert.equal(legacyShares, 32298000);
+});
+

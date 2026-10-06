@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
-import { STOCK_MASTER_CATALOG } from '@/lib/stocks/stockMaster';
+import { STOCK_MASTER_CATALOG, normalizeTicker } from '@/lib/stocks/stockMaster';
 
 export function ZoneB_Watchlist() {
   const {
@@ -595,8 +595,14 @@ export function ZoneB_Watchlist() {
               </div>
             ) : (
               filteredMasterStocks.map((stock) => {
-                const isInWatchlist = activeTickers.has(stock.ticker);
-                const isSelected = stock.ticker === selectedTicker;
+                const cleanTicker = normalizeTicker(stock.ticker);
+                const isInWatchlist = activeTickers.has(stock.ticker) || activeTickers.has(cleanTicker);
+                const isSelected = stock.ticker === selectedTicker || cleanTicker === normalizeTicker(selectedTicker);
+                const activeStock = watchlist.find((s) => normalizeTicker(s.ticker) === cleanTicker);
+                const exactAvgShares = activeStock
+                  ? (activeStock.avg20DTradedShares || Math.round(activeStock.avgVol20DM * 1_000_000))
+                  : (stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000));
+
                 return (
                   <div
                     key={stock.ticker}
@@ -657,7 +663,7 @@ export function ZoneB_Watchlist() {
                       <div className="text-[10px] font-mono text-slate-300 mt-1 flex items-center gap-2 flex-wrap">
                         <span className="text-slate-400">20D Avg:</span>
                         <strong className="text-slate-100">
-                          {(stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares
+                          {exactAvgShares.toLocaleString('en-IN')} shares
                         </strong>
                         {stock.approxLtp && (
                           <span className="text-emerald-400 font-semibold">

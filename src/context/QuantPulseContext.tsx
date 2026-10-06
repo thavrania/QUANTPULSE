@@ -635,10 +635,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           try {
             const { data: dbStocks } = await supabase
               .from('watchlist')
-              .select('ticker')
-              .filter('is_active_watchlist', 'neq', false);
+              .select('*');
             if (dbStocks && dbStocks.length > 0) {
-              const dbTickers = dbStocks.map((s: any) => s.ticker);
+              const dbTickers = dbStocks
+                .filter((s: any) => s.is_active_watchlist !== false)
+                .map((s: any) => s.ticker);
               tickersToSync = Array.from(new Set([...tickersToSync, ...dbTickers]));
             }
           } catch (dbErr) {
@@ -668,10 +669,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
           try {
             const { data: dbData, error: dbErr } = await supabase
               .from('watchlist')
-              .select('*')
-              .filter('is_active_watchlist', 'neq', false);
+              .select('*');
             if (!dbErr && dbData && dbData.length > 0) {
-              dbRecords = dbData;
+              dbRecords = dbData.filter((s: any) => s.is_active_watchlist !== false);
             }
           } catch (dbErr) {
             console.warn('Notice: could not query confirmed watchlist from DB:', dbErr);
@@ -680,21 +680,34 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         const baselineMap = new Map<string, { avgVol20DM: number; avg20DTradedShares: number }>();
 
-        if (dbRecords.length > 0) {
-          dbRecords.forEach((r: any) => {
-            const shares = (r.avg_20d_traded_shares !== null && r.avg_20d_traded_shares !== undefined && Number(r.avg_20d_traded_shares) > 0)
-              ? Number(r.avg_20d_traded_shares)
-              : Math.round(Number(r.avg_vol_20d_m || 1.0) * 1_000_000);
-            const volM = (r.avg_vol_20d_m !== null && r.avg_vol_20d_m !== undefined && Number(r.avg_vol_20d_m) > 0)
-              ? Number(r.avg_vol_20d_m)
-              : +(shares / 1_000_000).toFixed(6);
-            baselineMap.set(normalizeTicker(r.ticker), { avgVol20DM: volM, avg20DTradedShares: shares });
-          });
-        } else if (data.confirmedBaselines && Array.isArray(data.confirmedBaselines) && data.confirmedBaselines.length > 0) {
-          data.confirmedBaselines.forEach((b: any) => {
-            const shares = Number(b.avg20DTradedShares || b.avg_20d_traded_shares) || Math.round(Number(b.avgVolume20DM || b.avg_vol_20d_m || 1.0) * 1_000_000);
+        // First populate from the authoritative confirmed API baselines (recalculated with true zero round-off shares)
+        const apiBaselines = data.confirmedBaselines || data.baselines || [];
+        if (Array.isArray(apiBaselines) && apiBaselines.length > 0) {
+          apiBaselines.forEach((b: any) => {
+            const shares =
+              Number(b.avg20DTradedShares || b.avg_20d_traded_shares) ||
+              Math.round(Number(b.avgVolume20DM || b.avg_vol_20d_m || 1.0) * 1_000_000);
             const volM = Number(b.avgVolume20DM || b.avg_vol_20d_m) || +(shares / 1_000_000).toFixed(6);
             baselineMap.set(normalizeTicker(b.ticker), { avgVol20DM: volM, avg20DTradedShares: shares });
+          });
+        }
+
+        // Overlay with confirmed database records
+        if (dbRecords.length > 0) {
+          dbRecords.forEach((r: any) => {
+            const clean = normalizeTicker(r.ticker);
+            const shares =
+              r.avg_20d_traded_shares !== null && r.avg_20d_traded_shares !== undefined && Number(r.avg_20d_traded_shares) > 0
+                ? Number(r.avg_20d_traded_shares)
+                : Math.round(Number(r.avg_vol_20d_m || 1.0) * 1_000_000);
+            const volM =
+              r.avg_vol_20d_m !== null && r.avg_vol_20d_m !== undefined && Number(r.avg_vol_20d_m) > 0
+                ? Number(r.avg_vol_20d_m)
+                : +(shares / 1_000_000).toFixed(6);
+            // If API baseline already has exact share precision, preserve it unless DB row has explicit BIGINT shares
+            if (!baselineMap.has(clean) || (r.avg_20d_traded_shares !== null && r.avg_20d_traded_shares !== undefined)) {
+              baselineMap.set(clean, { avgVol20DM: volM, avg20DTradedShares: shares });
+            }
           });
         }
 
