@@ -24,6 +24,7 @@ export interface Stock {
   hasCrossed20D: boolean;
   crossoverTime: string | null;
   crossoverSpotPrice: number | null;
+  crossoverSignalType?: 'BUY' | 'SELL';
   ivPct: number;
   justCrossedHighlight?: boolean;
   dayHigh?: number;
@@ -62,6 +63,7 @@ export interface CrossoverEvent {
   todayTradedShares?: number; // Exact count of shares traded at crossover
   crossPrice: number;
   isFnO: boolean;
+  signalType?: 'BUY' | 'SELL';
 }
 
 export interface Position {

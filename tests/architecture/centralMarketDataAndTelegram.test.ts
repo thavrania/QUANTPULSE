@@ -12,6 +12,7 @@ import {
 } from '../../src/lib/services/alertSettingsService';
 import {
   checkAndLatchVolumeCrossover,
+  getVolumeScreenerMetrics,
   formatClockIST,
 } from '../../src/lib/engine/crossoverEngine';
 import { Stock, CrossoverEvent } from '../../src/lib/types/quant';
@@ -58,6 +59,24 @@ test('TELEGRAM: Alert formatting preserves exact physical shares and IST timesta
   assert.ok(alertText.includes(expectedAvgSharesStr), 'Must render exact 20D benchmark shares formatted');
   assert.ok(alertText.includes('09:48:12 IST'), 'Must include latched IST timestamp');
   assert.ok(alertText.includes('🟢 *BUY*'), 'Must declare BUY eligibility');
+});
+
+test('TELEGRAM: Bearish crossover alert formats with red badge and breakdown header', () => {
+  const alertText = formatCrossoverAlert(
+    'INFY',
+    3.500,
+    3.000,
+    1820.00,
+    '11:20:45 IST',
+    3500000,
+    3000000,
+    'SELL'
+  );
+
+  assert.ok(alertText.includes('INFY'), 'Must contain symbol');
+  assert.ok(alertText.includes('🚨 *QP — 20D AVG BEARISH BREAKDOWN!*'), 'Must contain bearish header');
+  assert.ok(alertText.includes('🔴 *SELL / PE ELIGIBLE*'), 'Must declare SELL/PE eligibility');
+  assert.ok(alertText.includes('11:20:45 IST'), 'Must include latched IST timestamp');
 });
 
 test('TELEGRAM: Deterministic event key prevents duplicate alert dispatches', () => {
@@ -225,7 +244,7 @@ test('CROSSOVER: Sticky Latch ensures duplicate ticks do NOT trigger duplicate c
   assert.equal(event, null);
 });
 
-test('CROSSOVER: Rule 1 Bullish Confirmation required (Bearish price suppresses buy)', () => {
+test('CROSSOVER: Rule 1 Bearish Crossover emits SELL event while suppressing BUY eligibility', () => {
   const stock: Stock = {
     ticker: 'BEAR_STOCK',
     name: 'Bearish Stock Ltd',
@@ -247,8 +266,22 @@ test('CROSSOVER: Rule 1 Bullish Confirmation required (Bearish price suppresses 
   };
 
   const { newlyCrossed, event } = checkAndLatchVolumeCrossover(stock, '10:15:00 IST', true);
-  assert.equal(newlyCrossed, false, 'Rule 1: Bearish stock must NOT trigger buy crossover latch');
-  assert.equal(event, null);
+  assert.equal(newlyCrossed, true, 'Bearish volume crossover must latch newlyCrossed');
+  assert.ok(event, 'Event must be generated for bearish crossover');
+  assert.equal(event.signalType, 'SELL', 'Must be SELL signal type');
+  assert.equal(stock.hasCrossed20D, true, 'Stock must be latched');
+  assert.equal(stock.crossoverSignalType, 'SELL', 'Stock must record SELL crossoverSignalType');
+
+  // Verify Screener metrics suppresses BUY eligibility (Rule 1 enforcement)
+  const metrics = getVolumeScreenerMetrics(stock, true);
+  assert.equal(metrics.isEligibleForBuy, false, 'Rule 1: Bearish stock must NOT be eligible for buy');
+  assert.equal(metrics.statusCode, 'HIGH_VOL_BEARISH', 'Screener code must be HIGH_VOL_BEARISH');
+  assert.equal(metrics.statusBadge, 'SHARES CROSSED (BEARISH)', 'Screener badge must be SHARES CROSSED (BEARISH)');
+
+  // Verify idempotency on next tick
+  const secondTick = checkAndLatchVolumeCrossover(stock, '10:16:00 IST', true);
+  assert.equal(secondTick.newlyCrossed, false, 'Duplicate ticks must not re-trigger');
+  assert.equal(secondTick.event, null);
 });
 
 // =====================================================================

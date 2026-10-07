@@ -415,42 +415,51 @@ export function ZoneB_Watchlist() {
                 No active watchlist stocks have crossed their 20-Day Average Traded Shares yet.
               </div>
             ) : (
-              uniqueCrossoverEvents.map((ev) => (
-                <div
-                  key={ev.ticker}
-                  onClick={() => setSelectedTicker(ev.ticker)}
-                  className={`p-2.5 rounded-lg bg-obsidian/90 border transition cursor-pointer space-y-1 ${
-                    selectedTicker === ev.ticker
-                      ? 'border-emerald-400 bg-slate-900/90'
-                      : 'border-emerald-500/30 hover:border-emerald-400/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-xs text-white">{ev.ticker}</span>
-                      <span
-                        className={`text-[9px] font-mono px-1 py-0.2 rounded font-semibold ${
-                          ev.isFnO
-                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                            : 'bg-slate-800 text-slate-400 border border-slate-700'
-                        }`}
-                      >
-                        {ev.isFnO ? 'NSE_FNO' : 'NSE_EQ'}
-                      </span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
-                        ELIGIBLE FOR BUY
+              uniqueCrossoverEvents.map((ev) => {
+                const isSell = ev.signalType === 'SELL';
+                return (
+                  <div
+                    key={ev.ticker}
+                    onClick={() => setSelectedTicker(ev.ticker)}
+                    className={`p-2.5 rounded-lg bg-obsidian/90 border transition cursor-pointer space-y-1 ${
+                      selectedTicker === ev.ticker
+                        ? isSell ? 'border-rose-400 bg-slate-900/90' : 'border-emerald-400 bg-slate-900/90'
+                        : isSell ? 'border-rose-500/30 hover:border-rose-400/60' : 'border-emerald-500/30 hover:border-emerald-400/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-xs text-white">{ev.ticker}</span>
+                        <span
+                          className={`text-[9px] font-mono px-1 py-0.2 rounded font-semibold ${
+                            ev.isFnO
+                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                              : 'bg-slate-800 text-slate-400 border border-slate-700'
+                          }`}
+                        >
+                          {ev.isFnO ? 'NSE_FNO' : 'NSE_EQ'}
+                        </span>
+                        {isSell ? (
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">
+                            🔴 SHARES CROSSED (BEARISH)
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                            🟢 ELIGIBLE FOR BUY
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-mono text-[11px] font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">
+                        ⏱️ {ev.time} IST
                       </span>
                     </div>
-                    <span className="font-mono text-[11px] font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">
-                      ⏱️ {ev.time} IST
-                    </span>
+                    <div className="text-[11px] text-slate-300 font-mono">
+                      Crossed 20D Avg (<span className="text-white">{(ev.avg20DTradedShares || Math.round(ev.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares</span>) @ Spot{' '}
+                      <span className={isSell ? "text-rose-300 font-semibold" : "text-emerald-300 font-semibold"}>₹{ev.crossPrice.toFixed(2)}</span>
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-300 font-mono">
-                    Crossed 20D Avg (<span className="text-white">{(ev.avg20DTradedShares || Math.round(ev.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares</span>) @ Spot{' '}
-                    <span className="text-emerald-300 font-semibold">₹{ev.crossPrice.toFixed(2)}</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

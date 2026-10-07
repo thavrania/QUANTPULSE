@@ -50,8 +50,47 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ---
 
+### [2026-10-07 20:15 IST] — Bearish Breakdown 20D Crossover Latching & Directional Telegram Alerts
+- **Commit SHA / Version:** Pending / `v2.4.3`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Feature` / `Engine` / `Alerts`
+- **Business Rationale / Objective:** 
+  Previously, 20-Day Traded Shares Crossovers only triggered events and Telegram alerts when price action was strictly bullish (`isBullish = LTP >= Day Open || changePct >= 0`). Bearish volume crossovers (`LTP < Day Open && changePct < 0`) were visually recognized in Zone C (`SHARES CROSSED (BEARISH)`), but the crossover engine returned `null` events, preventing institutional distribution notifications from reaching Telegram.
+  Implemented bidirectional crossover support:
+  1. **Directional Crossover Latching:** `checkAndLatchVolumeCrossover` in `crossoverEngine.ts` now latches both `BUY` and `SELL` volume crossovers with sticky single-trigger per session, recording `signalType: 'BUY' | 'SELL'` in `CrossoverEvent` and `crossoverSignalType` on `Stock`.
+  2. **Bearish Breakdown Telegram Formatting:** `formatCrossoverAlert` in `telegramService.ts` dispatches `🚨 QP — 20D AVG BEARISH BREAKDOWN! • Eligibility: 🔴 SELL / PE ELIGIBLE` when `signalType === 'SELL'`.
+  3. **Auto-Trade Protection:** Preserved strict Rule 1 protection in `dispatchAutoBuyOnCrossover` and `reconcileAutoTradeOrders`—long auto-buy execution strictly accepts `BUY` signals and suppresses orders on bearish breakdowns.
+  4. **Zone B UI:** Rendered red-themed badges (`🔴 SHARES CROSSED (BEARISH)`) and distinct styling for bearish crossover cards in the active crossover stream.
+
+#### Affected Components & Files
+- `src/lib/types/quant.ts`: Added `signalType?: 'BUY' | 'SELL'` to `CrossoverEvent` and `crossoverSignalType` to `Stock`.
+- `src/lib/engine/crossoverEngine.ts`: Updated `checkAndLatchVolumeCrossover` to generate `CrossoverEvent` with directional `signalType`.
+- `src/lib/alerts/telegramService.ts`: Added bearish breakdown alert template in `formatCrossoverAlert`.
+- `src/lib/services/centralMarketDataService.ts`: Passed `event.signalType` in `handleServerCrossoverAlert`.
+- `src/components/zones/ZoneB_Watchlist.tsx`: Displayed red-badged cards for `SELL` crossovers.
+- `src/context/QuantPulseContext.tsx`: Guarded `dispatchAutoBuyOnCrossover` to only trigger on `BUY` crossovers, added directional toasts and telegram parameters.
+- `tests/architecture/centralMarketDataAndTelegram.test.ts`: Added bearish breakdown alert formatting test and updated Rule 1 test.
+
+#### Database & Schema Impact
+- **Tables Touched:** `crossover_events`
+- **Operations:** `INSERT` (backward-compatible; utilizes existing schema columns)
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required (Long auto-buys strictly suppressed on red candles)
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+
+---
+
 ### [2026-10-07 19:35 IST] — Complete 55-Stock Watchlist Pipeline & Multi-Instance Centralized Telegram Deduplication
-- **Commit SHA / Version:** Pending / `v2.4.2`
+- **Commit SHA / Version:** `9784539` / `v2.4.2`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
 - **Category:** `Fix` / `Architecture` / `Database`
 - **Business Rationale / Objective:** 

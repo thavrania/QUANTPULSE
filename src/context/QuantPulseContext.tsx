@@ -177,7 +177,8 @@ function dispatchTelegramCrossoverAlert(
   spotLtp: number,
   timeStr: string,
   todayShares?: number,
-  avgShares?: number
+  avgShares?: number,
+  signalType: 'BUY' | 'SELL' = 'BUY'
 ) {
   if (typeof window === 'undefined') return;
   const botToken = localStorage.getItem('qp_telegram_bot_token');
@@ -193,7 +194,8 @@ function dispatchTelegramCrossoverAlert(
       spotLtp,
       timeStr,
       todayShares,
-      avgShares
+      avgShares,
+      signalType
     );
     fetch('/api/alerts/telegram', {
       method: 'POST',
@@ -1349,6 +1351,11 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               }
             }
 
+            const matchedStock = (watchlistRef.current || []).find((s) => normalizeTicker(s.ticker) === normalizeTicker(e.ticker));
+            const isBullishCross = matchedStock
+              ? (e.cross_price >= (matchedStock.dayOpen || e.cross_price) || (matchedStock.changePct ?? 0) >= 0)
+              : true;
+
             dedupedMap.set(e.ticker, {
               id: e.id,
               ticker: e.ticker,
@@ -1356,6 +1363,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               avgVol20DM: Number(e.avg_vol_20d_m),
               crossPrice: Number(e.cross_price) || 0,
               isFnO: Boolean(e.is_fno),
+              signalType: e.signal_type || (isBullishCross ? 'BUY' : 'SELL'),
             });
           });
         }
@@ -1371,6 +1379,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             todayShares > 0 &&
             !dedupedMap.has(stock.ticker)
           ) {
+            const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
             dedupedMap.set(stock.ticker, {
               ticker: stock.ticker,
               time: stock.crossoverTime,
@@ -1379,6 +1388,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
               todayTradedShares: todayShares,
               crossPrice: stock.crossoverSpotPrice || stock.spotLtp,
               isFnO: stock.isFnO,
+              signalType: stock.crossoverSignalType || (isBullish ? 'BUY' : 'SELL'),
             });
           }
         });
@@ -1889,13 +1899,20 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             }
             return [event, ...prevEv];
           });
-          showToast(
-            `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${newSpotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
-            'emerald'
-          );
 
-          // Dispatch auto-order only on new verified crossover event
-          dispatchAutoBuyOnCrossover(stock.ticker);
+          if (event.signalType === 'BUY') {
+            showToast(
+              `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${newSpotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
+              'emerald'
+            );
+            // Dispatch auto-order only on new verified BUY crossover event
+            dispatchAutoBuyOnCrossover(stock.ticker);
+          } else {
+            showToast(
+              `🚨 [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${newSpotLtp.toFixed(2)} → HIGH VOL BEARISH!`,
+              'rose'
+            );
+          }
 
           if (isSupabaseConfigured && supabase) {
             markSelfUpdating();
@@ -2144,10 +2161,17 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                   }
                   return [event, ...prevEv];
                 });
-                showToast(
-                  `🚀 [LIVE MARKET] ${stock.ticker} Crossed 20D Volume (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)}!`,
-                  'emerald'
-                );
+                if (event.signalType === 'BUY') {
+                  showToast(
+                    `🚀 [LIVE MARKET] ${stock.ticker} Crossed 20D Volume (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
+                    'emerald'
+                  );
+                } else {
+                  showToast(
+                    `🚨 [LIVE MARKET] ${stock.ticker} Crossed 20D Volume (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)} → HIGH VOL BEARISH!`,
+                    'rose'
+                  );
+                }
 
                 if (isSupabaseConfigured && supabase) {
                   markSelfUpdating();
@@ -2192,8 +2216,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                     .then();
                 }
 
-                // Dispatch auto-order only on new verified crossover event
-                dispatchAutoBuyOnCrossover(stock.ticker);
+                // Dispatch auto-order only on new verified BUY crossover event
+                if (event.signalType === 'BUY') {
+                  dispatchAutoBuyOnCrossover(stock.ticker);
+                }
 
                 // Centralized Alert Invariant: Crossover alerts are dispatched server-side
                 // by CentralMarketDataService to eliminate multi-instance client duplicate notifications.
@@ -2743,12 +2769,19 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 }
                 return [event, ...prevEv];
               });
-              showToast(
-                `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
-                'emerald'
-              );
+              if (event.signalType === 'BUY') {
+                showToast(
+                  `⏱️ [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)} → ELIGIBLE FOR BUY!`,
+                  'emerald'
+                );
+              } else {
+                showToast(
+                  `🚨 [${timeStr}] ${stock.ticker} crossed 20D Avg Vol (${stock.avgVol20DM.toFixed(2)}M) @ ₹${updated.spotLtp.toFixed(2)} → HIGH VOL BEARISH!`,
+                  'rose'
+                );
+              }
 
-              // Automated Telegram Push Alert on Crossover / Buy-Eligibility
+              // Automated Telegram Push Alert on Crossover
               dispatchTelegramCrossoverAlert(
                 stock.ticker,
                 updated.todayVolM,
@@ -2756,7 +2789,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 updated.spotLtp,
                 timeStr,
                 updated.todayTradedShares,
-                updated.avg20DTradedShares
+                updated.avg20DTradedShares,
+                event.signalType || 'BUY'
               );
 
               if (isSupabaseConfigured && supabase) {

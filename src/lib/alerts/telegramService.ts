@@ -60,10 +60,25 @@ export function formatCrossoverAlert(
   spotLtp: number,
   timeIST: string,
   todaySharesCount?: number,
-  avgSharesCount?: number
+  avgSharesCount?: number,
+  signalType: 'BUY' | 'SELL' = 'BUY'
 ): string {
   const todayShares = (todaySharesCount !== undefined ? todaySharesCount : Math.round(todayVolM * 1_000_000)).toLocaleString('en-IN');
   const avgShares = (avgSharesCount !== undefined ? avgSharesCount : Math.round(avgVol20DM * 1_000_000)).toLocaleString('en-IN');
+
+  if (signalType === 'SELL') {
+    return `🚨 *QP — 20D AVG BEARISH BREAKDOWN!*
+────────────
+• *Symbol:* \`${ticker}\`
+• *Spot Price:* \`₹${spotLtp.toFixed(2)}\`
+• *Cross Time:* \`${timeIST} IST\`
+• *Today VOL:* \`${todayShares} Qty\`
+• *20D Avg:* \`${avgShares} Qty\`
+• *Eligibility:* 🔴 *SELL / PE ELIGIBLE*
+────────────
+_QP High-Frequency Crossover Engine_`;
+  }
+
   return `🚀 *QP — 20D AVG CROSSOVER!*
 ────────────
 • *Symbol:* \`${ticker}\`

@@ -142,6 +142,7 @@ export function checkAndLatchVolumeCrossover(
     stock.hasCrossed20D = false;
     stock.crossoverTime = null;
     stock.crossoverSpotPrice = null;
+    stock.crossoverSignalType = undefined;
     stock.justCrossedHighlight = false;
     return { newlyCrossed: false, event: null };
   }
@@ -162,6 +163,7 @@ export function checkAndLatchVolumeCrossover(
         stock.hasCrossed20D = false;
         stock.crossoverTime = null;
         stock.crossoverSpotPrice = null;
+        stock.crossoverSignalType = undefined;
         stock.justCrossedHighlight = false;
         return { newlyCrossed: false, event: null };
       }
@@ -176,6 +178,7 @@ export function checkAndLatchVolumeCrossover(
     stock.hasCrossed20D = false;
     stock.crossoverTime = null;
     stock.crossoverSpotPrice = null;
+    stock.crossoverSignalType = undefined;
     stock.justCrossedHighlight = false;
     return { newlyCrossed: false, event: null };
   }
@@ -187,13 +190,17 @@ export function checkAndLatchVolumeCrossover(
     return { newlyCrossed: false, event: null };
   }
 
-  // Rule 1: Price must be bullish at crossover trigger moment (LTP >= Day Open or changePct >= 0)
+  // Rule 1: Price direction evaluation at crossover trigger moment:
+  // Bullish: LTP >= Day Open or changePct >= 0 -> BUY breakout
+  // Bearish: LTP < Day Open and changePct < 0 -> SELL distribution
   const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
+  const signalType: 'BUY' | 'SELL' = isBullish ? 'BUY' : 'SELL';
 
-  if (volumeCrossed && isBullish) {
+  if (volumeCrossed) {
     stock.hasCrossed20D = true;
     stock.crossoverTime = currentTimeStr;
     stock.crossoverSpotPrice = stock.spotLtp;
+    stock.crossoverSignalType = signalType;
     stock.justCrossedHighlight = true;
 
     const event: CrossoverEvent = {
@@ -204,6 +211,7 @@ export function checkAndLatchVolumeCrossover(
       todayTradedShares: todayShares,
       crossPrice: stock.spotLtp,
       isFnO: stock.isFnO,
+      signalType,
     };
 
     return { newlyCrossed: true, event };

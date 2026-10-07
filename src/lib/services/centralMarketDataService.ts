@@ -534,7 +534,8 @@ export class CentralMarketDataService {
       stock.spotLtp,
       event.time,
       stock.todayTradedShares,
-      stock.avg20DTradedShares
+      stock.avg20DTradedShares,
+      event.signalType || 'BUY'
     );
 
     for (const dest of destinations) {

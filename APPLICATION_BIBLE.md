@@ -834,7 +834,9 @@ Throughout QuantPulse, **Traded Shares** is the foundational quantitative metric
 2. **Current-Day Data Separation Invariant:** Yesterday's closing volume must **never** bleed into today's session. Prior to 09:15:00 IST on trading days, today's traded shares must strictly be `0.00M`.
 3. **Opening Stabilization Invariant:** In the first 60 seconds of open ($09:15:00-09:16:00$ IST), broker quotes carrying high volume without a validated trade timestamp after 09:15:00 must be suppressed to `0.00M`.
 4. **Single Crossover Event Invariant:** For any given stock, exactly one crossover event can be generated per calendar trading day.
-5. **Bullish Confirmation Invariant (Rule 1):** Volume crossover alone does not permit buying. A buy signal requires $\text{todayVolM} \ge \text{avgVol20DM}$ **AND** $\text{Spot LTP} \ge \text{Day Open}$ (or $\Delta\% \ge 0$).
+5. **Crossover Directional Invariant & Rule 1 Buy Confirmation:** Volume crossover occurs when $\text{todayShares} \ge \text{avgShares} > 0$. The engine evaluates price direction at the trigger moment:
+   - **Bullish Breakout (BUY):** $\text{Spot LTP} \ge \text{Day Open}$ (or $\Delta\% \ge 0$). Latches `hasCrossed20D = true`, generates `CrossoverEvent` with `signalType = 'BUY'`, dispatches `🟢 BUY` alert, and qualifies for automated long execution.
+   - **Bearish Breakdown (SELL):** $\text{Spot LTP} < \text{Day Open}$ and $\Delta\% < 0$. Latches `hasCrossed20D = true`, generates `CrossoverEvent` with `signalType = 'SELL'`, and dispatches `🚨 QP — 20D AVG BEARISH BREAKDOWN! • 🔴 SELL / PE ELIGIBLE` alert. In accordance with Rule 1, long auto-buy order execution is strictly suppressed.
 6. **Max Open Positions Ceiling Invariant:** Auto-trade dispatch must not open positions beyond `config.maxOpenPositions` (default: 5).
 7. **Idempotency Lock Invariant:** Once a stock is traded, its ticker is locked in `idempotencyLocks` until explicitly cleared.
 8. **Zone E Clean Slate Invariant:** Closed positions (`state_index = 4`) and cancelled orders (`status = 'CANCELLED'`) must never be loaded as active open positions or lock symbols.
