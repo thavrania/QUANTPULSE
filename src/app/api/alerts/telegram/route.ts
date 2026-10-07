@@ -3,10 +3,23 @@ import { sendTelegramMessage } from '@/lib/alerts/telegramService';
 import { isMaskedToken, getUserAlertSettings } from '@/lib/services/alertSettingsService';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 
+// Server-side in-memory idempotency deduplication cache
+const serverDispatchedKeys = new Set<string>();
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    let { botToken, chatId, message, testPing } = body;
+    let { botToken, chatId, message, testPing, idempotencyKey } = body;
+
+    // Server-side Idempotency Check: suppress duplicate dispatches across multiple browsers/tabs
+    const dedupKey = idempotencyKey || (!testPing && message ? `MSG_HASH:${message.trim()}` : null);
+    if (dedupKey && serverDispatchedKeys.has(dedupKey)) {
+      return NextResponse.json({
+        success: true,
+        message: 'Alert already dispatched centrally (duplicate suppressed).',
+        duplicate: true,
+      });
+    }
 
     // Resolve authenticated user if session provided
     let authUserId: string | null = null;
@@ -56,6 +69,10 @@ export async function POST(req: NextRequest) {
         : message || 'QuantPulse Alert Event';
 
     const result = await sendTelegramMessage(token, chat, textToSend);
+
+    if (result.success && dedupKey) {
+      serverDispatchedKeys.add(dedupKey);
+    }
 
     return NextResponse.json(result);
   } catch (err: any) {

@@ -18,10 +18,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { tickers } = body;
 
-    const tickerList: string[] =
-      Array.isArray(tickers) && tickers.length > 0
-        ? tickers
-        : ['RELIANCE', 'TMCV', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'ETERNAL'];
+    const tickerList: string[] | undefined =
+      Array.isArray(tickers) && tickers.length > 0 ? tickers : undefined;
 
     // Route through the Centralized Market Data Service.
     // Serves immediately from the coalesced centralized snapshot cache (<2.5s)

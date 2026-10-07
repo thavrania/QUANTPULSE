@@ -184,6 +184,8 @@ function dispatchTelegramCrossoverAlert(
   const chatId = localStorage.getItem('qp_telegram_chat_id');
   const notifyCross = localStorage.getItem('qp_notify_crossover') !== 'false';
   if (botToken && chatId && notifyCross) {
+    const todayDate = getISTDate().dateStr;
+    const idempotencyKey = `CROSSOVER:${normalizeTicker(ticker)}:${todayDate}`;
     const msg = formatCrossoverAlert(
       ticker,
       todayVolM,
@@ -200,6 +202,7 @@ function dispatchTelegramCrossoverAlert(
         botToken,
         chatId,
         message: msg,
+        idempotencyKey,
       }),
     }).catch((err) => {
       console.warn('[Telegram Alert] Failed to dispatch crossover message:', err);
@@ -401,15 +404,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       try {
         const rows = stocks.map((s) => ({
           ticker: s.ticker,
-          short_name: s.shortName || s.ticker,
           name: s.name,
-          isin: s.isin || null,
           is_fno: s.isFnO ?? true,
-          segment: s.segment || 'NSE_FNO',
-          sector: s.sector || 'General',
-          security_id: s.securityId || '1330',
-          lot_size: s.lotSize || 1,
-          strike_step: s.strikeStep || 20,
+          lot_size: Math.round(s.lotSize || 1),
+          strike_step: Math.round(s.strikeStep || 20),
           spot_ltp: s.spotLtp || 1000,
           today_vol_m: s.todayVolM || 0,
           avg_vol_20d_m: s.avgVol20DM || 1,
@@ -1053,6 +1051,24 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             activeRecords = INITIAL_WATCHLIST_DATA;
             saveStocksToWatchlistDb(INITIAL_WATCHLIST_DATA).catch(() => {});
           }
+        } else if (activeRecords.length < STOCK_MASTER_CATALOG.length) {
+          // Augment with full master universe so all 55 constituents are monitored
+          const existingTickers = new Set(activeRecords.map((r: any) => normalizeTicker(r.ticker)));
+          STOCK_MASTER_CATALOG.forEach((m) => {
+            if (!existingTickers.has(normalizeTicker(m.ticker))) {
+              activeRecords.push({
+                ticker: m.ticker,
+                name: m.name,
+                is_fno: m.isFnO,
+                lot_size: m.lotSize,
+                strike_step: m.strikeStep,
+                spot_ltp: m.approxLtp,
+                today_vol_m: 0,
+                avg_vol_20d_m: m.avgVol20DM,
+                has_crossed_20d: false,
+              });
+            }
+          });
         }
 
         if (activeRecords && activeRecords.length > 0) {
@@ -1913,16 +1929,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
             }).eq('ticker', event.ticker).then();
           }
 
-          // Automated Telegram Push Alert
-          dispatchTelegramCrossoverAlert(
-            stock.ticker,
-            updated.todayVolM,
-            stock.avgVol20DM,
-            updated.spotLtp,
-            timeStr,
-            updated.todayTradedShares,
-            updated.avg20DTradedShares
-          );
+          // Centralized Alert Invariant: Crossover alerts are dispatched server-side
+          // by CentralMarketDataService to eliminate multi-instance client duplicate notifications.
         }
         return updated;
       });
@@ -2187,16 +2195,8 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
                 // Dispatch auto-order only on new verified crossover event
                 dispatchAutoBuyOnCrossover(stock.ticker);
 
-                // Automated Telegram Push Alert
-                dispatchTelegramCrossoverAlert(
-                  stock.ticker,
-                  updated.todayVolM,
-                  stock.avgVol20DM,
-                  updated.spotLtp,
-                  nowTime,
-                  updated.todayTradedShares,
-                  updated.avg20DTradedShares
-                );
+                // Centralized Alert Invariant: Crossover alerts are dispatched server-side
+                // by CentralMarketDataService to eliminate multi-instance client duplicate notifications.
               }
             }
 

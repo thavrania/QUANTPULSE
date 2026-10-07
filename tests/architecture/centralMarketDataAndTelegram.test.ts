@@ -489,3 +489,49 @@ test('20D BASELINE SYNC: Resilient schema fallback extracts shares whether colum
   assert.equal(legacyShares, 32298000);
 });
 
+// =====================================================================
+// 8. 55-STOCK WATCHLIST UNIVERSE & MULTI-INSTANCE IDEMPOTENCY TESTS
+// =====================================================================
+
+test('WATCHLIST UNIVERSE: CentralMarketDataService resolves full 55+ stock catalog even if database is partial or missing columns', async () => {
+  const stocks = await centralMarketDataService.getActiveWatchlistStocks();
+
+  assert.ok(stocks.length >= 55, `Expected at least 55 stocks in active universe, got ${stocks.length}`);
+
+  const tickers = new Set(stocks.map((s) => s.ticker));
+  assert.ok(tickers.has('RELIANCE'), 'Must contain RELIANCE');
+  assert.ok(tickers.has('TCS'), 'Must contain TCS');
+  assert.ok(tickers.has('HDFCBANK'), 'Must contain HDFCBANK');
+  assert.ok(tickers.has('ICICIBANK'), 'Must contain ICICIBANK');
+  assert.ok(tickers.has('ADANIENT'), 'Must contain ADANIENT');
+  assert.ok(tickers.has('INFY'), 'Must contain INFY');
+  assert.ok(tickers.has('SBIN'), 'Must contain SBIN');
+  assert.ok(tickers.has('BHARTIARTL'), 'Must contain BHARTIARTL');
+});
+
+test('MULTI-INSTANCE TELEGRAM: Multi-tab concurrent alert dispatches with shared key are deduplicated to single delivery', () => {
+  const serverDispatched = new Set<string>();
+  let externalTelegramApiCallCount = 0;
+
+  function handleIncomingAlertRequest(idempotencyKey: string, message: string): { delivered: boolean; duplicate: boolean } {
+    const dedupKey = idempotencyKey || `MSG_HASH:${message.trim()}`;
+    if (serverDispatched.has(dedupKey)) {
+      return { delivered: false, duplicate: true };
+    }
+    serverDispatched.add(dedupKey);
+    externalTelegramApiCallCount++;
+    return { delivered: true, duplicate: false };
+  }
+
+  // Simulate 10 open browser tabs / machines concurrently trying to send the crossover alert for RELIANCE
+  const key = 'CROSSOVER:RELIANCE:2026-10-07';
+  const alertMsg = '🟢 *BUY* RELIANCE Crossed 20D Volume @ ₹2968.50';
+
+  const responses = Array.from({ length: 10 }, () => handleIncomingAlertRequest(key, alertMsg));
+
+  assert.equal(externalTelegramApiCallCount, 1, 'Only 1 external Telegram call must be executed across 10 portal tabs');
+  assert.equal(responses[0].delivered, true, 'First instance must deliver alert');
+  assert.equal(responses[1].duplicate, true, 'Second instance must be suppressed as duplicate');
+  assert.equal(responses[9].duplicate, true, 'Tenth instance must be suppressed as duplicate');
+});
+

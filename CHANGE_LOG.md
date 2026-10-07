@@ -50,6 +50,47 @@ When adding an entry to this log, copy and populate the following markdown struc
 
 ---
 
+### [2026-10-07 19:35 IST] — Complete 55-Stock Watchlist Pipeline & Multi-Instance Centralized Telegram Deduplication
+- **Commit SHA / Version:** Pending / `v2.4.2`
+- **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)
+- **Category:** `Fix` / `Architecture` / `Database`
+- **Business Rationale / Objective:** 
+  Resolve two core production issues:
+  1. **55-Stock Watchlist Data Ingestion:** Previously, `CentralMarketDataService` filtered `watchlist` using non-existent column `is_active_watchlist`, crashing with PostgreSQL 42703 error and defaulting to a hardcoded 6-stock fallback. Additionally, `/api/broker/dhan/quote` discarded requested tickers. Refactored `getActiveWatchlistStocks` to build upon `STOCK_MASTER_CATALOG` (55+ stocks), accept requested target tickers, batch process via Dhan HQ (`NSE_EQ: [securityIds...]`) and chunked Free Live (`fetchFreeLiveQuotes` in chunks of 10), and sanitized `saveStocksToWatchlistDb` integer rounding.
+  2. **Multi-Instance Telegram Alert Deduplication:** Previously, every connected portal machine/browser tab fired independent `dispatchTelegramCrossoverAlert` calls upon receiving ticks or Realtime events, causing duplicate Telegram messages. Centralized crossover notification handling to the server in `CentralMarketDataService` with strict in-process `dispatchedAlertKeys` and database `crossover_events` locks, removed redundant client-side triggers from `QuantPulseContext`, and added idempotency key deduplication to `/api/alerts/telegram`.
+
+#### Affected Components & Files
+- `src/lib/services/centralMarketDataService.ts`: Resolved 55+ stocks from master catalog, accepted dynamic tickers in `ingestMarketTick`, and implemented in-memory alert deduplication.
+- `src/lib/engine/crossoverEngine.ts`: Expanded `INITIAL_WATCHLIST_DATA` to populate from `STOCK_MASTER_CATALOG`.
+- `src/lib/market/freeLiveMarketService.ts`: Added parallel batch chunking (10 per chunk) and alias handling.
+- `src/app/api/broker/dhan/quote/route.ts`: Forwarded full requested tickers to central service.
+- `src/app/api/alerts/telegram/route.ts`: Added server-side idempotency deduplication cache.
+- `src/context/QuantPulseContext.tsx`: Removed duplicate client crossover alert calls, added idempotency keys, and sanitized DB row serialization.
+- `tests/architecture/centralMarketDataAndTelegram.test.ts`: Added 55-stock universe and multi-instance deduplication tests.
+
+#### Database & Schema Impact
+- **Tables Touched:** `watchlist`, `crossover_events`, `live_tick_snapshots`
+- **Operations:** `UPSERT` / `UPDATE` / `INSERT` (sanitized column mappings compatible with existing schema)
+
+#### Invariant Verification
+- [x] Invariant 1: 20-Day Baseline Excludes Today's Session
+- [x] Invariant 2: Rule 1 Bullish Price Confirmation Required
+- [x] Invariant 3: Single Crossover Event per Stock per Session (Sticky Latch)
+- [x] Invariant 4: No Volume Fallback to Previous Day
+- [x] Invariant 5: Opening Minute Stabilization (No Triggers before 09:16 IST)
+- [x] Invariant 6: Strict 1% Stop Loss & 1:2 Risk-Reward Ratio
+- [x] Invariant 7: Idempotent Order Dispatch
+- [x] Invariant 8: TSL Trailing Ratchet Rule (Never Lowers)
+- [x] Invariant 9: Preserved Stock Master and Watchlist State
+- [x] Invariant 10: Fail-Safe Broker Disconnect & Offline Simulation
+
+#### Verification & Testing Performed
+- Ran `npm test` verifying all 47 strategy, architecture, and authentication tests passed.
+- Ran `npx tsc --noEmit` confirming 0 compilation or type errors.
+- Ran `npm run build` verifying successful production Next.js build across 22 routes.
+
+---
+
 ### [2026-10-07 01:50 IST] — Default Trade Execution Mode Set to MANUAL
 - **Commit SHA / Version:** Pending / `v2.4.1`
 - **Author / Agent:** Antigravity (Google DeepMind Advanced Agentic Coding)

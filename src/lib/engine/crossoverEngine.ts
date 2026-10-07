@@ -1,213 +1,67 @@
 import { Stock, CrossoverEvent, VolumeMetrics, VolumeStatusCode } from '../types/quant';
 import { hasTodayMarketSessionStarted, getISTDate } from '../services/marketHoursService';
+import { STOCK_MASTER_CATALOG, convertMasterToStock } from '../stocks/stockMaster';
 
-export const INITIAL_WATCHLIST_DATA: Stock[] = [
-  {
-    ticker: 'RELIANCE',
-    shortName: 'Reliance',
-    name: 'Reliance Industries Limited',
-    isFnO: true,
-    segment: 'NSE_FNO',
-    sector: 'Oil & Gas / Conglomerate',
-    securityId: '1330',
-    isin: 'INE002A01018',
-    lotSize: 250,
-    strikeStep: 50,
-    spotLtp: 2968.50,
-    todayVolM: 0.0,
-    todayTradedShares: 0,
-    avgVol20DM: 5.20,
-    avg20DTradedShares: 5200000,
-    hasCrossed20D: false,
-    crossoverTime: null,
-    crossoverSpotPrice: null,
-    ivPct: 18.4,
-    justCrossedHighlight: false,
-    dayHigh: 2985.00,
-    dayLow: 2942.10,
-    dayOpen: 2950.00,
-    dayClose: 2962.00,
-    changePct: 0.22,
-    feedSource: 'LIVE_DHAN',
-  },
-  {
-    ticker: 'TCS',
-    shortName: 'TCS',
-    name: 'Tata Consultancy Services Limited',
-    isFnO: true,
-    segment: 'NSE_FNO',
-    sector: 'Information Technology',
-    securityId: '11536',
-    isin: 'INE467B01029',
-    lotSize: 175,
-    strikeStep: 50,
-    spotLtp: 4126.00,
-    todayVolM: 0.0,
-    todayTradedShares: 0,
-    avgVol20DM: 1.50,
-    avg20DTradedShares: 1500000,
-    hasCrossed20D: false,
-    crossoverTime: null,
-    crossoverSpotPrice: null,
-    ivPct: 16.2,
-    justCrossedHighlight: false,
-    dayHigh: 4160.00,
-    dayLow: 4110.00,
-    dayOpen: 4140.00,
-    dayClose: 4135.00,
-    changePct: -0.22,
-    feedSource: 'LIVE_DHAN',
-  },
-  {
-    ticker: 'HDFCBANK',
-    shortName: 'HDFC Bank',
-    name: 'HDFC Bank Limited',
-    isFnO: true,
-    segment: 'NSE_FNO',
-    sector: 'Private Banking & Financials',
-    securityId: '1333',
-    isin: 'INE040A01034',
-    lotSize: 550,
-    strikeStep: 20,
-    spotLtp: 1644.20,
-    todayVolM: 0.0,
-    todayTradedShares: 0,
-    avgVol20DM: 6.00,
-    avg20DTradedShares: 6000000,
-    hasCrossed20D: false,
-    crossoverTime: null,
-    crossoverSpotPrice: null,
-    ivPct: 14.9,
-    justCrossedHighlight: false,
-    dayHigh: 1658.00,
-    dayLow: 1636.50,
-    dayOpen: 1640.00,
-    dayClose: 1638.00,
-    changePct: 0.38,
-    feedSource: 'LIVE_DHAN',
-  },
-  {
-    ticker: 'ICICIBANK',
-    shortName: 'ICICI Bank',
-    name: 'ICICI Bank Limited',
-    isFnO: true,
-    segment: 'NSE_FNO',
-    sector: 'Private Banking & Financials',
-    securityId: '4963',
-    isin: 'INE090A01021',
-    lotSize: 700,
-    strikeStep: 20,
-    spotLtp: 1258.00,
-    todayVolM: 0.0,
-    todayTradedShares: 0,
-    avgVol20DM: 7.00,
-    avg20DTradedShares: 7000000,
-    hasCrossed20D: false,
-    crossoverTime: null,
-    crossoverSpotPrice: null,
-    ivPct: 15.6,
-    justCrossedHighlight: false,
-    dayHigh: 1269.00,
-    dayLow: 1248.00,
-    dayOpen: 1252.00,
-    dayClose: 1250.00,
-    changePct: 0.64,
-    feedSource: 'LIVE_DHAN',
-    indices: ['NIFTY 50', 'SENSEX'],
-  },
-  {
-    ticker: 'TMCV',
-    shortName: 'TMCV',
-    name: 'TMCV',
-    isFnO: true,
-    segment: 'NSE_FNO',
-    sector: 'Automobile Manufacturers (Commercial Vehicles)',
-    securityId: '3456',
-    isin: 'INE155A01022',
-    lotSize: 550,
-    strikeStep: 20,
-    spotLtp: 984.40,
-    todayVolM: 0.0,
-    todayTradedShares: 0,
-    avgVol20DM: 8.90,
-    avg20DTradedShares: 8900000,
-    hasCrossed20D: false,
-    crossoverTime: null,
-    crossoverSpotPrice: null,
-    ivPct: 23.8,
-    justCrossedHighlight: false,
-    dayHigh: 994.00,
-    dayLow: 975.00,
-    dayOpen: 980.00,
-    dayClose: 978.00,
-    changePct: 0.65,
-    feedSource: 'LIVE_DHAN',
-    indices: ['NIFTY 50', 'SENSEX'],
-  },
-  {
-    ticker: 'ETERNAL',
-    shortName: 'ETERNAL',
-    name: 'ETERNAL',
-    isFnO: true,
-    segment: 'NSE_FNO',
-    sector: 'Online Food Delivery & Quick Commerce',
-    securityId: '5097',
-    isin: 'INE758T01015',
-    lotSize: 2500,
-    strikeStep: 5,
-    spotLtp: 264.80,
-    todayVolM: 0.0,
-    todayTradedShares: 0,
-    avgVol20DM: 19.00,
-    avg20DTradedShares: 19000000,
-    hasCrossed20D: false,
-    crossoverTime: null,
-    crossoverSpotPrice: null,
-    ivPct: 28.5,
-    justCrossedHighlight: false,
-    dayHigh: 268.00,
-    dayLow: 261.50,
-    dayOpen: 263.00,
-    dayClose: 262.50,
-    changePct: 0.88,
-    feedSource: 'LIVE_DHAN',
-    indices: ['NIFTY 50'],
-  },
-];
+export const INITIAL_WATCHLIST_DATA: Stock[] = STOCK_MASTER_CATALOG.map((master) =>
+  convertMasterToStock(master)
+);
+
+function getStockForSimulation(ticker: string): Stock {
+  const found = INITIAL_WATCHLIST_DATA.find((s) => s.ticker === ticker);
+  if (found) return { ...found };
+  const master = STOCK_MASTER_CATALOG.find((m) => m.ticker === ticker);
+  return master
+    ? convertMasterToStock(master)
+    : {
+        ticker,
+        name: ticker,
+        isFnO: true,
+        lotSize: 100,
+        strikeStep: 20,
+        spotLtp: 1000,
+        todayVolM: 0,
+        avgVol20DM: 5,
+        hasCrossed20D: false,
+        crossoverTime: null,
+        crossoverSpotPrice: null,
+        ivPct: 18.0,
+        feedSource: 'SIMULATED',
+      };
+}
 
 export const INITIAL_SIMULATION_WATCHLIST_DATA: Stock[] = [
   {
-    ...INITIAL_WATCHLIST_DATA[0], // RELIANCE: avg 5.2M shares
+    ...getStockForSimulation('RELIANCE'), // avg ~5.2M shares
     todayVolM: 4.88,
     todayTradedShares: 4880000, // 93.8% progress
     feedSource: 'SIMULATED',
   },
   {
-    ...INITIAL_WATCHLIST_DATA[1], // TCS: avg 1.5M shares
+    ...getStockForSimulation('TCS'), // avg ~1.5M shares
     todayVolM: 1.25,
     todayTradedShares: 1250000, // 83.3% progress
     feedSource: 'SIMULATED',
   },
   {
-    ...INITIAL_WATCHLIST_DATA[2], // HDFCBANK: avg 6.0M shares
+    ...getStockForSimulation('HDFCBANK'), // avg ~6.0M shares
     todayVolM: 5.10,
     todayTradedShares: 5100000, // 85.0% progress
     feedSource: 'SIMULATED',
   },
   {
-    ...INITIAL_WATCHLIST_DATA[3], // ICICIBANK: avg 7.0M shares
+    ...getStockForSimulation('ICICIBANK'), // avg ~7.0M shares
     todayVolM: 6.82,
     todayTradedShares: 6820000, // 97.4% progress -> crosses in 1-2 simulation ticks!
     feedSource: 'SIMULATED',
   },
   {
-    ...INITIAL_WATCHLIST_DATA[4], // TMCV: avg 8.9M shares
+    ...getStockForSimulation('TMCV'), // avg ~8.9M shares
     todayVolM: 8.45,
     todayTradedShares: 8450000, // 94.9% progress -> crosses in 3-4 simulation ticks!
     feedSource: 'SIMULATED',
   },
   {
-    ...INITIAL_WATCHLIST_DATA[5], // ETERNAL: avg 19.0M shares
+    ...getStockForSimulation('ETERNAL'), // avg ~19.0M shares
     todayVolM: 13.50,
     todayTradedShares: 13500000, // 71.0% progress
     feedSource: 'SIMULATED',
