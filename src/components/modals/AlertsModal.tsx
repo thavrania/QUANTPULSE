@@ -19,7 +19,7 @@ function getAlertLabel(type: AlertTypeId): string {
     case 'PING':
       return 'Connection Ping';
     case 'CROSSOVER':
-      return 'Buy-Eligible Crossover Alert';
+      return '20D Volume Crossover (Buy & Sell) Alert';
     case 'ORDER':
       return 'Order Dispatched (Trade Took) Alert';
     case 'TSL':
@@ -316,14 +316,14 @@ export function AlertsModal() {
   const alertCards = [
     {
       id: 'CROSSOVER' as AlertTypeId,
-      badge: 'BUY ELIGIBLE',
+      badge: 'BUY & SELL',
       badgeColor: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
       icon: '🚀',
-      title: 'Buy Eligible (20D Volume Crossover)',
-      desc: "Dispatched the exact second a stock's today traded shares break above its 20-Day Average benchmark, officially unlocking buy eligibility.",
+      title: '20D Volume Crossover (Buy & Sell)',
+      desc: "Dispatched the exact second a stock's today traded shares break above its 20-Day Average benchmark: 🟢 BUY for bullish breakouts and 🔴 SELL / PE ELIGIBLE for bearish breakdowns.",
       checked: notifyCrossover,
       setChecked: setNotifyCrossover,
-      sampleText: 'Sample: RELIANCE Crossover @ 09:45 IST • ELIGIBLE FOR BUY',
+      sampleText: 'Sample: 🟢 RELIANCE (BUY) or 🔴 INFY (SELL) 20D Volume Crossover',
     },
     {
       id: 'ORDER' as AlertTypeId,
