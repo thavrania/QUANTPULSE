@@ -15,6 +15,10 @@ export default function QuantPulseTerminalPage() {
   const {
     terminalUser,
     setTerminalUser,
+    isSessionRemotelyKilled,
+    setIsSessionRemotelyKilled,
+    remoteKillReason,
+    setActiveSessionsCount,
     activeStrategy,
     niftyOvernightState,
     executeNifty0920Scan,
@@ -35,8 +39,17 @@ export default function QuantPulseTerminalPage() {
         const res = await fetch('/api/auth/session');
         const data = await res.json();
         if (isMounted) {
-          if (data && data.authenticated && data.user?.username) {
+          if (data && data.killed) {
+            setIsSessionRemotelyKilled(true);
+            setTerminalUser(null);
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('qp_terminal_user');
+            }
+          } else if (data && data.authenticated && data.user?.username) {
             setTerminalUser(data.user.username);
+            if (typeof data.activeSessionsCount === 'number') {
+              setActiveSessionsCount(data.activeSessionsCount);
+            }
           } else {
             setTerminalUser(null);
             if (typeof window !== 'undefined') {
@@ -55,7 +68,7 @@ export default function QuantPulseTerminalPage() {
     return () => {
       isMounted = false;
     };
-  }, [setTerminalUser]);
+  }, [setTerminalUser, setIsSessionRemotelyKilled, setActiveSessionsCount]);
 
   // Loading state while verifying terminal session
   if (isVerifyingSession) {
@@ -66,6 +79,46 @@ export default function QuantPulseTerminalPage() {
           <div className="font-mono text-xs text-slate-400 flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
             <span>Verifying QuantPulse Terminal Session...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If this session was terminated remotely from another device, show Lockdown screen
+  if (isSessionRemotelyKilled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-obsidian text-slate-100 p-4">
+        <div className="bg-panel border border-rose-500/50 rounded-2xl p-8 max-w-md w-full shadow-2xl shadow-rose-950/60 text-center animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto mb-4 text-3xl text-rose-400 shadow-lg shadow-rose-500/20">
+            🚫
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Browser Session Terminated</h2>
+          <p className="text-xs text-rose-300 font-mono mb-4 px-3 py-2 rounded-lg bg-rose-950/40 border border-rose-900/50">
+            {remoteKillReason || 'This browser session was killed remotely by the administrator.'}
+          </p>
+          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+            All live market feeds, order execution capabilities, and real-time streams have been immediately disconnected for this workstation.
+          </p>
+          <div className="flex flex-col gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') window.close();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider transition shadow-lg shadow-rose-950/50 cursor-pointer"
+            >
+              Close Browser Tab
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSessionRemotelyKilled(false);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition border border-slate-700 cursor-pointer"
+            >
+              Log In Again
+            </button>
           </div>
         </div>
       </div>

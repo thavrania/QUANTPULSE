@@ -149,6 +149,13 @@ interface QuantPulseContextType {
   setIsAlertsModalOpen: (open: boolean) => void;
   setIsAuthModalOpen: (open: boolean) => void;
   setIsCloudLogsModalOpen: (open: boolean) => void;
+  isSessionsModalOpen: boolean;
+  setIsSessionsModalOpen: (open: boolean) => void;
+  activeSessionsCount: number;
+  setActiveSessionsCount: (count: number) => void;
+  isSessionRemotelyKilled: boolean;
+  setIsSessionRemotelyKilled: (killed: boolean) => void;
+  remoteKillReason: string | null;
   removeToast: (id: string) => void;
   showToast: (message: string, variant?: 'info' | 'emerald' | 'amber' | 'rose') => void;
   autoPilotStatus: PreMarketAutoPilotStatus;
@@ -315,6 +322,10 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isCloudLogsModalOpen, setIsCloudLogsModalOpen] = useState<boolean>(false);
+  const [isSessionsModalOpen, setIsSessionsModalOpen] = useState<boolean>(false);
+  const [activeSessionsCount, setActiveSessionsCount] = useState<number>(1);
+  const [isSessionRemotelyKilled, setIsSessionRemotelyKilled] = useState<boolean>(false);
+  const [remoteKillReason, setRemoteKillReason] = useState<string | null>(null);
   const [idempotencyLocks, setIdempotencyLocks] = useState<string[]>([]);
   const [feedMode, setFeedModeState] = useState<'DHAN_LIVE' | 'SIMULATION'>('DHAN_LIVE');
   const feedModeRef = useRef<'DHAN_LIVE' | 'SIMULATION'>(feedMode);
@@ -640,6 +651,35 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
     setTerminalUser(null);
     showToast('Terminal session locked. Please sign in again.', 'info');
   }, [showToast]);
+
+  // Periodic heartbeat to monitor session validity and remote kill signal
+  useEffect(() => {
+    if (!terminalUser) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/auth/session');
+        const data = await res.json();
+        if (data) {
+          if (data.killed) {
+            setIsSessionRemotelyKilled(true);
+            setRemoteKillReason(
+              data.message || 'This browser session was terminated remotely by the administrator.'
+            );
+            setTerminalUser(null);
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('qp_terminal_user');
+              localStorage.removeItem('qp_terminal_auth_at');
+            }
+          } else if (data.authenticated) {
+            if (typeof data.activeSessionsCount === 'number') {
+              setActiveSessionsCount(data.activeSessionsCount);
+            }
+          }
+        }
+      } catch {}
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [terminalUser]);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -3611,6 +3651,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         terminalUser,
         setTerminalUser,
         terminalLogout,
+        isSessionsModalOpen,
+        setIsSessionsModalOpen,
+        activeSessionsCount,
+        setActiveSessionsCount,
+        isSessionRemotelyKilled,
+        setIsSessionRemotelyKilled,
+        remoteKillReason,
       }}
     >
       {children}

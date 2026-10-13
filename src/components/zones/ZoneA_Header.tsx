@@ -41,6 +41,8 @@ export function ZoneA_Header() {
     setActiveStrategy,
     terminalUser,
     terminalLogout,
+    setIsSessionsModalOpen,
+    activeSessionsCount,
   } = useQuantPulse();
 
   return (
@@ -469,6 +471,33 @@ export function ZoneA_Header() {
                 <span>Lock</span>
               </button>
             </div>
+            {/* Active Browsers & Kill Remote Button */}
+            <button
+              type="button"
+              onClick={() => setIsSessionsModalOpen(true)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 cursor-pointer shadow-sm ${
+                activeSessionsCount > 1
+                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/50 shadow-amber-500/10 animate-pulse'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
+              title="Inspect where this website is open and kill remote browsers"
+            >
+              <span className="relative flex h-2 w-2">
+                <span
+                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    activeSessionsCount > 1 ? 'bg-amber-400' : 'bg-emerald-400'
+                  }`}
+                />
+                <span
+                  className={`relative inline-flex rounded-full h-2 w-2 ${
+                    activeSessionsCount > 1 ? 'bg-amber-500' : 'bg-emerald-500'
+                  }`}
+                />
+              </span>
+              <span className="font-mono font-bold">
+                🖥️ {activeSessionsCount} {activeSessionsCount === 1 ? 'Browser Open' : 'Browsers Open'}
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => setIsCloudLogsModalOpen(true)}

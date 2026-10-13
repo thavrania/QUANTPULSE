@@ -11,6 +11,7 @@ import { AlertsModal } from '@/components/modals/AlertsModal';
 import { AuthModal } from '@/components/modals/AuthModal';
 import { CloudAuditLogsModal } from '@/components/modals/CloudAuditLogsModal';
 import { PreMarketAutoPilotModal } from '@/components/modals/PreMarketAutoPilotModal';
+import { ActiveSessionsModal } from '@/components/modals/ActiveSessionsModal';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -48,6 +49,7 @@ export default function RootLayout({
           <AuthModal />
           <CloudAuditLogsModal />
           <PreMarketAutoPilotModal />
+          <ActiveSessionsModal />
           <ToastContainer />
         </QuantPulseProvider>
       </body>
