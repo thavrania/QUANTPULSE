@@ -401,7 +401,9 @@ export class CentralMarketDataService {
         timestamp_ist: snapshot.timestampIst,
         spot_ltp: snapshot.ltp,
         today_vol_m: snapshot.todayVolumeM,
+        today_traded_shares: snapshot.todayTradedShares,
         avg_vol_20d_m: snapshot.avgVol20DM,
+        avg_20d_traded_shares: snapshot.avg20DTradedShares,
         rvol_ratio: snapshot.avgVol20DM > 0 ? +(snapshot.todayVolumeM / snapshot.avgVol20DM).toFixed(2) : 1.0,
       });
 
@@ -410,6 +412,8 @@ export class CentralMarketDataService {
         updates: {
           spot_ltp: workingStock.spotLtp,
           today_vol_m: workingStock.todayVolM,
+          today_traded_shares: workingStock.todayTradedShares,
+          avg_20d_traded_shares: workingStock.avg20DTradedShares,
           has_crossed_20d: workingStock.hasCrossed20D,
           crossover_time: workingStock.crossoverTime,
           crossover_spot_price: workingStock.crossoverSpotPrice,

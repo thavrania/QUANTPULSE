@@ -329,10 +329,17 @@ export function ZoneB_Watchlist() {
                     <span>Step: <strong className="text-slate-300">₹{stock.strikeStep}</strong></span>
                   </div>
                   <div className="flex items-center justify-between text-[10px] font-mono mt-1.5 text-slate-300">
-                    <span>₹{stock.spotLtp.toFixed(1)}</span>
-                    <span className="text-cyan-300">
-                      {(stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000)).toLocaleString('en-IN')} shares
-                    </span>
+                    <span className="font-bold text-white">₹{stock.spotLtp.toFixed(1)}</span>
+                    <div className="text-right" title="Today Traded Shares / 20D Benchmark">
+                      <span className="text-emerald-400 font-bold">
+                        {(stock.todayTradedShares ?? Math.round(stock.todayVolM * 1_000_000)).toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-slate-500"> / </span>
+                      <span className="text-cyan-300">
+                        {(stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000)).toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[9px] text-slate-500 ml-0.5">sh</span>
+                    </div>
                   </div>
                   <div className="mt-1 flex items-center justify-between text-[9px]">
                     <span className={stock.hasCrossed20D ? 'text-emerald-400 font-bold' : 'text-amber-400'}>

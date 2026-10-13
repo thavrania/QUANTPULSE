@@ -15,11 +15,11 @@ export async function fetchFreeLiveQuotes(
 
   // Helper to fetch single ticker with alias fallback
   const fetchSingleTicker = async (ticker: string): Promise<{ ticker: string; record: LiveQuoteRecord } | null> => {
-    // Generate candidate symbols for Yahoo (e.g., TMCV -> TATAMOTORS.NS fallback, ETERNAL -> ZOMATO.NS fallback)
+    // Generate candidate symbols for Yahoo (active NSE symbol first, then legacy symbol)
     const candidates: string[] = [];
-    if (ticker === 'TMCV') candidates.push('TATAMOTORS.NS', 'TMCV.NS');
-    else if (ticker === 'ETERNAL') candidates.push('ZOMATO.NS', 'ETERNAL.NS');
-    else if (ticker === 'LTM') candidates.push('LTIM.NS', 'LTM.NS');
+    if (ticker === 'TMCV' || ticker === 'TATAMOTORS') candidates.push('TMCV.NS', 'TATAMOTORS.NS');
+    else if (ticker === 'ETERNAL' || ticker === 'ZOMATO') candidates.push('ETERNAL.NS', 'ZOMATO.NS');
+    else if (ticker === 'LTM' || ticker === 'LTIM') candidates.push('LTIM.NS', 'LTM.NS');
     else {
       candidates.push(ticker.includes('.') ? ticker : `${ticker}.NS`);
     }
@@ -64,8 +64,7 @@ export async function fetchFreeLiveQuotes(
             quoteIst.hours * 60 + quoteIst.minutes >= 9 * 60 + 15;
         }
 
-        const isYahooDelayedWindow = ist.hours === 9 && ist.minutes >= 15 && ist.minutes < 30;
-        const isTodayVolumeValid = sessionStarted && isQuoteFromToday && !isYahooDelayedWindow;
+        const isTodayVolumeValid = sessionStarted && isQuoteFromToday;
         const rawVol = isTodayVolumeValid
           ? Number(meta.regularMarketVolume) ||
             (Array.isArray(quoteIndicator?.volume) && quoteIndicator.volume[0]) ||

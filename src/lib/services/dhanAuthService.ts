@@ -101,7 +101,8 @@ export class DhanAuthService {
     const apiKey = (process.env.DHAN_API_KEY || '').trim();
     const apiSecret = (process.env.DHAN_API_SECRET || '').trim();
     const totpSecret = (process.env.DHAN_TOTP_SECRET || '').trim();
-    const staticToken = (process.env.DHAN_ACCESS_TOKEN || '').trim();
+    const rawToken = (process.env.DHAN_ACCESS_TOKEN || '').trim();
+    const staticToken = rawToken === '0' || rawToken.length < 20 ? '' : rawToken;
 
     const hasAutomatedCreds = Boolean(clientId && apiKey && apiSecret && totpSecret);
 

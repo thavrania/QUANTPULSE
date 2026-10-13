@@ -608,8 +608,13 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
   // Circuit Breaker auto-pause listener
   useEffect(() => {
     const unsub = requestQueueEngine.onTrip((state) => {
-      setIsLiveStreaming(false);
-      showToast(`Stream Paused: ${state.reason}`, 'amber');
+      // If seamlessly falling back to Free Live NSE feed, do not kill the stream!
+      if (state.reason?.includes('Switched to Free Live NSE feed')) {
+        showToast(state.reason, 'info');
+      } else {
+        setIsLiveStreaming(false);
+        showToast(`Stream Paused: ${state.reason}`, 'amber');
+      }
     });
     return unsub;
   }, [showToast]);
@@ -2122,7 +2127,7 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
 
         setWatchlist((prevWl) => {
           const updatedWl = prevWl.map((stock) => {
-            const q = quotesMap[stock.ticker];
+            const q = quotesMap[stock.ticker] || quotesMap[normalizeTicker(stock.ticker)];
             if (!q) return stock;
 
             // Before 09:15 IST on trading days or on weekends, today's regular session has not traded.
@@ -2695,10 +2700,16 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       const next = !prev;
       setIngestionTelemetry((t) => ({ ...t, streamActive: next }));
       if (next) {
+        requestQueueEngine.resetCircuit();
+        const currentSnapshot = stateMachineRef.current.getSnapshot();
+        if (currentSnapshot.currentState === 'ERROR' || currentSnapshot.currentState === 'RECOVERY') {
+          stateMachineRef.current.markLiveFeedStarted();
+          setMarketLifecycle(stateMachineRef.current.getSnapshot());
+        }
         const intervalSec = (marketSession.recommendedIntervalMs / 1000).toFixed(1);
         showToast(
           feedMode === 'DHAN_LIVE'
-            ? `🟢 Live Dhan Ingestion Active (${intervalSec}s pulse • ${marketSession.statusLabel})`
+            ? `🟢 Live Market Feed Active (${intervalSec}s pulse • ${marketSession.statusLabel})`
             : '⚡ Demo Simulation Stream running — Watching 20D crossovers!',
           'emerald'
         );
