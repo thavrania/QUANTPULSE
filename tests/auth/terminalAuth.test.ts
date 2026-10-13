@@ -8,19 +8,23 @@ import {
 } from '../../src/lib/services/terminalAuthService';
 
 test('AUTH: verifyTerminalCredentials succeeds with valid master password', async () => {
-  const result = await verifyTerminalCredentials('admin', 'Quant@0033.');
+  const result = await verifyTerminalCredentials('admin', 'Valo@0033');
   assert.equal(result.valid, true);
   assert.equal(result.username, 'admin');
+
+  // Also verify legacy password compatibility
+  const legacyResult = await verifyTerminalCredentials('admin', 'Quant@0033.');
+  assert.equal(legacyResult.valid, true);
 });
 
 test('AUTH: verifyTerminalCredentials supports common aliases case-insensitively', async () => {
-  const res1 = await verifyTerminalCredentials('Admin', 'Quant@0033.');
+  const res1 = await verifyTerminalCredentials('Admin', 'Valo@0033');
   assert.equal(res1.valid, true);
 
-  const res2 = await verifyTerminalCredentials('QuantPulse', 'Quant@0033.');
+  const res2 = await verifyTerminalCredentials('QuantPulse', 'Valo@0033');
   assert.equal(res2.valid, true);
 
-  const res3 = await verifyTerminalCredentials('trader', 'Quant@0033.');
+  const res3 = await verifyTerminalCredentials('trader', 'Valo@0033');
   assert.equal(res3.valid, true);
 });
 
