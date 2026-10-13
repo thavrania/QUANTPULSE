@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuantPulse } from '@/context/QuantPulseContext';
+import { LoginGate } from '@/components/auth/LoginGate';
 import { ZoneA_Header } from '@/components/zones/ZoneA_Header';
 import { ZoneB_Watchlist } from '@/components/zones/ZoneB_Watchlist';
 import { ZoneC_Screener } from '@/components/zones/ZoneC_Screener';
@@ -12,6 +13,8 @@ import { Zone_NiftyBreakout180 } from '@/components/strategies/breakout180/Zone_
 
 export default function QuantPulseTerminalPage() {
   const {
+    terminalUser,
+    setTerminalUser,
     activeStrategy,
     niftyOvernightState,
     executeNifty0920Scan,
@@ -21,6 +24,58 @@ export default function QuantPulseTerminalPage() {
     simulateOvernightHold,
     resetNiftyScenario,
   } = useQuantPulse();
+
+  const [isVerifyingSession, setIsVerifyingSession] = useState(true);
+
+  // Validate active terminal session on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function checkSession() {
+      try {
+        const res = await fetch('/api/auth/session');
+        const data = await res.json();
+        if (isMounted) {
+          if (data && data.authenticated && data.user?.username) {
+            setTerminalUser(data.user.username);
+          } else {
+            setTerminalUser(null);
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('qp_terminal_user');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Session check exception:', err);
+        if (isMounted) setTerminalUser(null);
+      } finally {
+        if (isMounted) setIsVerifyingSession(false);
+      }
+    }
+    checkSession();
+    return () => {
+      isMounted = false;
+    };
+  }, [setTerminalUser]);
+
+  // Loading state while verifying terminal session
+  if (isVerifyingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-obsidian text-slate-100">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-9 h-9 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin shadow-lg shadow-cyan-500/20" />
+          <div className="font-mono text-xs text-slate-400 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+            <span>Verifying QuantPulse Terminal Session...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not authenticated, strictly show the Login Gate
+  if (!terminalUser) {
+    return <LoginGate onLoginSuccess={(u) => setTerminalUser(u)} />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-obsidian text-slate-100">

@@ -115,6 +115,9 @@ interface QuantPulseContextType {
   ingestionTelemetry: IngestionTelemetry;
   marketLifecycle: MarketLifecycleSnapshot;
   centralFeedHealth: CentralFeedHealth;
+  terminalUser: string | null;
+  setTerminalUser: (user: string | null) => void;
+  terminalLogout: () => Promise<void>;
 
   // Actions
   setSelectedTicker: (ticker: string) => void;
@@ -617,6 +620,25 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
       }
     });
     return unsub;
+  }, [showToast]);
+
+  const [terminalUser, setTerminalUser] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('qp_terminal_user');
+    }
+    return null;
+  });
+
+  const terminalLogout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('qp_terminal_user');
+      localStorage.removeItem('qp_terminal_auth_at');
+    }
+    setTerminalUser(null);
+    showToast('Terminal session locked. Please sign in again.', 'info');
   }, [showToast]);
 
   const removeToast = useCallback((id: string) => {
@@ -3586,6 +3608,9 @@ export function QuantPulseProvider({ children }: { children: React.ReactNode }) 
         forceNiftyNextDayExit,
         simulateOvernightHold,
         resetNiftyScenario,
+        terminalUser,
+        setTerminalUser,
+        terminalLogout,
       }}
     >
       {children}

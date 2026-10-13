@@ -39,6 +39,8 @@ export function ZoneA_Header() {
     marketLifecycle,
     activeStrategy,
     setActiveStrategy,
+    terminalUser,
+    terminalLogout,
   } = useQuantPulse();
 
   return (
@@ -446,14 +448,27 @@ export function ZoneA_Header() {
             >
               <span>🔔 Alerts</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1"
-              title="Supabase User Profile & Authentication"
-            >
-              <span>👤 Account</span>
-            </button>
+            {/* User Session & Terminal Lock Button */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 rounded-lg p-0.5">
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-2 py-1 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition"
+                title="Account Profile & Supabase Cloud Sync"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span className="font-mono text-cyan-300 font-bold truncate max-w-[100px]">{terminalUser || 'Trader'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={terminalLogout}
+                className="px-2 py-1 text-[11px] font-semibold text-rose-300 hover:text-white hover:bg-rose-600/30 rounded transition flex items-center gap-1 cursor-pointer"
+                title="Lock Terminal & Log Out (Requires Password to re-open)"
+              >
+                <span>🔒</span>
+                <span>Lock</span>
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setIsCloudLogsModalOpen(true)}
