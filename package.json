@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "node node_modules/sucrase/bin/sucrase-node tests/strategies/niftyBreakout180.test.ts && node node_modules/sucrase/bin/sucrase-node tests/architecture/centralMarketDataAndTelegram.test.ts && node node_modules/sucrase/bin/sucrase-node tests/architecture/dhanAutomatedAuth.test.ts && node node_modules/sucrase/bin/sucrase-node tests/auth/terminalAuth.test.ts",
-    "worker": "node node_modules/sucrase/bin/sucrase-node src/worker/marketDataWorker.ts"
+    "worker": "node node_modules/sucrase/bin/sucrase-node src/worker/marketDataWorker.ts",
+    "mobile:start": "npm --prefix mobile start"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

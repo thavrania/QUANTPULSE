@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "QuantPulse",
+    "slug": "quantpulse",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#030712",
+      "resizeMode": "contain"
+    },
+    "android": {
+      "package": "com.quantpulse.terminal",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#030712"
+      },
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "VIBRATE",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-local-authentication",
+        {
+          "faceDetectorSettings": {}
+        }
+      ]
+    ]
+  }
+}
