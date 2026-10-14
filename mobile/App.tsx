@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { registerRootComponent } from 'expo';
 import { MobileAppProvider, useMobileApp } from './src/context/MobileAppContext';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { AppNavigator } from './src/navigation/AppNavigator';
@@ -47,6 +48,8 @@ export default function App() {
     </MobileAppProvider>
   );
 }
+
+registerRootComponent(App);
 
 const styles = StyleSheet.create({
   killedContainer: {
