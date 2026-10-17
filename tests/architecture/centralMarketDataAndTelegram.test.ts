@@ -244,6 +244,57 @@ test('CROSSOVER: Sticky Latch ensures duplicate ticks do NOT trigger duplicate c
   assert.equal(event, null);
 });
 
+test('CROSSOVER: Monotonic Latch ensures volume jitter/tick drop NEVER un-latches or re-triggers', () => {
+  const stock: Stock = {
+    ticker: 'JITTER_STOCK',
+    name: 'Jitter Stock Ltd',
+    spotLtp: 1000,
+    dayOpen: 995,
+    changePct: 0.5,
+    todayVolM: 1.050000,
+    todayTradedShares: 1050000,
+    avgVol20DM: 1.000000,
+    avg20DTradedShares: 1000000,
+    hasCrossed20D: false,
+    crossoverTime: null,
+    crossoverSpotPrice: null,
+    isFnO: true,
+    lotSize: 100,
+    strikeStep: 20,
+    ivPct: 15,
+    feedSource: 'SIMULATED',
+  };
+
+  // 1. First crossover trigger
+  const tick1 = checkAndLatchVolumeCrossover(stock, '10:10:00 IST', true);
+  assert.equal(tick1.newlyCrossed, true, 'First crossover must trigger');
+  assert.equal(stock.hasCrossed20D, true, 'Stock must now be latched');
+  assert.equal(stock.crossoverTime, '10:10:00 IST');
+
+  // 2. Jitter tick: Broker drops volume or temporary feed glitch (todayShares < avgShares)
+  stock.todayTradedShares = 800000;
+  stock.todayVolM = 0.8;
+  const tick2 = checkAndLatchVolumeCrossover(stock, '10:10:02 IST', true);
+  assert.equal(tick2.newlyCrossed, false, 'Must NOT trigger on jitter tick');
+  assert.equal(stock.hasCrossed20D, true, 'Monotonic Latch MUST NOT un-latch on volume dip');
+  assert.equal(stock.crossoverTime, '10:10:00 IST', 'Crossover time must remain preserved');
+
+  // 3. Jitter tick: 0 volume packet
+  stock.todayTradedShares = 0;
+  stock.todayVolM = 0;
+  const tick3 = checkAndLatchVolumeCrossover(stock, '10:10:04 IST', true);
+  assert.equal(tick3.newlyCrossed, false, 'Must NOT trigger on 0-volume packet');
+  assert.equal(stock.hasCrossed20D, true, 'Monotonic Latch MUST NOT un-latch on 0 volume');
+
+  // 4. Recovery tick: Volume recovers above average
+  stock.todayTradedShares = 1100000;
+  stock.todayVolM = 1.1;
+  const tick4 = checkAndLatchVolumeCrossover(stock, '10:10:06 IST', true);
+  assert.equal(tick4.newlyCrossed, false, 'Must NOT re-trigger duplicate alert when volume returns above average');
+  assert.equal(tick4.event, null);
+  assert.equal(stock.hasCrossed20D, true);
+});
+
 test('CROSSOVER: Rule 1 Bearish Crossover emits SELL event while suppressing BUY eligibility', () => {
   const stock: Stock = {
     ticker: 'BEAR_STOCK',

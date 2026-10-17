@@ -342,6 +342,8 @@ export class CentralMarketDataService {
       const updatedShares = q.volume !== undefined ? q.volume : (stock.todayTradedShares ?? Math.round(q.volumeM * 1_000_000));
       const updatedVolM = q.volumeM !== undefined ? q.volumeM : updatedShares / 1_000_000;
       const avgShares = stock.avg20DTradedShares || Math.round(stock.avgVol20DM * 1_000_000);
+      const existingSnap = this.snapshots.get(stock.ticker) || this.snapshots.get(normalizeTicker(stock.ticker));
+      const isAlreadyLatched = Boolean(stock.hasCrossed20D) || Boolean(existingSnap?.hasCrossed20D) || Boolean(stock.crossoverTime) || Boolean(existingSnap?.crossoverTime);
 
       const workingStock: Stock = {
         ...stock,
@@ -355,6 +357,9 @@ export class CentralMarketDataService {
         dayClose: q.close || stock.dayClose,
         changePct: q.changePct ?? stock.changePct,
         feedSource: 'LIVE_DHAN',
+        hasCrossed20D: isAlreadyLatched,
+        crossoverTime: stock.crossoverTime || existingSnap?.crossoverTime || null,
+        crossoverSpotPrice: stock.crossoverSpotPrice || existingSnap?.crossoverSpotPrice || null,
       };
 
       // Evaluate 20D volume crossover invariant
@@ -510,6 +515,8 @@ export class CentralMarketDataService {
 
         if (existingEvent && existingEvent.length > 0) {
           isAlreadyRecordedInDb = true;
+          this.dispatchedAlertKeys.add(eventKey);
+          return; // Stock already crossed today; drop duplicate dispatch
         } else {
           await supabase.from('crossover_events').insert({
             ticker: stock.ticker,
@@ -522,6 +529,10 @@ export class CentralMarketDataService {
       } catch (err) {
         console.warn('[CentralFeed] Crossover DB record notice:', err);
       }
+    }
+
+    if (isAlreadyRecordedInDb) {
+      return;
     }
 
     // 3. Resolve active alert destinations

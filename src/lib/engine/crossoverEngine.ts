@@ -94,9 +94,7 @@ export function getVolumeScreenerMetrics(stock: Stock, isSimulation?: boolean): 
   const sessionStarted = isSim || hasTodayMarketSessionStarted();
   const hasVolumeCrossed =
     sessionStarted &&
-    (stock.hasCrossed20D || todayShares >= avgShares) &&
-    todayShares >= avgShares &&
-    todayShares > 0;
+    (stock.hasCrossed20D || (todayShares >= avgShares && todayShares > 0));
 
   // Rule 1: Bullish Price / Candle Filter (Spot LTP >= Day Open or changePct >= 0)
   const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
@@ -147,10 +145,21 @@ export function checkAndLatchVolumeCrossover(
     return { newlyCrossed: false, event: null };
   }
 
+  // 2. Strict Monotonic Latch Invariant (Idempotency Lock):
+  // Once a stock has triggered or latched crossover for today's market session,
+  // NEVER un-latch it or generate a duplicate crossover event!
+  // In genuine market trading, cumulative daily volume is strictly non-decreasing.
+  // A momentary broker tick drop, feed fallback, or volume jitter must NEVER erase a latched crossover.
+  if (stock.hasCrossed20D || Boolean(stock.crossoverTime)) {
+    // Preserve latched status unconditionally for the remainder of today's session
+    stock.hasCrossed20D = true;
+    return { newlyCrossed: false, event: null };
+  }
+
   const todayShares = stock.todayTradedShares !== undefined ? stock.todayTradedShares : Math.round(stock.todayVolM * 1_000_000);
   const avgShares = stock.avg20DTradedShares !== undefined ? stock.avg20DTradedShares : Math.round(stock.avgVol20DM * 1_000_000);
 
-  // 2. Opening Stabilization Gate (09:15:00 to 09:16:00 IST):
+  // 3. Opening Stabilization Gate (09:15:00 to 09:16:00 IST):
   // Broker quote feeds often carry yesterday's cumulative EOD volume during the first 60 seconds.
   // In genuine market trading, it is physically impossible for a stock to trade 100% of its 20-day average volume
   // within the first 60 seconds of open. (Bypassed during simulation)
@@ -170,52 +179,36 @@ export function checkAndLatchVolumeCrossover(
     }
   }
 
-  // Volume condition: Today volume must meet or exceed 20D average (> 0)
+  // 4. Volume condition: Today volume must meet or exceed 20D average (> 0)
   const volumeCrossed = todayShares >= avgShares && todayShares > 0;
 
-  // Rule 5: If volume has not crossed (e.g. Day Start or 0 before session start), clear any stale crossover latch
-  if (todayShares < avgShares || todayShares === 0) {
-    stock.hasCrossed20D = false;
-    stock.crossoverTime = null;
-    stock.crossoverSpotPrice = null;
-    stock.crossoverSignalType = undefined;
-    stock.justCrossedHighlight = false;
+  // If volume has not crossed 20D benchmark yet, do not trigger
+  if (!volumeCrossed) {
     return { newlyCrossed: false, event: null };
   }
 
-  // Idempotency: Once a stock has already triggered/latched crossover, NEVER generate a duplicate event!
-  if (stock.hasCrossed20D || Boolean(stock.crossoverTime)) {
-    // Preserve latched status as volume is still >= 20D average
-    stock.hasCrossed20D = true;
-    return { newlyCrossed: false, event: null };
-  }
-
-  // Rule 1: Price direction evaluation at crossover trigger moment:
+  // 5. Price direction evaluation at crossover trigger moment:
   // Bullish: LTP >= Day Open or changePct >= 0 -> BUY breakout
   // Bearish: LTP < Day Open and changePct < 0 -> SELL distribution
   const isBullish = stock.spotLtp >= (stock.dayOpen || stock.spotLtp) || (stock.changePct ?? 0) >= 0;
   const signalType: 'BUY' | 'SELL' = isBullish ? 'BUY' : 'SELL';
 
-  if (volumeCrossed) {
-    stock.hasCrossed20D = true;
-    stock.crossoverTime = currentTimeStr;
-    stock.crossoverSpotPrice = stock.spotLtp;
-    stock.crossoverSignalType = signalType;
-    stock.justCrossedHighlight = true;
+  stock.hasCrossed20D = true;
+  stock.crossoverTime = currentTimeStr;
+  stock.crossoverSpotPrice = stock.spotLtp;
+  stock.crossoverSignalType = signalType;
+  stock.justCrossedHighlight = true;
 
-    const event: CrossoverEvent = {
-      ticker: stock.ticker,
-      time: currentTimeStr,
-      avgVol20DM: stock.avgVol20DM,
-      avg20DTradedShares: avgShares,
-      todayTradedShares: todayShares,
-      crossPrice: stock.spotLtp,
-      isFnO: stock.isFnO,
-      signalType,
-    };
+  const event: CrossoverEvent = {
+    ticker: stock.ticker,
+    time: currentTimeStr,
+    avgVol20DM: stock.avgVol20DM,
+    avg20DTradedShares: avgShares,
+    todayTradedShares: todayShares,
+    crossPrice: stock.spotLtp,
+    isFnO: stock.isFnO,
+    signalType,
+  };
 
-    return { newlyCrossed: true, event };
-  }
-
-  return { newlyCrossed: false, event: null };
+  return { newlyCrossed: true, event };
 }
